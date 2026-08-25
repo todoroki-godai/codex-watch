@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# codex exec を「書き込み可（workspace-write）」で起動し、codex-review と同じ状態ファイルを残す。
+#
+# なぜ要るか: 工程ルール（~/.claude/rules/pipeline-routing.md）は実装の主力を Codex と定めて
+# いるが、起動役は codex-review しか無く `-s read-only` が焼き込まれていたため、実装では毎回
+# CC ワーカーへ戻っていた（2026-08-25 ユーザー指摘）。本コマンドはその欠けを埋める。
+#
+# 契約（pipeline-routing.md「Codex を実装で起動する契約」）:
+#   - サンドボックス = workspace-write
+#   - 作業先 = 頭が用意した worktree の絶対パスを -C で渡す
+#   - Codex は commit まで。push / PR / マージは頭（人間）が行う
+#   - 完了判定はプロセス終了と報告の終端マーカーの両方。log の中身だけで判定しない
+#
+# 安全ガード: 対象が linked worktree でない場合（= 共有 checkout / main 作業コピー）は拒否する。
+#   共有 checkout はユーザーの実行環境そのもの（~/.claude/rules/live-checkout-guard.md）で、
+#   ここを書き換えるとレビュー未了のコードが即座に本番稼働する。
+#   意図的に無効化する場合のみ CODEX_IMPL_ALLOW_MAIN=1 を明示する。
+#
+# 使い方:
+#   codex-impl <worktree絶対パス> <プロンプトファイル> [ラベル]
+# 出力:
+#   run id を1行で返す。以降 codex-status <run id> / codex-watch <run id> で観測する。
+set -euo pipefail
+
+WORKDIR="${1:?worktree の絶対パスを指定してください}"
+PROMPT_FILE="${2:?プロンプトファイルのパスを指定してください}"
+LABEL="${3:-impl}"
+
+[[ "$WORKDIR" = /* ]] || { echo "作業先は絶対パスで指定してください: $WORKDIR" >&2; exit 2; }
+[[ -d "$WORKDIR" ]] || { echo "作業先がありません: $WORKDIR" >&2; exit 2; }
+[[ -f "$PROMPT_FILE" ]] || { echo "プロンプトファイルがありません: $PROMPT_FILE" >&2; exit 2; }
+
+# --- 安全ガード: 共有 checkout / main 作業コピーへの書き込みを拒否する ---
+if [[ "${CODEX_IMPL_ALLOW_MAIN:-0}" != "1" ]]; then
+  GIT_DIR_ABS="$(git -C "$WORKDIR" rev-parse --absolute-git-dir 2>/dev/null || true)"
+  GIT_COMMON_ABS="$(git -C "$WORKDIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+  if [[ -z "$GIT_DIR_ABS" ]]; then
+    echo "作業先が git リポジトリではありません: $WORKDIR" >&2
+    echo "実装は頭が用意した worktree で行ってください（git worktree add）。" >&2
+    exit 3
+  fi
+  if [[ "$GIT_DIR_ABS" == "$GIT_COMMON_ABS" ]]; then
+    echo "拒否: 作業先が linked worktree ではありません（共有 checkout / main 作業コピーの疑い）: $WORKDIR" >&2
+    echo "  git-dir=$GIT_DIR_ABS" >&2
+    echo "  共有 checkout はユーザーの実行環境そのもので、書き換えると未レビューのコードが即稼働します。" >&2
+    echo "  対処: git -C <repo> worktree add -b <branch> <絶対path> origin/<既定branch> で隔離してから渡す。" >&2
+    echo "  意図的に無効化する場合のみ CODEX_IMPL_ALLOW_MAIN=1 を付けて再実行してください。" >&2
+    exit 3
+  fi
+fi
+
+STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
+mkdir -p "$STATE_DIR"
+
+RUN_ID="${LABEL}-$(date +%Y%m%d-%H%M%S)-$$"
+LOG_FILE="$STATE_DIR/$RUN_ID.log"
+STATE_FILE="$STATE_DIR/$RUN_ID.state"
+# 最終メッセージだけを別ファイルへ落とす（log 全文を読まずに結論だけ取るため）。
+REPORT_FILE="$STATE_DIR/$RUN_ID.report"
+
+# パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
+nohup codex exec -C "$WORKDIR" -s workspace-write -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
+CODEX_PID=$!
+
+{
+  echo "run_id=$RUN_ID"
+  echo "pid=$CODEX_PID"
+  echo "log=$LOG_FILE"
+  echo "report=$REPORT_FILE"
+  echo "workdir=$WORKDIR"
+  echo "prompt=$PROMPT_FILE"
+  echo "mode=workspace-write"
+  echo "started_at=$(date +%s)"
+  echo "started_at_human=$(date '+%Y-%m-%d %H:%M:%S')"
+} > "$STATE_FILE"
+
+echo "$RUN_ID"

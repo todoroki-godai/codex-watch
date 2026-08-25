@@ -1,0 +1,53 @@
+#555（#556 / #557 を束ねた1変更単位）の実装。完成条件は
+[#555 の round 0 コメント](https://github.com/todoroki-godai/evolve-anything/issues/555#issuecomment-5403785247) が正典。
+
+## 何を直したか
+
+走査範囲が fence の info string allowlist（`_SHELL_FENCE_INFO`）で決まっていたため、
+**素のフェンス・別名 info string・4スペース字下げを選ぶだけで検査を素通り**できた。
+allowlist へ追記して塞ぐ方針は取らず、過剰検出側へ倒して構造ごと解消する。
+
+1. **scope**: 全 code block（backtick/tilde・info string 非依存・4スペース字下げ・未閉じは EOF まで）と
+   `.sh`/`.bash` 全体を shell 候補にする。Markdown 表は行形状（`|` 始まり `|` 終わり）で継続判定側から除外
+2. **論理行結合**: 末尾 `|`/`\` に加え、未閉じ `$(`・backtick・single/double quote を継続として扱う
+3. **heredoc**: 開始・終端を認識し、`sh`/`bash`/`zsh`/`ksh`/`dash` が実行する本文のみ検査対象に残す。
+   `cat` 等の本文は data zone として comment 除去・論理行結合・パターン照合を適用しない
+
+併せて `skill_vuln_scan.py` を 1194 → 747 行に分割（`skill_vuln_shell.py` / `skill_vuln_flow.py`）。
+
+## 実測
+
+| 入力 | before | after |
+|---|---|---|
+| info string 無しフェンスの `curl \| sh` 分断 | `[]` | `remote_exec.curl_pipe_sh` |
+| ` ```shell-session ` フェンス | `[]` | `remote_exec.curl_pipe_sh` |
+| 4スペース字下げ | `[]` | `remote_exec.curl_pipe_sh` |
+| 多行 `$( )` | `findings=[] flows=[]` | `remote_exec.shell_c_command_substitution` |
+| `cat <<EOF` 本文（誤検出） | `remote_exec.curl_pipe_sh` | `[]` |
+| `sh <<EOF` 本文（維持すべき） | `remote_exec.curl_pipe_sh` | `remote_exec.curl_pipe_sh` |
+
+陽性対照5件すべて緑（Markdown 表 / `# 見出し` / 正常な多行 `$()` / URL fragment 継続 / escaped `#`）。
+変異試験6件すべて赤。フルスイート `10026 passed, 2 skipped in 600.40s`。
+実 corpus dogfood `scanned_files=59 findings=0 flows=0 errors=0`。
+
+## 巡の履歴
+
+```
+前身 PR #537 で 設計0巡・コード9巡 消化済み（#555/#556/#557 への切り出しにより継承）
+巡 1 / コード / 2026-08-25 / d0be4ea0 / tacchi / 実測入力トークン数: <発注後に追記> / 族タグ: shell-scope-normalization
+```
+
+通常上限は前身から継承済みだが、`review-round-cap.md`「必須ゲートは巡数上限より優先する」に従い
+`review-routing.md` の系統独立レビュー1本は省略しない。実装は Codex（GPT 系）なので Claude 系1本。
+複雑さ判定は「簡単」（単一サブシステム・破壊的操作なし・公開データ契約なし・再現はすべて実測済み）。
+
+## 未探索として残したクラス（別 issue 候補・沈黙で消さない）
+
+- 同一コマンドに複数 heredoc を連結する構文
+- 動的な `$SHELL` / alias / 関数経由の shell 起動
+- delimiter を複数 quote 断片で構成する heredoc
+- process substitution・dialect 固有構文
+- 50,000 行を超える極端な深さ・サイズ
+
+refs #555 #556 #557 #537
+

@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# codex-review で起動した実行を見張り、状態が変わった時だけ1行を stdout へ出す。
+# Claude Code の Monitor ツールへそのまま渡す想定（stdout の1行＝1通知）。
+#
+# 出す事象は3つだけ。沈黙を成功と読み違えないため、失敗側も必ず出す:
+#   STALL   : 無音が閾値を超えた（はまり疑い）。以降 STALL は繰り返さない
+#   VERDICT : 判定行（'tokens used' の完全一致）が出た
+#   EXIT    : プロセスが終了した（判定行の有無も添える）
+#
+# 使い方:
+#   codex-watch <run id> [無音閾値秒(既定180)] [最大監視秒(既定3600)]
+set -euo pipefail
+
+RUN_ID="${1:?run id を指定してください}"
+STALL_SEC="${2:-${CODEX_WATCH_STALL_SEC:-180}}"
+MAX_SEC="${3:-3600}"
+
+STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
+STATE_FILE="$STATE_DIR/$RUN_ID.state"
+[[ -f "$STATE_FILE" ]] || { echo "ERROR: そのrun idの記録がありません: $RUN_ID"; exit 1; }
+
+PID=$(sed -n 's/^pid=//p' "$STATE_FILE")
+LOG=$(sed -n 's/^log=//p' "$STATE_FILE")
+REPORT="${REPORT:-${LOG%.log}.report}"
+
+mtime_of() { stat -f '%m' "$1" 2>/dev/null || echo 0; }
+
+stall_reported=0
+verdict_reported=0
+started=$(date +%s)
+
+while :; do
+  now=$(date +%s)
+
+  if [[ -f "$LOG" ]] && [[ "$verdict_reported" -eq 0 ]]; then
+    if [[ "$(grep -c '^tokens used$' "$LOG" || true)" -gt 0 ]]; then
+      echo "VERDICT: $RUN_ID 判定行が出ました（codex-status $RUN_ID で本文を確認）"
+      verdict_reported=1
+    fi
+  fi
+
+  if ! kill -0 "$PID" 2>/dev/null; then
+    # 正否は log の中身でなく -o の report が非空かで判定する。
+    # log の 'tokens used' は CLI バージョン差で出ないことがあり、
+    # 正しい report があるのに「異常終了」と誤報する（2026-08-25 レビュー指摘）。
+    if [[ -s "$REPORT" ]]; then
+      echo "EXIT: $RUN_ID プロセス終了・報告あり（$(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(head -1 "$REPORT")）"
+    else
+      echo "EXIT: $RUN_ID プロセス終了・報告ファイルが空（異常終了の疑い。tail -200 \"$LOG\" を確認）"
+    fi
+    exit 0
+  fi
+
+  if [[ -f "$LOG" ]] && [[ "$stall_reported" -eq 0 ]]; then
+    silent=$(( now - $(mtime_of "$LOG") ))
+    if [[ "$silent" -ge "$STALL_SEC" ]]; then
+      echo "STALL: $RUN_ID ログが${silent}秒無音（プロセスは生存）。はまり疑い"
+      stall_reported=1
+    fi
+  fi
+
+  if [[ $(( now - started )) -ge "$MAX_SEC" ]]; then
+    echo "TIMEOUT: $RUN_ID 監視上限${MAX_SEC}秒に到達（プロセスはまだ生存）"
+    exit 0
+  fi
+
+  sleep 15
+done

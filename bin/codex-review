@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# codex exec を起動し、状況確認に必要な状態ファイルを残す。
+#
+# なぜ要るか: codex exec は ~/.codex/sessions に記録を残さない（2026-08-25 実測: 90分以内の
+# セッションファイル0件）。観測できるのは stdout ログ1本だけで、「プロセスは生きているのに
+# ログが無音」という はまり を検知する手段が無かった（同日、#418 のレビューが22分無音のまま
+# 気づかれず放置された）。本コマンドは PID・ログ・起動時刻を状態ファイルへ書き、
+# codex-status / codex-watch が無音時間を機械的に判定できるようにする。
+#
+# 使い方:
+#   codex-review <対象ディレクトリ絶対パス> <プロンプトファイル> [ラベル]
+# 出力:
+#   run id を1行で返す。以降 codex-status <run id> / codex-watch <run id> で観測する。
+set -euo pipefail
+
+WORKDIR="${1:?対象ディレクトリの絶対パスを指定してください}"
+PROMPT_FILE="${2:?プロンプトファイルのパスを指定してください}"
+LABEL="${3:-review}"
+
+[[ "$WORKDIR" = /* ]] || { echo "対象ディレクトリは絶対パスで指定してください: $WORKDIR" >&2; exit 2; }
+[[ -d "$WORKDIR" ]] || { echo "対象ディレクトリがありません: $WORKDIR" >&2; exit 2; }
+[[ -f "$PROMPT_FILE" ]] || { echo "プロンプトファイルがありません: $PROMPT_FILE" >&2; exit 2; }
+# state は 1行1キーの行形式なので、改行を含む値は偽の行を注入できる（実測: パスに
+# skills_suppressed=no を仕込むと state に2行出る）。読める形で残せない入力は拒否する。
+# `[[ ]] && cmd` をループ末尾に置くと set -e 下で無言終了しうるため if で書く。
+for _v in "$WORKDIR" "$PROMPT_FILE" "$LABEL"; do
+  case "$_v" in
+    *$'\n'*) echo "引数に改行を含められません" >&2; exit 2 ;;
+  esac
+done
+
+STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
+mkdir -p "$STATE_DIR"
+
+# 巡数ゲート（review-round-cap.md / design-gate-v3.md）。
+# なぜ要るか: レビューの発注は無制限に繰り返すと軍拡競争になる（rule 出所の #415/#537/#538）。
+# REVIEW_TARGET 必須（none:<理由> は計測A/Bとゲート自身のprobeのみ・累計3件まで）。
+# CODEX_REVIEW_NO_GATE=<理由> で例外的に迂回できるが理由必須・state に記録される。
+GATE_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/round_gate.py"
+# set -e 下では `VAR=$(cmd)` の cmd が非0を返した瞬間にシェルが即終了し、直後の `$?` 取得へ
+# 到達できない（blocked=4 / indeterminate=5 / usage=2 を握りつぶして死ぬ）。ここだけ一時的に無効化する。
+set +e
+GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --json)"
+GATE_EXIT=$?
+set -e
+if [[ -n "${CODEX_REVIEW_GATE_CHECK:-}" ]]; then
+  # 判定だけ行って終了する（実発注はしない）。テスト・dry-run 用の経路。
+  echo "$GATE_JSON"
+  exit "$GATE_EXIT"
+fi
+if [[ "$GATE_EXIT" -ne 0 ]]; then
+  echo "巡数ゲートで拒否されました: $GATE_JSON" >&2
+  exit "$GATE_EXIT"
+fi
+
+RUN_ID="${LABEL}-$(date +%Y%m%d-%H%M%S)-$$"
+LOG_FILE="$STATE_DIR/$RUN_ID.log"
+STATE_FILE="$STATE_DIR/$RUN_ID.state"
+# 最終メッセージだけを別ファイルへ落とす（log 全文を読まずに結論だけ取るため）。
+REPORT_FILE="$STATE_DIR/$RUN_ID.report"
+
+# 外部スキル本文の読み込みを抑止する前置きを足す。
+# なぜ要るか: codex は発注のたびに ~/.agents/skills/gstack/review/SKILL.md（1,852行・105KB）を
+# 全文読み、それが以降のターンで再送されるため 1本あたりの消費が数倍になる（2026-08-25 実測:
+# 同一 HEAD・同一プロンプトの A/B で 140,514 → 37,899 トークン＝73%減。判定・[Must]/[Should]
+# の件数と中身は同一）。レビュー観点は発注プロンプト側に完成条件と固定質問として書く運用なので、
+# スキル本文は不要。スキル本文に頼りたい発注だけ CODEX_REVIEW_ALLOW_SKILLS=1 で外す。
+EFFECTIVE_PROMPT="$PROMPT_FILE"
+case "${CODEX_REVIEW_ALLOW_SKILLS:-}" in
+  1|true|yes) SKILLS_SUPPRESSED=no ;;
+  *)          SKILLS_SUPPRESSED=yes ;;
+esac
+if [[ "$SKILLS_SUPPRESSED" == yes ]]; then
+  # 生成先は mktemp で排他確保する。第2引数が生成先と同じパスだと、リダイレクトが
+  # 原本を先に空にして前置きだけが届く（再発注で前回の .prompt を使い回すと起きる）。
+  EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
+  {
+    echo '**重要: `~/.agents` 配下のスキル定義（SKILL.md 等）を読み込んではならない。レビューの観点・完成条件・必ず答えることは、すべてこの指示文に書かれている。対象リポジトリ内のファイル（AGENTS.md / CLAUDE.md / テスト / 呼び出し元 / 設定を含む）は必要に応じて読んでよい。**'
+    echo
+    cat "$PROMPT_FILE"
+  } > "$EFFECTIVE_PROMPT"
+fi
+
+# パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
+# 発注ごとに model / reasoning effort を変えられるようにする（未指定なら config.toml の既定）。
+# macOS 既定の bash 3.2 では空配列の "${a[@]}" が set -u で落ちるので +展開で渡す。
+EFFORT_ARGS=()
+[[ -n "${CODEX_REVIEW_MODEL:-}" ]] && EFFORT_ARGS+=(-m "$CODEX_REVIEW_MODEL")
+[[ -n "${CODEX_REVIEW_EFFORT:-}" ]] && EFFORT_ARGS+=(-c "model_reasoning_effort=\"$CODEX_REVIEW_EFFORT\"")
+nohup codex exec -C "$WORKDIR" -s read-only ${EFFORT_ARGS[@]+"${EFFORT_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
+CODEX_PID=$!
+
+# 巡数ゲートの判定結果（JSON）を state 用の値へ分解する。gh/git を再度呼ばず、gate が
+# 既に確定した値をそのまま state に写す（record_target が空＝ブロック中/usage error 相当。
+# 本来ここには到達しない想定だが、防御的に空のまま record へ渡し record 側で無害にスキップさせる）。
+GATE_FIELDS="$(python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+print(d.get('record_target') or '')
+print(d.get('total_round', ''))
+print(d.get('head_sha') or '')
+" "$GATE_JSON" 2>/dev/null || true)"
+GATE_TARGET="$(sed -n '1p' <<<"$GATE_FIELDS")"
+GATE_ROUND="$(sed -n '2p' <<<"$GATE_FIELDS")"
+GATE_HEAD="$(sed -n '3p' <<<"$GATE_FIELDS")"
+
+{
+  echo "run_id=$RUN_ID"
+  echo "pid=$CODEX_PID"
+  echo "log=$LOG_FILE"
+  echo "report=$REPORT_FILE"
+  echo "workdir=$WORKDIR"
+  echo "prompt=$PROMPT_FILE"
+  echo "effective_prompt=$EFFECTIVE_PROMPT"
+  echo "skills_suppressed=$SKILLS_SUPPRESSED"
+  echo "effort=${CODEX_REVIEW_EFFORT:-既定}"
+  echo "model=${CODEX_REVIEW_MODEL:-既定}"
+  echo "prompt_bytes=$(wc -c < "$EFFECTIVE_PROMPT" | tr -d ' ')"
+  echo "started_at=$(date +%s)"
+  echo "started_at_human=$(date '+%Y-%m-%d %H:%M:%S')"
+  echo "review_target=$GATE_TARGET"
+  echo "round=$GATE_ROUND"
+  echo "head_sha=$GATE_HEAD"
+  echo "reviewer=$LABEL"
+} > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+
+# 巡行を本文へ追記する（none:/bypass は record 側が無害にスキップする）。失敗しても
+# 発注自体は既に開始済みなので dispatch を殺さない（stderr へ警告のみ）。
+python3 "$GATE_PY" record --state-file "$STATE_FILE" >&2 || echo "巡行の本文追記に失敗しました（run_id=$RUN_ID）。手動確認してください" >&2
+
+echo "$RUN_ID"

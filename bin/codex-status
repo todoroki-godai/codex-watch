@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# codex-review で起動した実行の状況を1画面で表示する。
+#
+# 判定は3点のみ（codex exec が観測させてくれるのはこれだけ・2026-08-25 実測）:
+#   ①プロセスが生きているか ②ログが何秒無音か ③判定行が出たか
+# ②が閾値を超えていたら「はまり」を疑う。①だけを見ると、生きているのに何も進んでいない
+# 状態を「実行中」と誤読する（#418 のレビューを22分放置した実測がある）。
+#
+# 使い方:
+#   codex-status            # 直近の実行
+#   codex-status <run id>   # 特定の実行
+#   codex-status --all      # 全実行の一覧
+set -euo pipefail
+
+STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
+STALL_SEC="${CODEX_WATCH_STALL_SEC:-180}"
+
+[[ -d "$STATE_DIR" ]] || { echo "実行記録がありません（$STATE_DIR）" >&2; exit 1; }
+
+mtime_of() { stat -f '%m' "$1" 2>/dev/null || echo 0; }
+
+# 最後の 'tokens used' 以降だけを抜く（完全一致。部分一致はプロンプト内の同語を拾う）。
+extract_answer() {
+  awk '/^tokens used$/{buf="";f=1;next} f{buf=buf $0 "\n"} END{printf "%s",buf}' "$1"
+}
+
+show_one() {
+  local state_file="$1"
+  # shellcheck disable=SC1090
+  local run_id pid log workdir started_at
+  run_id=$(sed -n 's/^run_id=//p' "$state_file")
+  pid=$(sed -n 's/^pid=//p' "$state_file")
+  log=$(sed -n 's/^log=//p' "$state_file")
+  workdir=$(sed -n 's/^workdir=//p' "$state_file")
+  started_at=$(sed -n 's/^started_at=//p' "$state_file")
+
+  local now alive elapsed silent verdict_count size lines
+  now=$(date +%s)
+  if kill -0 "$pid" 2>/dev/null; then alive="生存"; else alive="終了"; fi
+  elapsed=$(( now - started_at ))
+  if [[ -f "$log" ]]; then
+    silent=$(( now - $(mtime_of "$log") ))
+    size=$(wc -c < "$log" | tr -d ' ')
+    lines=$(wc -l < "$log" | tr -d ' ')
+    verdict_count=$(grep -c '^tokens used$' "$log" || true)
+  else
+    silent=-1; size=0; lines=0; verdict_count=0
+  fi
+
+  local diagnosis
+  if [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
+    diagnosis="完了（判定行あり）"
+  elif [[ "$alive" == "終了" && "$verdict_count" -eq 0 ]]; then
+    diagnosis="異常終了（判定行なし・ログを確認）"
+  elif [[ "$silent" -ge "$STALL_SEC" ]]; then
+    diagnosis="はまり疑い（${silent}秒無音・閾値${STALL_SEC}秒）"
+  else
+    diagnosis="実行中"
+  fi
+
+  echo "run_id   : $run_id"
+  echo "状態     : $diagnosis"
+  echo "プロセス : $alive (pid=$pid)"
+  echo "経過     : $(( elapsed / 60 ))分$(( elapsed % 60 ))秒"
+  echo "無音     : $(( silent / 60 ))分$(( silent % 60 ))秒"
+  echo "判定行   : ${verdict_count}件（'tokens used' の完全一致）"
+  echo "ログ     : $log (${size}B / ${lines}行)"
+  echo "対象     : $workdir"
+  if [[ "$verdict_count" -gt 0 ]]; then
+    echo "--- 回答（最後の tokens used 以降）---"
+    extract_answer "$log"
+  else
+    echo "--- ログ末尾3行 ---"
+    tail -3 "$log" 2>/dev/null || true
+  fi
+}
+
+if [[ "${1:-}" == "--all" ]]; then
+  for f in "$STATE_DIR"/*.state; do
+    [[ -f "$f" ]] || continue
+    show_one "$f"; echo "---"
+  done
+  exit 0
+fi
+
+if [[ -n "${1:-}" ]]; then
+  target="$STATE_DIR/$1.state"
+  [[ -f "$target" ]] || { echo "そのrun idの記録がありません: $1" >&2; exit 1; }
+else
+  target=$(ls -t "$STATE_DIR"/*.state 2>/dev/null | head -1)
+  [[ -n "$target" ]] || { echo "実行記録がありません" >&2; exit 1; }
+fi
+show_one "$target"
