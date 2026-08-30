@@ -31,9 +31,10 @@ LABEL="${3:-impl}"
 [[ -f "$PROMPT_FILE" ]] || { echo "プロンプトファイルがありません: $PROMPT_FILE" >&2; exit 2; }
 
 # --- 安全ガード: 共有 checkout / main 作業コピーへの書き込みを拒否する ---
+GIT_DIR_ABS="$(git -C "$WORKDIR" rev-parse --absolute-git-dir 2>/dev/null || true)"
+GIT_COMMON_ABS="$(git -C "$WORKDIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+
 if [[ "${CODEX_IMPL_ALLOW_MAIN:-0}" != "1" ]]; then
-  GIT_DIR_ABS="$(git -C "$WORKDIR" rev-parse --absolute-git-dir 2>/dev/null || true)"
-  GIT_COMMON_ABS="$(git -C "$WORKDIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
   if [[ -z "$GIT_DIR_ABS" ]]; then
     echo "作業先が git リポジトリではありません: $WORKDIR" >&2
     echo "実装は頭が用意した worktree で行ってください（git worktree add）。" >&2
@@ -58,8 +59,17 @@ STATE_FILE="$STATE_DIR/$RUN_ID.state"
 # 最終メッセージだけを別ファイルへ落とす（log 全文を読まずに結論だけ取るため）。
 REPORT_FILE="$STATE_DIR/$RUN_ID.report"
 
+# linked worktree では .git が「共有 checkout 側の共通 git dir」を指すため、既定の workspace-write
+# （cwd 配下のみ書込可）では index.lock も作れず git add / commit が必ず失敗する。
+# 共通 git dir だけを writable_roots に足す。共有 checkout の working tree は書込不可のまま
+# （未レビューコードがユーザー実行環境で動く経路は塞いだまま）。
+SANDBOX_ARGS=()
+if [[ -n "$GIT_COMMON_ABS" && "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]]; then
+  SANDBOX_ARGS+=(-c "sandbox_workspace_write.writable_roots=[\"$GIT_COMMON_ABS\"]")
+fi
+
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
-nohup codex exec -C "$WORKDIR" -s workspace-write -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
+nohup codex exec -C "$WORKDIR" -s workspace-write "${SANDBOX_ARGS[@]}" -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
 {
@@ -70,6 +80,7 @@ CODEX_PID=$!
   echo "workdir=$WORKDIR"
   echo "prompt=$PROMPT_FILE"
   echo "mode=workspace-write"
+  echo "writable_git_common=${GIT_COMMON_ABS:-}"
   echo "started_at=$(date +%s)"
   echo "started_at_human=$(date '+%Y-%m-%d %H:%M:%S')"
 } > "$STATE_FILE"
