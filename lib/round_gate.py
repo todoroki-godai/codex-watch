@@ -214,8 +214,51 @@ def same_head_dispatch_count(state_dir: Path, target_key: str, head_sha: str) ->
     for p in state_dir.glob("*.state"):
         d = read_state_file(p)
         if d.get("review_target") == target_key and d.get("head_sha") == head_sha:
+            if dispatch_produced_nothing(d):
+                continue
             count += 1
     return count
+
+
+def dispatch_produced_nothing(d: dict[str, str]) -> bool:
+    """その発注が「1文字も返さずに終わった」＝レビューが実行されなかったか。
+
+    数えるのは**レビューが実行された回数**であって発注を試みた回数ではない。外部モデルの
+    容量エラーや起動失敗（PATH 不備等）で codex が即死すると report が空のまま state だけ
+    残る。これを上限に数えると、外部が不調な日は空振りだけで上限を食いつぶし、
+    **レビューを一切通せなくなる**（2026-08-31 実測: 容量エラー2本 + 起動失敗1本で上限到達）。
+
+    「数えない」と判定するのは次の**両方**が成り立つときだけ:
+
+    1. report が存在しない、または 0 バイト
+    2. その発注のプロセスが既に生きていない
+
+    **実行中（プロセス生存）は report 未生成でも数える**。ここを数えないと、並行に
+    無制限へ発注できる抜け道になる。
+
+    判定できないものは**数える側（厳しい側）へ倒す**: pid / report が state に無い旧形式、
+    pid が数値でない、`os.kill` が PermissionError を返す（＝別ユーザーの生存プロセス）。
+    PID 再利用で「死んでいるのに生きている」と誤判定した場合も数える側に倒れるため、
+    誤りは常に上限を厳しくする方向にしか働かない。
+    """
+    report = d.get("report", "")
+    if not report:
+        return False  # 報告先が分からない＝判定不能。数える
+    try:
+        if Path(report).stat().st_size > 0:
+            return False  # 出力がある＝レビューは成立した
+    except OSError:
+        pass  # 存在しない＝空と同じ扱い
+    pid_raw = d.get("pid", "")
+    if not pid_raw.isdigit():
+        return False  # pid 不明＝判定不能。数える
+    try:
+        os.kill(int(pid_raw), 0)
+    except ProcessLookupError:
+        return True  # 死んでいて出力なし＝レビュー不成立
+    except OSError:
+        return False  # PermissionError 等は生存とみなす
+    return False  # 生存中
 
 
 def normalize_workdir(workdir: str) -> str:

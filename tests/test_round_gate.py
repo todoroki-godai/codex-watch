@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -669,3 +670,106 @@ def test_same_head_dispatch_limit_value_is_pinned():
     （同一巡の発注上限を静かに緩められる）。値自体をここで固定して、その変異を赤くする。
     """
     assert rg.MAX_SAME_HEAD_DISPATCHES == 3
+
+
+# ---------------------------------------------------------------------------
+# 「1文字も返さずに終わった発注」を同一巡の本数に数えない
+#
+# 外部モデルの容量エラー・起動失敗（PATH 不備等）で codex が即死すると、report が
+# 空のまま state だけが残る。これを数えると、外部が不調な日は上限 3 本を空振りで
+# 食いつぶして**レビューを一切通せなくなる**。レビューが実行された回数を数える。
+# ---------------------------------------------------------------------------
+
+
+def _dead_pid() -> int:
+    """確実に生きていない PID を得る（起動して即 wait し回収済みにする）。"""
+    import subprocess
+    p = subprocess.Popen(["true"])
+    p.wait()
+    return p.pid
+
+
+def write_state_full(state_dir, run_id, target, head, started_at, pid, report_path):
+    lines = [
+        f"run_id={run_id}",
+        f"review_target={target}",
+        f"head_sha={head}",
+        f"started_at={started_at}",
+    ]
+    if pid is not None:
+        lines.append(f"pid={pid}")
+    if report_path is not None:
+        lines.append(f"report={report_path}")
+    (state_dir / f"{run_id}.state").write_text("\n".join(lines) + "\n")
+
+
+class TestAbortedDispatchNotCounted:
+    def test_missing_report_and_dead_process_is_not_counted(self, tmp_path):
+        """陰性: report が生成されず、プロセスも死んでいる＝レビュー不成立。数えない。"""
+        write_state_full(tmp_path, "r1", "pr:o/r#1", "sha1", 100,
+                         _dead_pid(), str(tmp_path / "r1.report"))
+        assert rg.same_head_dispatch_count(tmp_path, "pr:o/r#1", "sha1") == 0
+
+    def test_empty_report_and_dead_process_is_not_counted(self, tmp_path):
+        """陰性: report ファイルはあるが 0 バイトで、プロセスも死んでいる。数えない。"""
+        rp = tmp_path / "r2.report"
+        rp.write_text("")
+        write_state_full(tmp_path, "r2", "pr:o/r#1", "sha1", 100, _dead_pid(), str(rp))
+        assert rg.same_head_dispatch_count(tmp_path, "pr:o/r#1", "sha1") == 0
+
+    def test_nonempty_report_is_counted(self, tmp_path):
+        """陽性対照: report が非空なら、プロセスが終わっていても数える（レビューは成立した）。"""
+        rp = tmp_path / "r3.report"
+        rp.write_text("修正要\n")
+        write_state_full(tmp_path, "r3", "pr:o/r#1", "sha1", 100, _dead_pid(), str(rp))
+        assert rg.same_head_dispatch_count(tmp_path, "pr:o/r#1", "sha1") == 1
+
+    def test_running_process_is_counted_even_without_report(self, tmp_path):
+        """陽性対照: 実行中（プロセス生存）は report 未生成でも数える。
+        ここを数えないと、並行に無制限へ発注できる抜け道になる。"""
+        write_state_full(tmp_path, "r4", "pr:o/r#1", "sha1", 100,
+                         os.getpid(), str(tmp_path / "r4.report"))
+        assert rg.same_head_dispatch_count(tmp_path, "pr:o/r#1", "sha1") == 1
+
+    def test_state_without_pid_or_report_is_counted(self, tmp_path):
+        """陽性対照（後方互換・fail-safe）: pid / report が state に無い旧形式は
+        判定できないので**数える側**へ倒す。"""
+        write_state(tmp_path, "r5", "pr:o/r#1", "sha1", 100)
+        assert rg.same_head_dispatch_count(tmp_path, "pr:o/r#1", "sha1") == 1
+
+    def test_empty_report_without_pid_is_counted(self, tmp_path):
+        """陽性対照（fail-safe の要）: report が空でも **pid が state に無ければ**
+        生死を判定できないので数える。pid 不明を空振り扱いにすると、旧形式の state が
+        すべて上限から消えて上限が骨抜きになる。"""
+        rp = tmp_path / "r6.report"
+        rp.write_text("")
+        write_state_full(tmp_path, "r6", "pr:o/r#1", "sha1", 100, None, str(rp))
+        assert rg.same_head_dispatch_count(tmp_path, "pr:o/r#1", "sha1") == 1
+
+    def test_empty_report_with_non_numeric_pid_is_counted(self, tmp_path):
+        """陽性対照: pid が数値でない壊れた state も判定不能として数える。"""
+        rp = tmp_path / "r7.report"
+        rp.write_text("")
+        write_state_full(tmp_path, "r7", "pr:o/r#1", "sha1", 100, "not-a-pid", str(rp))
+        assert rg.same_head_dispatch_count(tmp_path, "pr:o/r#1", "sha1") == 1
+
+    def test_run_gate_does_not_block_when_all_dispatches_aborted(self, tmp_path, monkeypatch):
+        """陰性（統合）: 3本すべてが空振りなら、4本目は上限で拒否されない。"""
+        monkeypatch.setattr(rg, "git_remote_repo", lambda workdir: ("o", "r"))
+        monkeypatch.setattr(rg, "git_head_sha", lambda workdir: "shaFIXED")
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        for i in range(rg.MAX_SAME_HEAD_DISPATCHES):
+            write_state_full(state_dir, f"a{i}", "issue:o/r#1", "shaFIXED", 100 + i,
+                             _dead_pid(), str(state_dir / f"a{i}.report"))
+        res = rg.run_gate(
+            workdir=str(tmp_path),
+            target_raw="issue:o/r#1",
+            state_dir=state_dir,
+            fetch_body=lambda t: "",
+            predecessor_env_raw="",
+            no_gate_reason="",
+        )
+        assert res["status"] != "blocked" or "発注上限" not in res["message"], (
+            "空振りだけで上限に達したと判定してはいけない"
+        )
