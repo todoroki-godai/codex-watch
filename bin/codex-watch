@@ -2,13 +2,24 @@
 # codex-review で起動した実行を見張り、状態が変わった時だけ1行を stdout へ出す。
 # Claude Code の Monitor ツールへそのまま渡す想定（stdout の1行＝1通知）。
 #
-# 出す事象は3つだけ。沈黙を成功と読み違えないため、失敗側も必ず出す:
-#   STALL   : 無音が閾値を超えた（はまり疑い）。以降 STALL は繰り返さない
-#   VERDICT : 判定行（'tokens used' の完全一致）が出た
-#   EXIT    : プロセスが終了した（判定行の有無も添える）
+# 出す事象は4つ。沈黙を成功と読み違えないため、失敗側も必ず出す:
+#   STALL    : 無音が閾値を超えた（はまり疑い）。以降 STALL は繰り返さない
+#   VERDICT  : 判定行（'tokens used' の完全一致）が出た
+#   FILTERED : OpenAI側のセキュリティフィルタで遮断された（対策3・2026-08-26追加）
+#   EXIT     : プロセスが終了した（判定行の有無も添える）
+#
+# FILTERED を要れた理由: 'tokens used' はフィルタ遮断時にも出力される（実測:
+# ~/.codex-watch/rev325impl-20260826-120028-98072.log は最終メッセージが遮断されたのに
+# 'tokens used\n241,992' が末尾に出ている）。そのため FILTERED を作らずVERDICT判定だけに頼ると、
+# 分析が遮断され report が空のまま「判定行が出た＝成功」という偽陽性を出す。
 #
 # 使い方:
 #   codex-watch <run id> [無音閾値秒(既定180)] [最大監視秒(既定3600)]
+# report 再構築（対策1の副作用対応・2026-08-26追加）: 逐次出力運用では -o の report が
+# 最終セクションだけになり判定行を失うことがある（lib/report_rebuild.sh 冒頭コメント参照）。
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/report_rebuild.sh"
+
 set -euo pipefail
 
 RUN_ID="${1:?run id を指定してください}"
@@ -25,12 +36,32 @@ REPORT="${REPORT:-${LOG%.log}.report}"
 
 mtime_of() { stat -f '%m' "$1" 2>/dev/null || echo 0; }
 
+# フィルタ遮断時にログへ出る固定文言（OpenAI側）。実測1件のみに基づく部分一致で、
+# 文言が変われば素通りする（網羅ではない）。
+FILTER_PATTERN='This content was flagged for possible cybersecurity risk'
+# 部分結果の抽出コマンド（'codex' role のメッセージ区間だけを拾い、hook ノイズを除く）。
+# 実測: rev325impl-20260826-120028-98072.log で3セクションの分析経過が回収できた。
+extract_partial_cmd() {
+  printf "awk '/^codex\$/{print \"=== SECTION ===\"; f=1; next} /^(user|hook: )/{f=0} f' %q" "$1"
+}
+
 stall_reported=0
 verdict_reported=0
+filtered_reported=0
 started=$(date +%s)
 
 while :; do
   now=$(date +%s)
+
+  # FILTERED は VERDICT より先に判定する。'tokens used' はフィルタ遮断時にも出力されるため
+  # （実測: 上記ログ）、先に検出して verdict_reported を立て、偽陽性の VERDICT を抑止する。
+  if [[ -f "$LOG" ]] && [[ "$filtered_reported" -eq 0 ]]; then
+    if grep -qF "$FILTER_PATTERN" "$LOG" 2>/dev/null; then
+      echo "FILTERED: $RUN_ID OpenAI側のセキュリティフィルタで遮断されました。分析は完了していた可能性が高い（-o の report は空になる設計上の制約）。部分結果の抽出: $(extract_partial_cmd "$LOG")"
+      filtered_reported=1
+      verdict_reported=1
+    fi
+  fi
 
   if [[ -f "$LOG" ]] && [[ "$verdict_reported" -eq 0 ]]; then
     if [[ "$(grep -c '^tokens used$' "$LOG" || true)" -gt 0 ]]; then
@@ -40,11 +71,24 @@ while :; do
   fi
 
   if ! kill -0 "$PID" 2>/dev/null; then
-    # 正否は log の中身でなく -o の report が非空かで判定する。
+    # report を組み立て直してから判定する（対策1の副作用対応）。-o の report が非空かつ
+    # 1行目が判定行として妥当ならそのまま使い、そうでなければ log から結合して上書きする
+    # （元の -o 出力は "$REPORT.raw" に温存。rebuild できなければ何もしない＝空のまま）。
+    rebuild_report_if_needed "$LOG" "$REPORT" || true
+    # 正否は log の中身でなく -o の report（必要なら上で再構築済み）が非空かで判定する。
     # log の 'tokens used' は CLI バージョン差で出ないことがあり、
     # 正しい report があるのに「異常終了」と誤報する（2026-08-25 レビュー指摘）。
-    if [[ -s "$REPORT" ]]; then
-      echo "EXIT: $RUN_ID プロセス終了・報告あり（$(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(head -1 "$REPORT")）"
+    # FILTERED を先に分岐する: rebuild で部分的な reasoning セクションが report に復元
+    # されることがあるが（フィルタ遮断ログにも 'codex' role の途中経過は残るため）、
+    # それは「完了した分析」ではないので、通常の「報告あり」より遮断済みである旨を優先して出す。
+    if [[ "$filtered_reported" -eq 1 ]]; then
+      if [[ -s "$REPORT" ]]; then
+        echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（部分結果をreportへ復元: $(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）。全文は $(extract_partial_cmd "$LOG")"
+      else
+        echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（report空は想定内）。部分結果の抽出: $(extract_partial_cmd "$LOG")"
+      fi
+    elif [[ -s "$REPORT" ]]; then
+      echo "EXIT: $RUN_ID プロセス終了・報告あり（$(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）"
     else
       echo "EXIT: $RUN_ID プロセス終了・報告ファイルが空（異常終了の疑い。tail -200 \"$LOG\" を確認）"
     fi

@@ -10,6 +10,12 @@
 #   codex-status            # 直近の実行
 #   codex-status <run id>   # 特定の実行
 #   codex-status --all      # 全実行の一覧
+# report 再構築（対策1の副作用対応・2026-08-26追加）: 逐次出力運用では -o の report が
+# 最終セクションだけになり判定行を失うことがある（lib/report_rebuild.sh 冒頭コメント参照）。
+# codex-watch と同じ共有関数を使う（正本を二重管理しない）。
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/report_rebuild.sh"
+
 set -euo pipefail
 
 STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
@@ -66,8 +72,22 @@ show_one() {
   echo "判定行   : ${verdict_count}件（'tokens used' の完全一致）"
   echo "ログ     : $log (${size}B / ${lines}行)"
   echo "対象     : $workdir"
-  if [[ "$verdict_count" -gt 0 ]]; then
-    echo "--- 回答（最後の tokens used 以降）---"
+  if [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
+    # 終了後は report を組み立て直してから表示する（逐次出力運用では log の
+    # 'tokens used' 以降＝最終セクションだけの複製で、report と同じ欠落を持つ。
+    # 2026-08-26 rev435r2 実測: どちらも最終節のみで判定行を失っていた）。
+    local report
+    report="${log%.log}.report"
+    rebuild_report_if_needed "$log" "$report" || true
+    if [[ -s "$report" ]]; then
+      echo "--- 判定: $(extract_verdict_line "$report") / report ($(wc -l < "$report" | tr -d ' ') 行) ---"
+      cat "$report"
+    else
+      echo "--- 回答（最後の tokens used 以降・report再構築不可のためlog末尾）---"
+      extract_answer "$log"
+    fi
+  elif [[ "$verdict_count" -gt 0 ]]; then
+    echo "--- 回答（最後の tokens used 以降。実行中のため report は未確定）---"
     extract_answer "$log"
   else
     echo "--- ログ末尾3行 ---"
