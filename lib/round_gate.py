@@ -130,6 +130,31 @@ def is_none_target(raw: str) -> str | None:
 # （2026-09-03）。ここではその判定を発注口1つで機械的に fail-closed にする。
 
 
+# goal-cut が 0 でも発注を認める唯一の口（review.md「必須ゲートは巡数上限より優先する」の機械化）。
+#
+# なぜ要るか: 設計文書・指示文書は定義上コードを1行も変えないため、目的の物差し（実装が入ったか等）
+# では**必ず 0** になる。一方 review.md は「実装に着手する直前に、種別=設計 の発注行を確認する。
+# 0件なら着手不可」「指示文書は行数が小さくても必ずレビューを1巡入れる」を必須ゲートとして課す。
+# ⑥の 0 ブロックだけを機械化すると、この2つの必須ゲートが構造的に通過不能になり、
+# review.md 本文の優先順位（必須ゲート > ⑥）と矛盾する（2026-09-03 実測: #608 の設計レビューが
+# 発注できず停止）。
+#
+# 抜け道にしないための設計:
+# - 値は下記の**固定集合のみ**。自由記述を認めない（「必須ゲートだから」と書けば通る形にしない）
+# - 集合は review.md が名指ししている必須ゲートに限る。増やすときは review.md 側に対応する
+#   条項があることを確認する
+# - 0 以外の goal-cut には影響しない。形式検査（数値・単位・根拠・取得日）も従来どおり全て適用する
+# - 使った事実は state の `mandatory_gate=` に残り、巡行の記録から後で数えられる
+MANDATORY_GATES = {
+    # 実装に着手する直前に必要な、別系統による設計レビュー1巡
+    "design-review-before-implementation",
+    # rules / SKILL.md / CLAUDE.md / agent 定義など、挙動を変える指示文書のレビュー1巡
+    "instruction-doc-review",
+    # コードと指示文書に課される「書き手と別系統のレビューを最低1本」
+    "independent-lineage",
+}
+
+
 @dataclass(frozen=True)
 class GoalCutCheck:
     status: str  # "ok" | "not_applicable" | "blocked"
@@ -151,7 +176,27 @@ def is_single_line(value: str) -> bool:
     return value == "" or value.splitlines() == [value]
 
 
-def check_goal_cut(raw: str) -> GoalCutCheck:
+def check_mandatory_gate(raw: str) -> tuple[str, str]:
+    """REVIEW_MANDATORY_GATE を検査し `(値, エラー文)` を返す（エラー文が空なら通過）。
+
+    未指定は通過（値は空文字）。指定された場合は `MANDATORY_GATES` の固定集合に完全一致すること。
+    「1行であること」は state への行注入防止のため goal-cut と同じ条件を課す。
+    """
+    value = (raw or "").strip()
+    if not is_single_line(raw or ""):
+        return "", "REVIEW_MANDATORY_GATE に改行相当の文字を含められません（1行であること）。"
+    if not value:
+        return "", ""
+    if value not in MANDATORY_GATES:
+        allowed = " / ".join(sorted(MANDATORY_GATES))
+        return "", (
+            f"REVIEW_MANDATORY_GATE の値が不正です: {value!r}。"
+            f"指定できるのは review.md が名指しする必須ゲートのみです: {allowed}"
+        )
+    return value, ""
+
+
+def check_goal_cut(raw: str, mandatory_gate: str = "") -> GoalCutCheck:
     """REVIEW_GOAL_CUT を検査する（実発注 pr:/issue: のみ呼び出し側が使う）。
 
     受理する形式（厳密一致）: `<数値><単位> | 根拠: <再現手段または出所> | 取得日: YYYY-MM-DD`
@@ -195,11 +240,14 @@ def check_goal_cut(raw: str) -> GoalCutCheck:
         return GoalCutCheck(
             "blocked", f"REVIEW_GOAL_CUT の数値部が不正です: {number_str!r}。{GOAL_CUT_EXAMPLE}", value
         )
-    if number == 0:
+    if number == 0 and mandatory_gate not in MANDATORY_GATES:
         return GoalCutCheck(
             "blocked",
             "REVIEW_GOAL_CUT が0です。目的の物差しで0の成果物は発注せず issue へ落としてください"
-            "（review.md 入口条件⑥）。",
+            "（review.md 入口条件⑥）。"
+            "review.md が必須と定めるゲート（実装着手前の設計レビュー1巡・指示文書のレビュー1巡・"
+            "系統独立レビュー）のための発注に限り、REVIEW_MANDATORY_GATE にその名前を指定すれば"
+            f"発注できます: {' / '.join(sorted(MANDATORY_GATES))}",
             value,
         )
     try:
@@ -818,6 +866,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     gate.add_argument("--predecessor", default=os.environ.get("REVIEW_PREDECESSOR", ""))
     gate.add_argument("--no-gate-reason", default=os.environ.get("CODEX_REVIEW_NO_GATE", ""))
     gate.add_argument("--goal-cut", default=os.environ.get("REVIEW_GOAL_CUT", ""))
+    gate.add_argument(
+        "--mandatory-gate",
+        default=os.environ.get("REVIEW_MANDATORY_GATE", ""),
+        help="goal-cut が0でも発注を認める必須ゲート名（review.md が名指しするものに限る）",
+    )
     gate.add_argument("--json", action="store_true")
 
     record = sub.add_parser("record", help="gate 通過後、巡行を本文へ追記する")
@@ -851,6 +904,7 @@ def run_gate(
     no_gate_reason: str,
     fetch_body=gh_fetch_body,
     goal_cut: str = "",
+    mandatory_gate: str = "",
 ) -> dict:
     """判定のみを行い、副作用（body 追記・state 書込）は行わない。呼び出し側（bash）が
     exit code を見て dispatch の可否を決め、通過時に record を別途呼ぶ。
@@ -864,6 +918,19 @@ def run_gate(
     なので、内容検査を迂回できる bypass でも迂回させない（2026-09-03 codex レビュー Must1）。
     """
     goal_cut_value = goal_cut or ""
+    mandatory_gate_value, mandatory_gate_error = check_mandatory_gate(mandatory_gate)
+    if mandatory_gate_error:
+        # 不正な値は「未指定」に倒さず即 blocked にする（typo が黙って通常ゲートへ落ちると、
+        # 使ったつもりの例外が効かないまま 0 で止まり、原因が読めなくなる）。
+        return {
+            "status": "blocked",
+            "exit_code": EXIT_BLOCKED,
+            "message": mandatory_gate_error,
+            "record_target": "",
+            "goal_cut": goal_cut_value,
+            "goal_cut_status": "blocked",
+            "mandatory_gate": "",
+        }
     if not is_single_line(goal_cut_value):
         return {
             "status": "blocked",
@@ -944,7 +1011,7 @@ def run_gate(
         head_sha = git_head_sha(workdir)
 
     # goal-cut ゲート（review.md 入口条件⑥）。実発注（pr:/issue:）は必須・巡数判定より前に検査する。
-    goal_cut_check = check_goal_cut(goal_cut)
+    goal_cut_check = check_goal_cut(goal_cut, mandatory_gate_value)
     if goal_cut_check.status == "blocked":
         return {
             "status": "blocked",
@@ -953,6 +1020,7 @@ def run_gate(
             "record_target": "",
             "goal_cut": goal_cut_check.value,
             "goal_cut_status": "blocked",
+            "mandatory_gate": mandatory_gate_value,
         }
 
     env_predecessors = parse_predecessor_env(predecessor_env_raw)
@@ -1103,7 +1171,10 @@ def main(argv: list[str] | None = None) -> int:
                 args.predecessor,
                 args.no_gate_reason,
                 goal_cut=args.goal_cut,
+                mandatory_gate=args.mandatory_gate,
             )
+            # どの分岐で返っても state に残せるよう、通過側の dict にも必ず載せる。
+            result.setdefault("mandatory_gate", check_mandatory_gate(args.mandatory_gate)[0])
         except Indeterminate as e:
             result = {"status": "indeterminate", "exit_code": EXIT_INDETERMINATE, "message": e.reason}
         if args.json:

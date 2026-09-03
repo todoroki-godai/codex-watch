@@ -49,7 +49,7 @@ mkdir -p "$STATE_DIR"
 # set -e 下では `VAR=$(cmd)` の cmd が非0を返した瞬間にシェルが即終了し、直後の `$?` 取得へ
 # 到達できない（blocked=4 / indeterminate=5 / usage=2 を握りつぶして死ぬ）。ここだけ一時的に無効化する。
 set +e
-GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --goal-cut "${REVIEW_GOAL_CUT:-}" --json)"
+GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --goal-cut "${REVIEW_GOAL_CUT:-}" --mandatory-gate "${REVIEW_MANDATORY_GATE:-}" --json)"
 GATE_EXIT=$?
 set -e
 if [[ -n "${CODEX_REVIEW_GATE_CHECK:-}" ]]; then
@@ -176,11 +176,13 @@ print(d.get('record_target') or '')
 print(d.get('total_round', ''))
 print(d.get('head_sha') or '')
 print(gc)
+print(d.get('mandatory_gate') or '')
 " "$GATE_JSON" 2>/dev/null || true)"
 GATE_TARGET="$(sed -n '1p' <<<"$GATE_FIELDS")"
 GATE_ROUND="$(sed -n '2p' <<<"$GATE_FIELDS")"
 GATE_HEAD="$(sed -n '3p' <<<"$GATE_FIELDS")"
 GATE_GOAL_CUT="$(sed -n '4p' <<<"$GATE_FIELDS")"
+GATE_MANDATORY_GATE="$(sed -n '5p' <<<"$GATE_FIELDS")"
 
 {
   echo "run_id=$RUN_ID"
@@ -200,6 +202,7 @@ GATE_GOAL_CUT="$(sed -n '4p' <<<"$GATE_FIELDS")"
   echo "round=$GATE_ROUND"
   echo "head_sha=$GATE_HEAD"
   echo "goal_cut=$GATE_GOAL_CUT"
+  echo "mandatory_gate=$GATE_MANDATORY_GATE"
   echo "reviewer=$LABEL"
 } > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
 
