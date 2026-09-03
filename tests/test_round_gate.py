@@ -384,6 +384,86 @@ def test_compute_backfill_value_no_jsonl(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
+# check_goal_cut（review.md 入口条件⑥の機械 enforce）
+# ---------------------------------------------------------------------------
+
+
+def test_check_goal_cut_accepts_valid_value():
+    # 陽性対照①: 正当な記入は通過する
+    result = rg.check_goal_cut(VALID_GOAL_CUT)
+    assert result.status == "ok"
+
+
+def test_check_goal_cut_accepts_surrounding_whitespace():
+    # 陽性対照②: 意味を変えない書き換え（前後空白の増減）で誤検出しない
+    result = rg.check_goal_cut(f"   {VALID_GOAL_CUT}   ")
+    assert result.status == "ok"
+
+
+def test_check_goal_cut_accepts_empty_unit():
+    # 単位部が空でも通す（目的文によって単位が変わるため `分/周` に固定しない）
+    result = rg.check_goal_cut("5 | 根拠: 手元計測 | 取得日: 2026-09-03")
+    assert result.status == "ok"
+
+
+def test_check_goal_cut_rejects_empty():
+    # 陰性①: 要素を消す（未記入）
+    result = rg.check_goal_cut("")
+    assert result.status == "blocked"
+    assert "未記入" in result.message
+
+
+def test_check_goal_cut_rejects_whitespace_only():
+    # 陰性①派生: 空白のみは実質未記入
+    result = rg.check_goal_cut("   ")
+    assert result.status == "blocked"
+
+
+@pytest.mark.parametrize("zero_form", ["0", "0.0", "0.00"])
+def test_check_goal_cut_rejects_zero_value(zero_form):
+    # 陰性②: 語（形式）は残して意味を壊す — 値だけ0にする
+    result = rg.check_goal_cut(f"{zero_form}分/周 | 根拠: 何か | 取得日: 2026-09-03")
+    assert result.status == "blocked"
+    assert "0" in result.message
+
+
+def test_check_goal_cut_rejects_invalid_date():
+    # 陰性②派生: 形式は満たすが取得日が日付として不正
+    result = rg.check_goal_cut("5分/周 | 根拠: 何か | 取得日: 2026-13-45")
+    assert result.status == "blocked"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        # 陰性③: 分散・入替（フィールド順の入替）
+        "取得日: 2026-09-03 | 5分/周 | 根拠: 何か",
+        "根拠: 何か | 5分/周 | 取得日: 2026-09-03",
+        # 陰性③: 区切り記号の細工（`|` でなく `,`）
+        "5分/周, 根拠: 何か, 取得日: 2026-09-03",
+        # 陰性③: ラベル語自体を落として値だけ並べる
+        "5分/周 | 何か | 2026-09-03",
+    ],
+)
+def test_check_goal_cut_rejects_reordered_or_malformed_fields(raw):
+    result = rg.check_goal_cut(raw)
+    assert result.status == "blocked"
+
+
+def test_check_goal_cut_rejects_newline_injection():
+    # state（1行1キー）への偽行注入を防ぐ
+    result = rg.check_goal_cut(f"{VALID_GOAL_CUT}\nreview_target=pr:o/r#1")
+    assert result.status == "blocked"
+    assert "改行" in result.message
+
+
+def test_check_goal_cut_preserves_raw_value_even_when_blocked():
+    # value は state 記録用にそのまま保持する（invalid でも捨てない）
+    result = rg.check_goal_cut("0")
+    assert result.value == "0"
+
+
+# ---------------------------------------------------------------------------
 # run_gate: usage error / none 上限 / bypass / repo 不一致 / 判定不能
 # ---------------------------------------------------------------------------
 
@@ -532,6 +612,59 @@ def test_run_gate_none_passes_until_cap(tmp_path: Path):
     assert blocked["exit_code"] == rg.EXIT_BLOCKED
 
 
+# ---------------------------------------------------------------------------
+# run_gate × goal-cut: 実発注は必須／none・bypass は対象外
+# ---------------------------------------------------------------------------
+
+
+def test_run_gate_blocks_real_target_without_goal_cut(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(rg, "git_remote_repo", lambda workdir: ("o", "r"))
+    monkeypatch.setattr(rg, "git_head_sha", lambda workdir: "sha1")
+    fetch = make_fetcher({"pr:o/r#1": ""})
+    result = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch)  # goal_cut 省略＝空
+    assert result["exit_code"] == rg.EXIT_BLOCKED
+    assert result["goal_cut_status"] == "blocked"
+
+
+def test_run_gate_blocks_real_target_with_zero_goal_cut(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(rg, "git_remote_repo", lambda workdir: ("o", "r"))
+    monkeypatch.setattr(rg, "git_head_sha", lambda workdir: "sha1")
+    fetch = make_fetcher({"pr:o/r#1": ""})
+    result = rg.run_gate(
+        "pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch, goal_cut="0分/周 | 根拠: 何か | 取得日: 2026-09-03"
+    )
+    assert result["exit_code"] == rg.EXIT_BLOCKED
+    assert result["goal_cut_status"] == "blocked"
+
+
+def test_run_gate_passes_real_target_with_valid_goal_cut(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(rg, "git_remote_repo", lambda workdir: ("o", "r"))
+    monkeypatch.setattr(rg, "git_head_sha", lambda workdir: "sha1")
+    fetch = make_fetcher({"pr:o/r#1": ""})
+    result = rg.run_gate(
+        "pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch, goal_cut=VALID_GOAL_CUT
+    )
+    assert result["exit_code"] == rg.EXIT_PASS
+    assert result["goal_cut_status"] == "ok"
+    assert result["goal_cut"] == VALID_GOAL_CUT
+
+
+def test_run_gate_none_target_skips_goal_cut_requirement(tmp_path: Path):
+    # none: は計測A/B・probe用途なので goal-cut は対象外（未記入でも通過する）
+    result = rg.run_gate("none:probe", "/w", tmp_path, "", "")
+    assert result["exit_code"] == rg.EXIT_PASS
+    assert result["goal_cut_status"] == "not_applicable"
+
+
+def test_run_gate_bypass_skips_goal_cut_but_preserves_value(tmp_path: Path):
+    # CODEX_REVIEW_NO_GATE bypass は最優先で goal-cut 検査も迂回するが、値は state 用に残す
+    result = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "手動確認済み", goal_cut="raw-value-kept")
+    assert result["exit_code"] == rg.EXIT_PASS
+    assert result["status"] == "bypass"
+    assert result["goal_cut_status"] == "not_applicable"
+    assert result["goal_cut"] == "raw-value-kept"
+
+
 def test_run_gate_repo_mismatch(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(rg, "git_remote_repo", lambda workdir: ("other-owner", "other-repo"))
     result = rg.run_gate("pr:todoroki-godai/evolve-anything#563", "/tmp", tmp_path, "", "")
@@ -579,9 +712,10 @@ def test_run_gate_block_when_body_has_no_approval(tmp_path: Path, monkeypatch):
     write_state(tmp_path, "r1", "pr:o/r#9", "sha1", 100)
     write_state(tmp_path, "r2", "pr:o/r#9", "sha2", 200)
     fetch = make_fetcher({"pr:o/r#9": "本文になにもなし"})
-    result = rg.run_gate("pr:o/r#9", "/tmp", tmp_path, "", "", fetch_body=fetch)
+    result = rg.run_gate("pr:o/r#9", "/tmp", tmp_path, "", "", fetch_body=fetch, goal_cut=VALID_GOAL_CUT)
     assert result["exit_code"] == rg.EXIT_BLOCKED
     assert result["record_target"] == ""
+    assert "承認行" in result["message"]  # goal-cut ではなく承認行不足でブロックされたことを確認
 
 
 # ---------------------------------------------------------------------------

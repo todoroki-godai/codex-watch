@@ -23,7 +23,7 @@ LABEL="${3:-review}"
 # state は 1行1キーの行形式なので、改行を含む値は偽の行を注入できる（実測: パスに
 # skills_suppressed=no を仕込むと state に2行出る）。読める形で残せない入力は拒否する。
 # `[[ ]] && cmd` をループ末尾に置くと set -e 下で無言終了しうるため if で書く。
-for _v in "$WORKDIR" "$PROMPT_FILE" "$LABEL"; do
+for _v in "$WORKDIR" "$PROMPT_FILE" "$LABEL" "${REVIEW_GOAL_CUT:-}"; do
   case "$_v" in
     *$'\n'*) echo "引数に改行を含められません" >&2; exit 2 ;;
   esac
@@ -40,7 +40,7 @@ GATE_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/round_gate.py"
 # set -e 下では `VAR=$(cmd)` の cmd が非0を返した瞬間にシェルが即終了し、直後の `$?` 取得へ
 # 到達できない（blocked=4 / indeterminate=5 / usage=2 を握りつぶして死ぬ）。ここだけ一時的に無効化する。
 set +e
-GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --json)"
+GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --goal-cut "${REVIEW_GOAL_CUT:-}" --json)"
 GATE_EXIT=$?
 set -e
 if [[ -n "${CODEX_REVIEW_GATE_CHECK:-}" ]]; then
@@ -156,10 +156,12 @@ d = json.loads(sys.argv[1])
 print(d.get('record_target') or '')
 print(d.get('total_round', ''))
 print(d.get('head_sha') or '')
+print((d.get('goal_cut') or '').replace(chr(10), ' '))
 " "$GATE_JSON" 2>/dev/null || true)"
 GATE_TARGET="$(sed -n '1p' <<<"$GATE_FIELDS")"
 GATE_ROUND="$(sed -n '2p' <<<"$GATE_FIELDS")"
 GATE_HEAD="$(sed -n '3p' <<<"$GATE_FIELDS")"
+GATE_GOAL_CUT="$(sed -n '4p' <<<"$GATE_FIELDS")"
 
 {
   echo "run_id=$RUN_ID"
@@ -178,6 +180,7 @@ GATE_HEAD="$(sed -n '3p' <<<"$GATE_FIELDS")"
   echo "review_target=$GATE_TARGET"
   echo "round=$GATE_ROUND"
   echo "head_sha=$GATE_HEAD"
+  echo "goal_cut=$GATE_GOAL_CUT"
   echo "reviewer=$LABEL"
 } > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
 
