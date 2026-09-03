@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -38,6 +39,16 @@ RE_VERDICT = re.compile(r"裁定[:：]|裁定（人間）")
 
 RE_TARGET = re.compile(r"^(pr|issue):([A-Za-z0-9_.\-]+)/([A-Za-z0-9_.\-]+)#([0-9]+)$")
 RE_NONE_TARGET = re.compile(r"^none:(.*)$", re.DOTALL)
+
+# goal-cut ゲート（review.md 入口条件⑥の機械 enforce）。厳密形式一致の allowlist 型
+# （悪い書き方を列挙する denylist 型にはしない＝回避手段が無限に構成できて収束しないため）。
+RE_GOAL_CUT = re.compile(
+    r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([^|]*?)\s*\|\s*根拠:\s*(\S[^|]*?)\s*\|\s*取得日:\s*(\d{4})-(\d{2})-(\d{2})\s*$"
+)
+GOAL_CUT_EXAMPLE = (
+    "記入例: 30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp・5回中5回打ち切り） | "
+    "取得日: 2026-08-26"
+)
 
 MAX_CHAIN_DEPTH = 5
 MAX_NONE_DISPATCHES = 3
@@ -108,6 +119,73 @@ def is_none_target(raw: str) -> str | None:
     if "\n" in raw:
         raise Indeterminate("REVIEW_TARGET に改行を含められません")
     return reason
+
+
+# ---------------------------------------------------------------------------
+# goal-cut ゲート（review.md 入口条件⑥）
+# ---------------------------------------------------------------------------
+#
+# 背景: 「目的の物差しで成果物がいくら削るか」を仕分けの単位にする（review.md ⑥）はずが、
+# 文章のルールなので読み飛ばせば発火せず、5巡＋実装6回を費やして最後に撤去する事故が起きた
+# （2026-09-03）。ここではその判定を発注口1つで機械的に fail-closed にする。
+
+
+@dataclass(frozen=True)
+class GoalCutCheck:
+    status: str  # "ok" | "not_applicable" | "blocked"
+    message: str
+    value: str  # 元の raw 値（state への記録用。invalid でも保持する）
+
+
+def check_goal_cut(raw: str) -> GoalCutCheck:
+    """REVIEW_GOAL_CUT を検査する（実発注 pr:/issue: のみ呼び出し側が使う）。
+
+    受理する形式（厳密一致）: `<数値><単位> | 根拠: <再現手段または出所> | 取得日: YYYY-MM-DD`
+    単位部は空でもよい（目的文によって単位が変わるため `分/周` に固定しない）。
+    """
+    value = raw or ""
+    if "\n" in value:
+        return GoalCutCheck(
+            "blocked", f"REVIEW_GOAL_CUT に改行を含められません。{GOAL_CUT_EXAMPLE}", value
+        )
+    if not value.strip():
+        return GoalCutCheck(
+            "blocked",
+            "REVIEW_GOAL_CUT が未記入です。この成果物が目的文の物差しでいくら削るかを記入してください。"
+            f"{GOAL_CUT_EXAMPLE}",
+            value,
+        )
+    m = RE_GOAL_CUT.match(value)
+    if not m:
+        return GoalCutCheck(
+            "blocked",
+            "REVIEW_GOAL_CUT の形式が不正です。期待する形式: "
+            f"<数値><単位> | 根拠: <出所> | 取得日: YYYY-MM-DD。{GOAL_CUT_EXAMPLE}",
+            value,
+        )
+    number_str, _unit, _basis, year, month, day = m.groups()
+    try:
+        number = float(number_str)
+    except ValueError:
+        return GoalCutCheck(
+            "blocked", f"REVIEW_GOAL_CUT の数値部が不正です: {number_str!r}。{GOAL_CUT_EXAMPLE}", value
+        )
+    if number == 0:
+        return GoalCutCheck(
+            "blocked",
+            "REVIEW_GOAL_CUT が0です。目的の物差しで0の成果物は発注せず issue へ落としてください"
+            "（review.md 入口条件⑥）。",
+            value,
+        )
+    try:
+        datetime.date(int(year), int(month), int(day))
+    except ValueError:
+        return GoalCutCheck(
+            "blocked",
+            f"REVIEW_GOAL_CUT の取得日が日付として不正です: {year}-{month}-{day}。{GOAL_CUT_EXAMPLE}",
+            value,
+        )
+    return GoalCutCheck("ok", f"REVIEW_GOAL_CUT: 通過（{value}）", value)
 
 
 # ---------------------------------------------------------------------------
@@ -714,6 +792,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     gate.add_argument("--state-dir", default=DEFAULT_STATE_DIR)
     gate.add_argument("--predecessor", default=os.environ.get("REVIEW_PREDECESSOR", ""))
     gate.add_argument("--no-gate-reason", default=os.environ.get("CODEX_REVIEW_NO_GATE", ""))
+    gate.add_argument("--goal-cut", default=os.environ.get("REVIEW_GOAL_CUT", ""))
     gate.add_argument("--json", action="store_true")
 
     record = sub.add_parser("record", help="gate 通過後、巡行を本文へ追記する")
@@ -746,9 +825,14 @@ def run_gate(
     predecessor_env_raw: str,
     no_gate_reason: str,
     fetch_body=gh_fetch_body,
+    goal_cut: str = "",
 ) -> dict:
     """判定のみを行い、副作用（body 追記・state 書込）は行わない。呼び出し側（bash）が
     exit code を見て dispatch の可否を決め、通過時に record を別途呼ぶ。
+
+    `goal_cut`（REVIEW_GOAL_CUT）は review.md 入口条件⑥の機械 enforce。実発注（pr:/issue:）
+    にのみ必須で、`none:` ターゲットと `CODEX_REVIEW_NO_GATE` bypass は対象外（後者は値を
+    そのまま戻り値へ含め state に残せるようにする）。
     """
     # 空白のみの理由（例: `CODEX_REVIEW_NO_GATE=" "`）は「理由必須」の実質的な迂回になるため、
     # strip 後に空なら bypass を成立させない（理由なしと同じ扱いで通常ゲートへ進む）。
@@ -759,6 +843,8 @@ def run_gate(
             "message": f"CODEX_REVIEW_NO_GATE により巡数ゲートを迂回します: {no_gate_reason}",
             "reason": no_gate_reason,
             "record_target": "bypass",
+            "goal_cut": goal_cut or "",
+            "goal_cut_status": "not_applicable",
         }
 
     if not target_raw:
@@ -767,6 +853,8 @@ def run_gate(
             "exit_code": EXIT_USAGE,
             "message": "REVIEW_TARGET が指定されていません（pr:owner/repo#N / issue:owner/repo#N / none:<理由>）",
             "record_target": "",
+            "goal_cut": goal_cut or "",
+            "goal_cut_status": "not_applicable",
         }
 
     none_reason = is_none_target(target_raw)
@@ -778,6 +866,8 @@ def run_gate(
                 "exit_code": EXIT_BLOCKED,
                 "message": f"none: 発注は同一 workdir で累計{MAX_NONE_DISPATCHES}件までです（現在{n}件）",
                 "record_target": "",
+                "goal_cut": goal_cut or "",
+                "goal_cut_status": "not_applicable",
             }
         return {
             "status": "pass",
@@ -785,6 +875,8 @@ def run_gate(
             "message": f"none: 発注（{n + 1}件目）: {none_reason}",
             "none_reason": none_reason,
             "record_target": f"none:{none_reason}",
+            "goal_cut": goal_cut or "",
+            "goal_cut_status": "not_applicable",
         }
 
     target = parse_target(target_raw)
@@ -804,8 +896,22 @@ def run_gate(
                     f"（{remote[0]}/{remote[1]}）が一致しません"
                 ),
                 "record_target": "",
+                "goal_cut": goal_cut or "",
+                "goal_cut_status": "not_evaluated",
             }
         head_sha = git_head_sha(workdir)
+
+    # goal-cut ゲート（review.md 入口条件⑥）。実発注（pr:/issue:）は必須・巡数判定より前に検査する。
+    goal_cut_check = check_goal_cut(goal_cut)
+    if goal_cut_check.status == "blocked":
+        return {
+            "status": "blocked",
+            "exit_code": EXIT_BLOCKED,
+            "message": goal_cut_check.message,
+            "record_target": "",
+            "goal_cut": goal_cut_check.value,
+            "goal_cut_status": "blocked",
+        }
 
     env_predecessors = parse_predecessor_env(predecessor_env_raw)
     # 束ね判定用の HEAD（git 管理外は head_sha=None のため束ねができない＝台帳のみモードで
@@ -827,6 +933,8 @@ def run_gate(
                 "HEAD を進めるか、次巡として人間承認を取ること"
             ),
             "record_target": "",
+            "goal_cut": goal_cut_check.value,
+            "goal_cut_status": "ok",
         }
 
     total = target_total_rounds(target, state_dir, fetch_body, env_predecessors, pending_head)
@@ -845,6 +953,8 @@ def run_gate(
         # blocked でも record_target を出す: 万一 bash 側が exit code を無視しても
         # record が「巡数超過ブロック中の対象」に誤って書き込まないよう、blocked 時は空にする。
         "record_target": target.key() if decision.status == "pass" else "",
+        "goal_cut": goal_cut_check.value,
+        "goal_cut_status": "ok",
     }
 
 
@@ -950,6 +1060,7 @@ def main(argv: list[str] | None = None) -> int:
                 state_dir,
                 args.predecessor,
                 args.no_gate_reason,
+                goal_cut=args.goal_cut,
             )
         except Indeterminate as e:
             result = {"status": "indeterminate", "exit_code": EXIT_INDETERMINATE, "message": e.reason}

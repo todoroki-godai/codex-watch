@@ -20,6 +20,10 @@ import round_gate as rg  # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
+# goal-cut ゲート（review.md 入口条件⑥）を満たす正当な値。round 判定を試すテストが
+# goal-cut ブロックに邪魔されないよう共通で使う。
+VALID_GOAL_CUT = "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26"
+
 
 def load(name: str) -> str:
     return (FIXTURES / name).read_text()
@@ -483,13 +487,13 @@ def test_run_gate_blocks_after_max_same_head_dispatches(tmp_path: Path, monkeypa
 
     # 1〜3本目は通過する（同一巡＝同一 HEAD の束ねは変えない）
     for i in range(rg.MAX_SAME_HEAD_DISPATCHES):
-        result = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch)
+        result = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch, goal_cut=VALID_GOAL_CUT)
         assert result["exit_code"] == rg.EXIT_PASS, f"{i}本目で拒否された（想定外）"
         assert result["total_round"] == 1  # 同一 HEAD なので巡は増えない（束ね判定は不変）
         write_state(tmp_path, f"same{i}", "pr:o/r#1", "shaFIXED", 100 + i)
 
     # 4本目（同一巡の発注上限を超える）は拒否される
-    blocked = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch)
+    blocked = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch, goal_cut=VALID_GOAL_CUT)
     assert blocked["exit_code"] == rg.EXIT_BLOCKED
     assert "同一巡" in blocked["message"]
 
@@ -501,12 +505,12 @@ def test_run_gate_same_head_cap_resets_when_head_advances(tmp_path: Path, monkey
     monkeypatch.setattr(rg, "git_head_sha", lambda workdir: "shaOLD")
     for i in range(rg.MAX_SAME_HEAD_DISPATCHES):
         write_state(tmp_path, f"old{i}", "pr:o/r#1", "shaOLD", 100 + i)
-    blocked = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch)
+    blocked = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch, goal_cut=VALID_GOAL_CUT)
     assert blocked["exit_code"] == rg.EXIT_BLOCKED
 
     # HEAD が進めば新しい巡として再び通過する
     monkeypatch.setattr(rg, "git_head_sha", lambda workdir: "shaNEW")
-    passed = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch)
+    passed = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "", fetch_body=fetch, goal_cut=VALID_GOAL_CUT)
     assert passed["exit_code"] == rg.EXIT_PASS
     assert passed["total_round"] == 2
 
@@ -556,7 +560,13 @@ def test_run_gate_pass_and_block_using_real_body(tmp_path: Path, monkeypatch):
         }
     )
     result = rg.run_gate(
-        "pr:todoroki-godai/evolve-anything#563", "/tmp", tmp_path, "", "", fetch_body=fetch
+        "pr:todoroki-godai/evolve-anything#563",
+        "/tmp",
+        tmp_path,
+        "",
+        "",
+        fetch_body=fetch,
+        goal_cut=VALID_GOAL_CUT,
     )
     assert result["exit_code"] == rg.EXIT_PASS
     assert result["total_round"] == 3
