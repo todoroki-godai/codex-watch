@@ -137,16 +137,34 @@ class GoalCutCheck:
     value: str  # 元の raw 値（state への記録用。invalid でも保持する）
 
 
+def is_single_line(value: str) -> bool:
+    """value が「1行であること」（state の1行1キー形式が前提とする不変条件）を満たすかを判定する。
+
+    `\\n` だけを名指しで拒否すると `\\r` 等の別の行境界文字で state に偽の行を注入できる
+    （2026-09-03 codex レビュー実測: `\\r` を挟んだ値が `read_state_file()` の
+    `text.splitlines()` で複数行に分解され、後続の `review_target=` を上書きした）。
+    ここでは Python の `str.splitlines()` が行境界とみなす文字集合全体（`\\n` `\\r` `\\r\\n`
+    `\\v` `\\f` `\\x1c`-`\\x1e` `\\x85` `\\u2028` `\\u2029`）を対象にする「1行であること」という
+    正の性質の検査にする（個別文字の列挙は回避手段が無限に構成できて収束しないため禁止）。
+    空文字列は単一行として扱う（`splitlines()` は `""` を `[]` にするため特別扱いが要る）。
+    """
+    return value == "" or value.splitlines() == [value]
+
+
 def check_goal_cut(raw: str) -> GoalCutCheck:
     """REVIEW_GOAL_CUT を検査する（実発注 pr:/issue: のみ呼び出し側が使う）。
 
     受理する形式（厳密一致）: `<数値><単位> | 根拠: <再現手段または出所> | 取得日: YYYY-MM-DD`
-    単位部は空でもよい（目的文によって単位が変わるため `分/周` に固定しない）。
+    単位部は非空必須（目的の物差しが特定できない値を通さないため）。単位の種類は固定しない
+    （目的文によって単位が変わるため `分/周` に固定しない。2026-09-03 codex レビュー Must2で
+    「単位部は空でもよい」から「非空必須」へ訂正）。
     """
     value = raw or ""
-    if "\n" in value:
+    if not is_single_line(value):
         return GoalCutCheck(
-            "blocked", f"REVIEW_GOAL_CUT に改行を含められません。{GOAL_CUT_EXAMPLE}", value
+            "blocked",
+            f"REVIEW_GOAL_CUT に改行相当の文字を含められません（1行であること）。{GOAL_CUT_EXAMPLE}",
+            value,
         )
     if not value.strip():
         return GoalCutCheck(
@@ -163,7 +181,14 @@ def check_goal_cut(raw: str) -> GoalCutCheck:
             f"<数値><単位> | 根拠: <出所> | 取得日: YYYY-MM-DD。{GOAL_CUT_EXAMPLE}",
             value,
         )
-    number_str, _unit, _basis, year, month, day = m.groups()
+    number_str, unit, _basis, year, month, day = m.groups()
+    if not unit.strip():
+        return GoalCutCheck(
+            "blocked",
+            "REVIEW_GOAL_CUT に単位が必要です（例: 分/周・件・時間 等。目的の物差しが分かる単位を"
+            f"書いてください）。{GOAL_CUT_EXAMPLE}",
+            value,
+        )
     try:
         number = float(number_str)
     except ValueError:
@@ -833,7 +858,24 @@ def run_gate(
     `goal_cut`（REVIEW_GOAL_CUT）は review.md 入口条件⑥の機械 enforce。実発注（pr:/issue:）
     にのみ必須で、`none:` ターゲットと `CODEX_REVIEW_NO_GATE` bypass は対象外（後者は値を
     そのまま戻り値へ含め state に残せるようにする）。
+
+    ただし「1行であること」（state への行注入防止）は bypass・none: を含めて常に適用する。
+    これは goal-cut の内容要件（review.md ⑥）ではなく state ファイル形式そのものの安全条件
+    なので、内容検査を迂回できる bypass でも迂回させない（2026-09-03 codex レビュー Must1）。
     """
+    goal_cut_value = goal_cut or ""
+    if not is_single_line(goal_cut_value):
+        return {
+            "status": "blocked",
+            "exit_code": EXIT_BLOCKED,
+            "message": (
+                f"REVIEW_GOAL_CUT に改行相当の文字を含められません（1行であること）。{GOAL_CUT_EXAMPLE}"
+            ),
+            "record_target": "",
+            "goal_cut": goal_cut_value,
+            "goal_cut_status": "blocked",
+        }
+
     # 空白のみの理由（例: `CODEX_REVIEW_NO_GATE=" "`）は「理由必須」の実質的な迂回になるため、
     # strip 後に空なら bypass を成立させない（理由なしと同じ扱いで通常ゲートへ進む）。
     if no_gate_reason and no_gate_reason.strip():

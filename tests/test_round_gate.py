@@ -400,10 +400,37 @@ def test_check_goal_cut_accepts_surrounding_whitespace():
     assert result.status == "ok"
 
 
-def test_check_goal_cut_accepts_empty_unit():
-    # 単位部が空でも通す（目的文によって単位が変わるため `分/周` に固定しない）
+def test_check_goal_cut_rejects_empty_unit():
+    # Must2（2026-09-03 codex レビュー）: 単位が空だと目的の物差しが特定できない値が
+    # 黙って通ってしまう。単位の種類は固定しないが非空は必須（訂正前は "ok" だった）。
     result = rg.check_goal_cut("5 | 根拠: 手元計測 | 取得日: 2026-09-03")
-    assert result.status == "ok"
+    assert result.status == "blocked"
+    assert "単位" in result.message
+
+
+def test_check_goal_cut_accepts_non_ascii_unit():
+    # 単位の種類そのものは固定しない（分/周・件・時間など、目的文によって変わってよい）
+    for unit_example in ["分/周", "件", "時間"]:
+        result = rg.check_goal_cut(f"5{unit_example} | 根拠: 手元計測 | 取得日: 2026-09-03")
+        assert result.status == "ok", f"単位 {unit_example!r} が拒否された"
+
+
+def test_check_goal_cut_rejects_fullwidth_pipe_lookalike():
+    # 自己構成した回避①: 全角縦棒（U+FF5C ｜）は ASCII `|` の見た目そっくりだが正規表現の
+    # 区切りとしては一致しない。format 不正として拒否されること（すり抜けないことの確認）。
+    adversarial = "5分/周 ｜ 根拠: 全角パイプ ｜ 取得日: 2026-09-03"
+    result = rg.check_goal_cut(adversarial)
+    assert result.status == "blocked"
+
+
+def test_check_goal_cut_rejects_unit_of_only_unicode_whitespace():
+    # 自己構成した回避②: 単位部に全角スペース（U+3000）1文字だけを入れて非空チェック
+    # （`unit.strip()`）をすり抜けられないか。Python の str.strip() は Unicode 空白も
+    # 除去するため、これも「単位が空」として拒否されること。
+    adversarial = "5　| 根拠: 全角スペース単位 | 取得日: 2026-09-03"
+    result = rg.check_goal_cut(adversarial)
+    assert result.status == "blocked"
+    assert "単位" in result.message
 
 
 def test_check_goal_cut_rejects_empty():
@@ -455,6 +482,39 @@ def test_check_goal_cut_rejects_newline_injection():
     result = rg.check_goal_cut(f"{VALID_GOAL_CUT}\nreview_target=pr:o/r#1")
     assert result.status == "blocked"
     assert "改行" in result.message
+
+
+@pytest.mark.parametrize(
+    "boundary_char",
+    [
+        "\r",  # Must1: CR単体（レビュアー実測の再現）
+        "\r\n",  # CRLF
+        "\v",  # 垂直タブ
+        "\f",  # フォームフィード
+        "\x1c",  # ファイル区切り
+        "\x85",  # NEL（Unicode 行境界）
+        " ",  # LINE SEPARATOR
+        " ",  # PARAGRAPH SEPARATOR
+    ],
+    ids=["CR", "CRLF", "VT", "FF", "FS", "NEL", "LSEP", "PSEP"],
+)
+def test_check_goal_cut_rejects_all_line_boundary_chars(boundary_char):
+    # Must1（2026-09-03 codex レビュー）: `\n` だけを拒否すると `\r` 等の別の行境界文字で
+    # state に偽の行を注入できた。個別列挙でなく `str.splitlines()` の行境界文字全体を対象にする。
+    result = rg.check_goal_cut(f"{VALID_GOAL_CUT}{boundary_char}review_target=none:probe")
+    assert result.status == "blocked"
+    assert "改行" in result.message
+
+
+def test_is_single_line_true_for_plain_and_empty():
+    # 陽性対照: 通常の1行・空文字列は単一行として通す
+    assert rg.is_single_line(VALID_GOAL_CUT) is True
+    assert rg.is_single_line("") is True
+
+
+@pytest.mark.parametrize("boundary_char", ["\n", "\r", "\r\n", "\v", "\f", "\x1c", "\x85", " ", " "])
+def test_is_single_line_false_for_all_boundary_chars(boundary_char):
+    assert rg.is_single_line(f"a{boundary_char}b") is False
 
 
 def test_check_goal_cut_preserves_raw_value_even_when_blocked():
@@ -663,6 +723,24 @@ def test_run_gate_bypass_skips_goal_cut_but_preserves_value(tmp_path: Path):
     assert result["status"] == "bypass"
     assert result["goal_cut_status"] == "not_applicable"
     assert result["goal_cut"] == "raw-value-kept"
+
+
+def test_run_gate_bypass_still_blocks_line_boundary_injection(tmp_path: Path):
+    # Must1（2026-09-03 codex レビュー）: 「1行であること」は state ファイル形式そのものの
+    # 安全条件なので、goal-cut の内容検査を迂回する bypass でも迂回させない。
+    malicious = "raw\rreview_target=none:probe"
+    result = rg.run_gate("pr:o/r#1", "/tmp", tmp_path, "", "手動確認済み", goal_cut=malicious)
+    assert result["exit_code"] == rg.EXIT_BLOCKED
+    assert result["status"] == "blocked"
+    assert result["goal_cut_status"] == "blocked"
+
+
+def test_run_gate_none_target_still_blocks_line_boundary_injection(tmp_path: Path):
+    # none: も同様に「1行であること」は迂回させない
+    malicious = "raw\rreview_target=none:probe"
+    result = rg.run_gate("none:probe", "/w", tmp_path, "", "", goal_cut=malicious)
+    assert result["exit_code"] == rg.EXIT_BLOCKED
+    assert result["goal_cut_status"] == "blocked"
 
 
 def test_run_gate_repo_mismatch(tmp_path: Path, monkeypatch):
