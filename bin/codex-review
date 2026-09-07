@@ -27,6 +27,8 @@ LABEL="${3:-review}"
 # `str.splitlines()` が行境界とみなす文字集合全体を対象にする「1行であること」という正の性質の
 # 検査）を唯一の判定源として呼び出す（bash 側で別ロジックを持たせて二重管理・食い違いを作らない）。
 GATE_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/round_gate.py"
+# shellcheck source=./_codex_common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
 for _v in "$WORKDIR" "$PROMPT_FILE" "$LABEL" "${REVIEW_GOAL_CUT:-}"; do
   if ! python3 -c "
 import sys
@@ -156,6 +158,11 @@ EFFORT_ARGS=()
 nohup codex exec -C "$WORKDIR" -s read-only ${EFFORT_ARGS[@]+"${EFFORT_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
+# 実効値を解決する（単一ソース: bin/_codex_common.sh）。未指定時も「既定」という文字列を
+# state に残さず、実際に効く値と出所(env|config|unresolved)を記録する。
+IFS=$'\t' read -r RESOLVED_MODEL RESOLVED_MODEL_SOURCE <<<"$(resolve_codex_setting "${CODEX_REVIEW_MODEL:-}" "model")"
+IFS=$'\t' read -r RESOLVED_EFFORT RESOLVED_EFFORT_SOURCE <<<"$(resolve_codex_setting "${CODEX_REVIEW_EFFORT:-}" "model_reasoning_effort")"
+
 # 巡数ゲートの判定結果（JSON）を state 用の値へ分解する。gh/git を再度呼ばず、gate が
 # 既に確定した値をそのまま state に写す（record_target が空＝ブロック中/usage error 相当。
 # 本来ここには到達しない想定だが、防御的に空のまま record へ渡し record 側で無害にスキップさせる）。
@@ -193,8 +200,10 @@ GATE_MANDATORY_GATE="$(sed -n '5p' <<<"$GATE_FIELDS")"
   echo "prompt=$PROMPT_FILE"
   echo "effective_prompt=$EFFECTIVE_PROMPT"
   echo "skills_suppressed=$SKILLS_SUPPRESSED"
-  echo "effort=${CODEX_REVIEW_EFFORT:-既定}"
-  echo "model=${CODEX_REVIEW_MODEL:-既定}"
+  echo "model=$RESOLVED_MODEL"
+  echo "model_source=$RESOLVED_MODEL_SOURCE"
+  echo "effort=$RESOLVED_EFFORT"
+  echo "effort_source=$RESOLVED_EFFORT_SOURCE"
   echo "prompt_bytes=$(wc -c < "$EFFECTIVE_PROMPT" | tr -d ' ')"
   echo "started_at=$(date +%s)"
   echo "started_at_human=$(date '+%Y-%m-%d %H:%M:%S')"
