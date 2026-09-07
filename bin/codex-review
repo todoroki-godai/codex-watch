@@ -152,16 +152,19 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
 # 発注ごとに model / reasoning effort を変えられるようにする（未指定なら config.toml の既定）。
 # macOS 既定の bash 3.2 では空配列の "${a[@]}" が set -u で落ちるので +展開で渡す。
-EFFORT_ARGS=()
-[[ -n "${CODEX_REVIEW_MODEL:-}" ]] && EFFORT_ARGS+=(-m "$CODEX_REVIEW_MODEL")
-[[ -n "${CODEX_REVIEW_EFFORT:-}" ]] && EFFORT_ARGS+=(-c "model_reasoning_effort=\"$CODEX_REVIEW_EFFORT\"")
-nohup codex exec -C "$WORKDIR" -s read-only ${EFFORT_ARGS[@]+"${EFFORT_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
+CODEX_CLI_ARGS=()
+REQUESTED_MODEL="$(sanitize_single_line "${CODEX_REVIEW_MODEL:-}")"
+REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_REVIEW_EFFORT:-}")"
+[[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
+[[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
+nohup codex exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
-# 実効値を解決する（単一ソース: bin/_codex_common.sh）。未指定時も「既定」という文字列を
-# state に残さず、実際に効く値と出所(env|config|unresolved)を記録する。
-IFS=$'\t' read -r RESOLVED_MODEL RESOLVED_MODEL_SOURCE <<<"$(resolve_codex_setting "${CODEX_REVIEW_MODEL:-}" "model")"
-IFS=$'\t' read -r RESOLVED_EFFORT RESOLVED_EFFORT_SOURCE <<<"$(resolve_codex_setting "${CODEX_REVIEW_EFFORT:-}" "model_reasoning_effort")"
+# 実効値は config.toml を自前解析せず、起動ログの起動ヘッダーから読む（単一ソース:
+# bin/_codex_common.sh）。ヘッダーが一定時間内に出なければ unresolved のまま記録し、
+# 起動は妨げない（fail-open）。追記はこのスクリプト内で完結させる（別プロセス・別ファイル
+# を作らない）。
+IFS=$'\t' read -r LOG_MODEL LOG_MODEL_SOURCE LOG_EFFORT LOG_EFFORT_SOURCE <<<"$(extract_codex_log_header "$LOG_FILE" "${CODEX_LOG_HEADER_TIMEOUT_S:-5}")"
 
 # 巡数ゲートの判定結果（JSON）を state 用の値へ分解する。gh/git を再度呼ばず、gate が
 # 既に確定した値をそのまま state に写す（record_target が空＝ブロック中/usage error 相当。
@@ -200,10 +203,16 @@ GATE_MANDATORY_GATE="$(sed -n '5p' <<<"$GATE_FIELDS")"
   echo "prompt=$PROMPT_FILE"
   echo "effective_prompt=$EFFECTIVE_PROMPT"
   echo "skills_suppressed=$SKILLS_SUPPRESSED"
-  echo "model=$RESOLVED_MODEL"
-  echo "model_source=$RESOLVED_MODEL_SOURCE"
-  echo "effort=$RESOLVED_EFFORT"
-  echo "effort_source=$RESOLVED_EFFORT_SOURCE"
+  echo "requested_model=$REQUESTED_MODEL"
+  echo "requested_effort=$REQUESTED_EFFORT"
+  if [[ "$LOG_MODEL_SOURCE" == "cli_log" ]]; then
+    echo "model=$LOG_MODEL"
+  fi
+  echo "model_source=$LOG_MODEL_SOURCE"
+  if [[ "$LOG_EFFORT_SOURCE" == "cli_log" ]]; then
+    echo "effort=$LOG_EFFORT"
+  fi
+  echo "effort_source=$LOG_EFFORT_SOURCE"
   echo "prompt_bytes=$(wc -c < "$EFFECTIVE_PROMPT" | tr -d ' ')"
   echo "started_at=$(date +%s)"
   echo "started_at_human=$(date '+%Y-%m-%d %H:%M:%S')"
