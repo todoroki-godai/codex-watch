@@ -35,7 +35,7 @@ extract_answer() {
 show_one() {
   local state_file="$1"
   # shellcheck disable=SC1090
-  local run_id pid log workdir started_at
+  local run_id pid log workdir started_at requested_model requested_effort
   run_id=$(sed -n 's/^run_id=//p' "$state_file")
   pid=$(sed -n 's/^pid=//p' "$state_file")
   log=$(sed -n 's/^log=//p' "$state_file")
@@ -76,12 +76,13 @@ show_one() {
   echo "判定行   : ${verdict_count}件（'tokens used' の完全一致）"
   echo "ログ     : $log (${size}B / ${lines}行)"
   echo "対象     : $workdir"
-  # 実効値（実際に起動された model / effort）はここで初めてログから read 時に導出する
-  # （state には requested_* しか書かれていない。起動側で待たない設計・2026-09-08）。
-  local eff_model eff_model_source eff_effort eff_effort_source
-  IFS=$'\t' read -r eff_model eff_model_source eff_effort eff_effort_source <<<"$(extract_codex_log_header "$log")"
-  echo "要求値   : model=${requested_model:-(未指定)} effort=${requested_effort:-(未指定)}"
-  echo "実効値   : model=$eff_model($eff_model_source) effort=$eff_effort($eff_effort_source)"
+  # ログ先頭のヘッダーは「実際にこの run で使われた値」の証明ではない（文字列の形での
+  # 抽出にすぎず、run/session の同一性は未検証・2026-09-08 レビュー巡3裁定）。
+  # 「実効値」と言い切らず、参考情報である旨を文言に明示する。
+  local hdr_model hdr_model_source hdr_effort hdr_effort_source
+  IFS=$'\t' read -r hdr_model hdr_model_source hdr_effort hdr_effort_source <<<"$(extract_codex_log_header "$log")"
+  echo "要求値               : model=${requested_model:-(未指定)} effort=${requested_effort:-(未指定)}"
+  echo "ログ先頭のヘッダー（参考・run同一性は未検証）: model=$hdr_model($hdr_model_source) effort=$hdr_effort($hdr_effort_source)"
   if [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
     # 終了後は report を組み立て直してから表示する（逐次出力運用では log の
     # 'tokens used' 以降＝最終セクションだけの複製で、report と同じ欠落を持つ。

@@ -75,8 +75,10 @@ while :; do
   if ! kill -0 "$PID" 2>/dev/null; then
     # 実効値（実際に起動された model / effort）はここで初めて read 時に導出する
     # （state には requested_* しか書かれていない・2026-09-08）。
+    # ログ先頭のヘッダーは参考情報（run/session の同一性は未検証。「実効値」と
+    # 言い切らない・2026-09-08 レビュー巡3裁定）。
     IFS=$'\t' read -r EFF_MODEL EFF_MODEL_SOURCE EFF_EFFORT EFF_EFFORT_SOURCE <<<"$(extract_codex_log_header "$LOG")"
-    MODEL_SUFFIX=" (model=$EFF_MODEL/$EFF_MODEL_SOURCE effort=$EFF_EFFORT/$EFF_EFFORT_SOURCE)"
+    MODEL_SUFFIX=" (ログ先頭ヘッダー参考値: model=$EFF_MODEL/$EFF_MODEL_SOURCE effort=$EFF_EFFORT/$EFF_EFFORT_SOURCE)"
     # report を組み立て直してから判定する（対策1の副作用対応）。-o の report が非空かつ
     # 1行目が判定行として妥当ならそのまま使い、そうでなければ log から結合して上書きする
     # （元の -o 出力は "$REPORT.raw" に温存。rebuild できなければ何もしない＝空のまま）。
@@ -111,7 +113,7 @@ while :; do
 
   if [[ $(( now - started )) -ge "$MAX_SEC" ]]; then
     IFS=$'\t' read -r EFF_MODEL EFF_MODEL_SOURCE EFF_EFFORT EFF_EFFORT_SOURCE <<<"$(extract_codex_log_header "$LOG")"
-    echo "TIMEOUT: $RUN_ID 監視上限${MAX_SEC}秒に到達（プロセスはまだ生存） (model=$EFF_MODEL/$EFF_MODEL_SOURCE effort=$EFF_EFFORT/$EFF_EFFORT_SOURCE)"
+    echo "TIMEOUT: $RUN_ID 監視上限${MAX_SEC}秒に到達（プロセスはまだ生存） (ログ先頭ヘッダー参考値: model=$EFF_MODEL/$EFF_MODEL_SOURCE effort=$EFF_EFFORT/$EFF_EFFORT_SOURCE)"
     exit 0
   fi
 

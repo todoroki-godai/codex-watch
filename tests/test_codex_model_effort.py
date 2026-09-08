@@ -12,6 +12,13 @@ model/effort 配線を試験する。
 - 2026-09-08 codex レビュー巡2 [Must]2: 「任意の2本目の --------」で打ち切る実装は
   プロンプト本文に混ざった偽ヘッダーを拾う。`^OpenAI Codex v` 行の**直後**が
   `--------` である場合だけをヘッダー区間の開始とする厳密な判定へ変更した。
+- 2026-09-08 codex レビュー巡3（族2巡で打ち切り・ユーザー裁定「縮小してマージ」）:
+  文字列の形での同定は「実効値」の証明にならない（レビュー側が
+  `extract_codex_log_header tests/test_codex_model_effort.py` に値を返させることを
+  実際に構成した）。表示の名乗りを「実効値」から「ログ先頭のヘッダー（参考・
+  run同一性は未検証）」へ変更し、①先頭200行だけを読む ②1行目が
+  `^OpenAI Codex v` で始まらないファイルは即 unresolved、の2点で機構を増やさず
+  探索範囲を縮小した。
 
 ここで試験するのは:
   ① env 未指定時、codex へ渡る引数列に -m/-c が付かないこと（従来と同一）
@@ -20,13 +27,19 @@ model/effort 配線を試験する。
      書かれないこと（起動側は待たない）
   ④ run id が待たずに返ること（ヘッダーの無いログでもラッパーが即座に state と
      run id を返す）
-  ⑤ extract_codex_log_header() 単体: 正常ヘッダーから実効値が取れる
+  ⑤ extract_codex_log_header() 単体: 正常ヘッダーからログ先頭の参考値が取れる
   ⑥ 同: ヘッダー不在で unresolved になる
   ⑦ 回帰: 行頭固定を外すと埋め込み文字列を誤検出すること（陰性試験の固定化）
   ⑧ 回帰: 偽ヘッダー→本物のヘッダーの順で並ぶログで、偽ヘッダーの値
-     （gpt-wrong）を返さないこと（巡2 [Must]2 の再現ケース）
+     （gpt-wrong）を返さないこと（巡2 [Must]2 の再現ケース。巡3の1行目固定で
+     常に unresolved になる）
   ⑨ codex-status が読み手側として extract_codex_log_header を呼び、要求値と
-     実効値を両方表示すること
+     「ログ先頭のヘッダー（参考）」を両方表示し、**「実効値」という語は
+     出さない**こと
+  ⑩ 回帰（巡3 [Must]3 再現）: ヘッダーではない任意のテキストファイル
+     （このテストファイル自身）を渡すと unresolved になること
+  ⑪ 回帰（巡3 [Should]2）: ヘッダーは開くが閉じる区切りが先頭200行の外にある
+     ログは unresolved になること（走査コストの打ち切り）
 
 実際の `codex` CLI は一切呼ばない（fake スタブに差し替える。fake は argv を側路
 ファイルへ書き出し、標準出力へ合成ヘッダーを吐くだけ）。
@@ -355,11 +368,12 @@ def test_extract_log_header_line_anchor_prevents_embedded_match(tmp_path: Path):
 
 def test_extract_log_header_does_not_return_poisoned_value_before_real_header(tmp_path: Path):
     out = _run_extract(POISONED_THEN_REAL_HEADER, tmp_path)
-    model, _model_source, _effort, _effort_source = out.split("\t")
+    model, model_source, _effort, _effort_source = out.split("\t")
     assert model != "gpt-wrong", f"偽ヘッダー由来の値を返した: {out}"
-    # unresolved でも gpt-actual でもよい（今回の厳密な実装では本物のヘッダーを
-    # 正しく検出できるので gpt-actual になるはず）。
-    assert model in ("gpt-actual", "unresolved"), out
+    # 巡3で1行目固定を導入したため、1行目が "user" のこのログは即座に unresolved になる
+    # （本物のヘッダーが後続行にあっても、1行目でないため拾わない＝仕様どおり）。
+    assert model == "unresolved", out
+    assert model_source == "unresolved", out
 
 
 def test_extract_log_header_loose_boundary_would_misdetect_poisoned_value(tmp_path: Path):
@@ -391,7 +405,68 @@ extract_broken "{log_file}"
 
 
 # ---------------------------------------------------------------------------
-# ⑨ codex-status が読み手側として要求値・実効値を両方表示する
+# ⑩ 回帰（巡3 [Must]3 再現）: ヘッダーではない任意のテキストファイルを渡すと
+#    unresolved になる（レビュー実測: extract_codex_log_header に
+#    tests/test_codex_model_effort.py 自身を渡しても値を拾わないこと）
+# ---------------------------------------------------------------------------
+
+
+def test_extract_log_header_rejects_non_log_file():
+    this_file = Path(__file__).resolve()
+    script = f'source "{COMMON_SH}"\nextract_codex_log_header "{this_file}"\n'
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    model, model_source, effort, effort_source = result.stdout.strip().split("\t")
+    assert model == "unresolved", result.stdout
+    assert model_source == "unresolved", result.stdout
+    assert effort == "unresolved", result.stdout
+    assert effort_source == "unresolved", result.stdout
+
+
+# ---------------------------------------------------------------------------
+# ⑪ 回帰（巡3 [Should]2）: ヘッダーは開くが、閉じる区切りが先頭200行の外にある
+#    ログは unresolved になる（走査コストの打ち切り）
+# ---------------------------------------------------------------------------
+
+
+def test_extract_log_header_unresolved_when_closing_delimiter_beyond_200_lines(tmp_path: Path):
+    lines = ["OpenAI Codex v0.153.4", "--------"]
+    lines += [f"model: not-yet-closed-{i}" for i in range(250)]
+    lines.append("--------")
+    log_text = "\n".join(lines) + "\n"
+    out = _run_extract(log_text, tmp_path)
+    model, model_source, effort, effort_source = out.split("\t")
+    assert model == "unresolved", out
+    assert model_source == "unresolved", out
+    assert effort == "unresolved", out
+    assert effort_source == "unresolved", out
+
+
+def test_extract_log_header_performance_on_large_non_header_file(tmp_path: Path):
+    """巨大な非ヘッダーファイルでも1行目で即座に unresolved を返し、全体走査しない
+    （レビュー実測: 300MB grep 6.58秒 相当のコストを避ける）。ここでは数MB規模で
+    実行時間を確認する（フルスイートを遅くしない範囲でのスモーク）。
+    """
+    import time
+
+    log_file = tmp_path / "big.log"
+    with log_file.open("w") as f:
+        f.write("not a codex log at all\n")
+        for _ in range(200_000):
+            f.write("x" * 80 + "\n")
+
+    script = f'source "{COMMON_SH}"\nextract_codex_log_header "{log_file}"\n'
+    started = time.monotonic()
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    elapsed = time.monotonic() - started
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "unresolved\tunresolved\tunresolved\tunresolved"
+    assert elapsed < 2.0, f"1行目不一致での即時棄却が効いていない可能性: {elapsed}秒"
+
+
+# ---------------------------------------------------------------------------
+# ⑨ codex-status が読み手側として要求値・「ログ先頭のヘッダー（参考）」を
+#    両方表示し、「実効値」という語は出さない
 # ---------------------------------------------------------------------------
 
 
@@ -422,6 +497,9 @@ def test_status_shows_requested_and_effective(fake_bin: Path, tmp_path: Path):
     assert status_result.returncode == 0, status_result.stdout + status_result.stderr
     assert "要求値" in status_result.stdout
     assert "gpt-test-model" in status_result.stdout
-    assert "実効値" in status_result.stdout
+    assert "ログ先頭のヘッダー" in status_result.stdout
+    assert "参考" in status_result.stdout
     assert "gpt-5.6-sol" in status_result.stdout
     assert "cli_log" in status_result.stdout
+    # [Must]1 の受け: 「実効値」という言い切りの語は表示に出さない
+    assert "実効値" not in status_result.stdout
