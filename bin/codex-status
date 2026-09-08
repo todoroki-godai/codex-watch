@@ -15,6 +15,8 @@
 # codex-watch と同じ共有関数を使う（正本を二重管理しない）。
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/report_rebuild.sh"
+# shellcheck source=SCRIPTDIR/_codex_common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
 
 set -euo pipefail
 
@@ -33,12 +35,14 @@ extract_answer() {
 show_one() {
   local state_file="$1"
   # shellcheck disable=SC1090
-  local run_id pid log workdir started_at
+  local run_id pid log workdir started_at requested_model requested_effort
   run_id=$(sed -n 's/^run_id=//p' "$state_file")
   pid=$(sed -n 's/^pid=//p' "$state_file")
   log=$(sed -n 's/^log=//p' "$state_file")
   workdir=$(sed -n 's/^workdir=//p' "$state_file")
   started_at=$(sed -n 's/^started_at=//p' "$state_file")
+  requested_model=$(sed -n 's/^requested_model=//p' "$state_file")
+  requested_effort=$(sed -n 's/^requested_effort=//p' "$state_file")
 
   local now alive elapsed silent verdict_count size lines
   now=$(date +%s)
@@ -72,6 +76,13 @@ show_one() {
   echo "判定行   : ${verdict_count}件（'tokens used' の完全一致）"
   echo "ログ     : $log (${size}B / ${lines}行)"
   echo "対象     : $workdir"
+  # ログ先頭のヘッダーは「実際にこの run で使われた値」の証明ではない（文字列の形での
+  # 抽出にすぎず、run/session の同一性は未検証・2026-09-08 レビュー巡3裁定）。
+  # 「実効値」と言い切らず、参考情報である旨を文言に明示する。
+  local hdr_model hdr_model_source hdr_effort hdr_effort_source
+  IFS=$'\t' read -r hdr_model hdr_model_source hdr_effort hdr_effort_source <<<"$(extract_codex_log_header "$log")"
+  echo "要求値               : model=${requested_model:-(未指定)} effort=${requested_effort:-(未指定)}"
+  echo "ログ先頭のヘッダー（参考・run同一性は未検証）: model=$hdr_model($hdr_model_source) effort=$hdr_effort($hdr_effort_source)"
   if [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
     # 終了後は report を組み立て直してから表示する（逐次出力運用では log の
     # 'tokens used' 以降＝最終セクションだけの複製で、report と同じ欠落を持つ。

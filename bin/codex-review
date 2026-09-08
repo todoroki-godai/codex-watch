@@ -27,6 +27,8 @@ LABEL="${3:-review}"
 # `str.splitlines()` が行境界とみなす文字集合全体を対象にする「1行であること」という正の性質の
 # 検査）を唯一の判定源として呼び出す（bash 側で別ロジックを持たせて二重管理・食い違いを作らない）。
 GATE_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/round_gate.py"
+# shellcheck source=SCRIPTDIR/_codex_common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
 for _v in "$WORKDIR" "$PROMPT_FILE" "$LABEL" "${REVIEW_GOAL_CUT:-}"; do
   if ! python3 -c "
 import sys
@@ -150,11 +152,19 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
 # 発注ごとに model / reasoning effort を変えられるようにする（未指定なら config.toml の既定）。
 # macOS 既定の bash 3.2 では空配列の "${a[@]}" が set -u で落ちるので +展開で渡す。
-EFFORT_ARGS=()
-[[ -n "${CODEX_REVIEW_MODEL:-}" ]] && EFFORT_ARGS+=(-m "$CODEX_REVIEW_MODEL")
-[[ -n "${CODEX_REVIEW_EFFORT:-}" ]] && EFFORT_ARGS+=(-c "model_reasoning_effort=\"$CODEX_REVIEW_EFFORT\"")
-nohup codex exec -C "$WORKDIR" -s read-only ${EFFORT_ARGS[@]+"${EFFORT_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
+CODEX_CLI_ARGS=()
+REQUESTED_MODEL="$(sanitize_single_line "${CODEX_REVIEW_MODEL:-}")"
+REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_REVIEW_EFFORT:-}")"
+[[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
+[[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
+nohup codex exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
+
+# 実効値（実際に起動された model / effort）はここでは解決しない・待たない。
+# state には要求値（requested_*）だけを即時に書き、run id を待たせず返す。
+# 実効値はログが出揃ってから「読み手側」（codex-status / codex-watch）が
+# extract_codex_log_header() で read 時に導出する（2026-09-08 codex レビュー巡2 [Must]1:
+# 起動側で待つ設計は、待機中に中断すると codex プロセスだけ記録なしで残るため撤去した）。
 
 # 巡数ゲートの判定結果（JSON）を state 用の値へ分解する。gh/git を再度呼ばず、gate が
 # 既に確定した値をそのまま state に写す（record_target が空＝ブロック中/usage error 相当。
@@ -193,8 +203,8 @@ GATE_MANDATORY_GATE="$(sed -n '5p' <<<"$GATE_FIELDS")"
   echo "prompt=$PROMPT_FILE"
   echo "effective_prompt=$EFFECTIVE_PROMPT"
   echo "skills_suppressed=$SKILLS_SUPPRESSED"
-  echo "effort=${CODEX_REVIEW_EFFORT:-既定}"
-  echo "model=${CODEX_REVIEW_MODEL:-既定}"
+  echo "requested_model=$REQUESTED_MODEL"
+  echo "requested_effort=$REQUESTED_EFFORT"
   echo "prompt_bytes=$(wc -c < "$EFFECTIVE_PROMPT" | tr -d ' ')"
   echo "started_at=$(date +%s)"
   echo "started_at_human=$(date '+%Y-%m-%d %H:%M:%S')"

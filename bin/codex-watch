@@ -19,6 +19,8 @@
 # 最終セクションだけになり判定行を失うことがある（lib/report_rebuild.sh 冒頭コメント参照）。
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/report_rebuild.sh"
+# shellcheck source=SCRIPTDIR/_codex_common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
 
 set -euo pipefail
 
@@ -71,6 +73,12 @@ while :; do
   fi
 
   if ! kill -0 "$PID" 2>/dev/null; then
+    # 実効値（実際に起動された model / effort）はここで初めて read 時に導出する
+    # （state には requested_* しか書かれていない・2026-09-08）。
+    # ログ先頭のヘッダーは参考情報（run/session の同一性は未検証。「実効値」と
+    # 言い切らない・2026-09-08 レビュー巡3裁定）。
+    IFS=$'\t' read -r EFF_MODEL EFF_MODEL_SOURCE EFF_EFFORT EFF_EFFORT_SOURCE <<<"$(extract_codex_log_header "$LOG")"
+    MODEL_SUFFIX=" (ログ先頭ヘッダー参考値: model=$EFF_MODEL/$EFF_MODEL_SOURCE effort=$EFF_EFFORT/$EFF_EFFORT_SOURCE)"
     # report を組み立て直してから判定する（対策1の副作用対応）。-o の report が非空かつ
     # 1行目が判定行として妥当ならそのまま使い、そうでなければ log から結合して上書きする
     # （元の -o 出力は "$REPORT.raw" に温存。rebuild できなければ何もしない＝空のまま）。
@@ -83,14 +91,14 @@ while :; do
     # それは「完了した分析」ではないので、通常の「報告あり」より遮断済みである旨を優先して出す。
     if [[ "$filtered_reported" -eq 1 ]]; then
       if [[ -s "$REPORT" ]]; then
-        echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（部分結果をreportへ復元: $(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）。全文は $(extract_partial_cmd "$LOG")"
+        echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（部分結果をreportへ復元: $(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）。全文は $(extract_partial_cmd "$LOG")${MODEL_SUFFIX}"
       else
-        echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（report空は想定内）。部分結果の抽出: $(extract_partial_cmd "$LOG")"
+        echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（report空は想定内）。部分結果の抽出: $(extract_partial_cmd "$LOG")${MODEL_SUFFIX}"
       fi
     elif [[ -s "$REPORT" ]]; then
-      echo "EXIT: $RUN_ID プロセス終了・報告あり（$(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）"
+      echo "EXIT: $RUN_ID プロセス終了・報告あり（$(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）${MODEL_SUFFIX}"
     else
-      echo "EXIT: $RUN_ID プロセス終了・報告ファイルが空（異常終了の疑い。tail -200 \"$LOG\" を確認）"
+      echo "EXIT: $RUN_ID プロセス終了・報告ファイルが空（異常終了の疑い。tail -200 \"$LOG\" を確認）${MODEL_SUFFIX}"
     fi
     exit 0
   fi
@@ -104,7 +112,8 @@ while :; do
   fi
 
   if [[ $(( now - started )) -ge "$MAX_SEC" ]]; then
-    echo "TIMEOUT: $RUN_ID 監視上限${MAX_SEC}秒に到達（プロセスはまだ生存）"
+    IFS=$'\t' read -r EFF_MODEL EFF_MODEL_SOURCE EFF_EFFORT EFF_EFFORT_SOURCE <<<"$(extract_codex_log_header "$LOG")"
+    echo "TIMEOUT: $RUN_ID 監視上限${MAX_SEC}秒に到達（プロセスはまだ生存） (ログ先頭ヘッダー参考値: model=$EFF_MODEL/$EFF_MODEL_SOURCE effort=$EFF_EFFORT/$EFF_EFFORT_SOURCE)"
     exit 0
   fi
 

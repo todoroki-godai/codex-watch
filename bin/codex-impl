@@ -30,6 +30,9 @@ LABEL="${3:-impl}"
 [[ -d "$WORKDIR" ]] || { echo "作業先がありません: $WORKDIR" >&2; exit 2; }
 [[ -f "$PROMPT_FILE" ]] || { echo "プロンプトファイルがありません: $PROMPT_FILE" >&2; exit 2; }
 
+# shellcheck source=SCRIPTDIR/_codex_common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
+
 # --- 安全ガード: 共有 checkout / main 作業コピーへの書き込みを拒否する ---
 GIT_DIR_ABS="$(git -C "$WORKDIR" rev-parse --absolute-git-dir 2>/dev/null || true)"
 GIT_COMMON_ABS="$(git -C "$WORKDIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
@@ -68,9 +71,23 @@ if [[ -n "$GIT_COMMON_ABS" && "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]]; then
   SANDBOX_ARGS+=(-c "sandbox_workspace_write.writable_roots=[\"$GIT_COMMON_ABS\"]")
 fi
 
+# 発注ごとに model / reasoning effort を変えられるようにする（codex-review と同じ形。
+# 未指定なら config.toml の既定）。macOS 既定の bash 3.2 では空配列の "${a[@]}" が
+# set -u で落ちるので +展開で渡す（SANDBOX_ARGS も同じ理由でここに合わせて +展開へ直す）。
+CODEX_CLI_ARGS=()
+REQUESTED_MODEL="$(sanitize_single_line "${CODEX_IMPL_MODEL:-}")"
+REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_IMPL_EFFORT:-}")"
+[[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
+[[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
+
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
-nohup codex exec -C "$WORKDIR" -s workspace-write "${SANDBOX_ARGS[@]}" -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
+nohup codex exec -C "$WORKDIR" -s workspace-write ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
+
+# 実効値（実際に起動された model / effort）はここでは解決しない・待たない。
+# state には要求値（requested_*）だけを即時に書き、run id を待たせず返す。
+# 実効値はログが出揃ってから「読み手側」（codex-status / codex-watch）が
+# extract_codex_log_header() で read 時に導出する（2026-09-08 codex レビュー巡2 [Must]1）。
 
 {
   echo "run_id=$RUN_ID"
@@ -81,6 +98,8 @@ CODEX_PID=$!
   echo "prompt=$PROMPT_FILE"
   echo "mode=workspace-write"
   echo "writable_git_common=${GIT_COMMON_ABS:-}"
+  echo "requested_model=$REQUESTED_MODEL"
+  echo "requested_effort=$REQUESTED_EFFORT"
   echo "started_at=$(date +%s)"
   echo "started_at_human=$(date '+%Y-%m-%d %H:%M:%S')"
 } > "$STATE_FILE"
