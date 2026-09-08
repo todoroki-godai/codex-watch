@@ -1,33 +1,53 @@
 #!/usr/bin/env bash
-# codex-review / codex-impl 共有ロジック（単一ソース）。
+# codex-review / codex-impl / codex-status / codex-watch 共有ロジック（単一ソース）。
 #
-# 経緯（2026-09-08 codex レビュー [Must]1+2）: 当初 ~/.codex/config.toml を自前 awk で
-# パースして実効値を推定していたが、TOML の字句規則（シングルクォート・`#` を含む値・
-# CRLF 等）を実装しておらず、レビュー側で実際に食い違う入力が構成された。TOML パーサを
-# 自作するのは blocking な検査にできない（~/.claude/rules/no-denylist-checks.md 系の
-# 「名前・文字列・構文形で同一性を判定する検査は閉じない」と同型の問題）。
-#
-# そのため config.toml の解析はやめ、次の2本立てにする:
-#   - requested_model / requested_effort: 呼び出し側が env で明示した「要求値」のみを
-#     state に書く（未指定なら空文字）。config.toml の既定値を推測しない。
-#   - model / effort (source=cli_log): codex exec が実際に起動した後、ログの起動ヘッダー
-#     （`model: ...` / `reasoning effort: ...` の行、`--------` 区切り）を読んで
-#     「実際に起動された値」を記録する。ヘッダーが一定時間内に出ない・書式が合わない
-#     ときは model_source=unresolved / effort_source=unresolved を記録し、起動は妨げない
-#     （fail-open）。
+# 経緯:
+# - 2026-09-08 codex レビュー巡1 [Must]1+2: 当初 ~/.codex/config.toml を自前 awk で
+#   パースして実効値を推定していたが、TOML の字句規則（シングルクォート・`#` を含む値・
+#   CRLF 等）を実装しておらず食い違いが構成された。config.toml 解析はやめ、実際に
+#   起動された値は codex 起動ログのヘッダーから読む方式へ変更した。
+# - 2026-09-08 codex レビュー巡2 [Must]1: 起動スクリプト側でヘッダー出力を待ってから
+#   run id を返す設計は、待機中に中断すると codex プロセスだけが state 無しで残る
+#   （state 書込みより前に run id が返らない＝観測手段が消える）。**起動時は待たず
+#   requested_* のみを即時に書き、実効値は「読み手側」（codex-status / codex-watch）が
+#   毎回ログから read 時に導出する**方式へ変更した。ここに待機ループ・timeout変数は
+#   一切残さない。
+# - 2026-09-08 codex レビュー巡2 [Must]2: ヘッダー区間の特定が「任意の2本目の
+#   `--------`」で打ち切っていたため、プロンプト本文中に偽のヘッダー風テキストを
+#   混入されると誤検出することが実際に構成された。**`^OpenAI Codex v` の行を見つけ、
+#   その直後の行が `--------` である場合に限りヘッダー区間へ入る**方式へ厳密化した。
+#   直後が `--------` でない・区間が閉じない・区間内にキーが無い、のいずれでも
+#   unresolved に倒す（実ヘッダーだと証明できないものは unresolved）。
 
-# 改行・タブ相当の文字を空白へ潰す（state はタブ区切りの行を使う箇所があるため、
-# 値にタブ・改行が混じると行が壊れる）。
-sanitize_single_line() {
-  local v="$1"
-  v="${v//$'\n'/ }"
-  v="${v//$'\r'/ }"
-  v="${v//$'\t'/ }"
-  printf '%s' "$v"
+# 改行相当の文字を空白へ潰す（state は1行1キー形式のため、値に改行が混じると
+# 偽の行を注入できる）。「\n\r\t の3文字だけを列挙する」実装は、Python の
+# str.splitlines() が行境界とみなす別の文字（\v \f \x1c-\x1e \x85     等）を
+# 見逃す（round_gate.py の is_single_line() が既に踏んだ問題と同型）。ロジックを
+# 二重管理せず、同じ判定源（round_gate.is_single_line）を呼ぶ。
+_codex_common_round_gate_py() {
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  printf '%s\n' "$here/lib/round_gate.py"
 }
 
-# codex exec の起動ログ（stdout をそのままリダイレクトしたファイル）から起動ヘッダーを読み、
-# 実際に起動された model / reasoning effort を取り出す。
+sanitize_single_line() {
+  local v="$1"
+  local gate_py gate_dir
+  gate_py="$(_codex_common_round_gate_py)"
+  gate_dir="$(dirname "$gate_py")"
+  python3 -c "
+import sys
+sys.path.insert(0, sys.argv[1])
+from round_gate import is_single_line
+v = sys.argv[2]
+print(v if is_single_line(v) else ' '.join(v.splitlines()))
+" "$gate_dir" "$v"
+}
+
+# codex exec の起動ログ（stdout をそのままリダイレクトしたファイル）を**その時点まで**
+# 1回だけ読み、起動ヘッダーから実際に起動された model / reasoning effort を取り出す。
+# 待機・ポーリングは行わない（呼び出し側が好きなタイミングで何度でも呼べる read-only
+# な導出関数）。
 #
 # ヘッダー例（`~/.codex-watch/*.log` の実ログで確認済み。2026-09-08）:
 #   OpenAI Codex v0.153.4
@@ -42,50 +62,64 @@ sanitize_single_line() {
 #   session id: 01a0....
 #   --------
 #
-# $1 = ログファイルパス  $2 = 待機上限秒（既定 5・小数不可・整数秒）
+# 判定手順（実ヘッダーだと証明できないものは unresolved に倒す）:
+#   1. `^OpenAI Codex v` に一致する行を探す（見つかるまでの行は無視する。プロンプト
+#      本文に紛れた偽のヘッダー風テキストが先に出ても、その前では拾わない）
+#   2. その**直後の行**が `--------` である場合のみ、そこをヘッダー区間の開始とする
+#      （直後でなければそのヘッダー候補は棄却し unresolved のまま終える。既存仕様上
+#      2個目の "OpenAI Codex v" 行が後続ログに再度現れる余地は残すが、その探索も
+#      同じ厳密な規則を要求するため誤検出はしない）
+#   3. 区間内の `^model: ` / `^reasoning effort: ` の行頭一致だけを採用する
+#   4. 次の `--------` で区間を閉じる。区間が閉じる前にログが終わっていれば unresolved
+#
+# $1 = ログファイルパス
 # stdout: "<model>\t<model_source>\t<effort>\t<effort_source>"
 #   source は cli_log|unresolved。unresolved のとき値は "unresolved" を返す。
 extract_codex_log_header() {
-  local log_file="$1" timeout_s="${2:-5}"
-  local interval="0.2"
-  local max_iters=$(( timeout_s * 5 ))
-  local i=0 model="" effort="" dash_count line
+  local log_file="$1"
+  local model="" effort="" line state=0
 
-  while (( i < max_iters )); do
-    if [[ -f "$log_file" ]]; then
-      dash_count=0
-      model=""
-      effort=""
-      while IFS= read -r line; do
-        if [[ "$line" == "--------" ]]; then
-          dash_count=$((dash_count + 1))
-          if (( dash_count >= 2 )); then
+  if [[ -f "$log_file" ]]; then
+    # state: 0=`OpenAI Codex v` 行待ち 1=直後の `--------` 待ち 2=ヘッダー区間内 3=区間を正常に閉じた
+    while IFS= read -r line; do
+      case "$state" in
+        0)
+          if [[ "$line" =~ ^"OpenAI Codex v" ]]; then
+            state=1
+          fi
+          ;;
+        1)
+          if [[ "$line" == "--------" ]]; then
+            state=2
+          else
+            # ヘッダー行の直後が区切りでない＝実ヘッダーではない候補として棄却する。
+            # 以降ログ末尾までこの候補では拾わない（unresolved のまま終える）。
             break
           fi
-          continue
-        fi
-        if [[ "$line" =~ ^model:\ (.+)$ ]]; then
-          model="${BASH_REMATCH[1]}"
-        elif [[ "$line" =~ ^"reasoning effort: "(.+)$ ]]; then
-          effort="${BASH_REMATCH[1]}"
-        fi
-      done < "$log_file"
-      if (( dash_count >= 2 )); then
-        break
-      fi
-    fi
-    sleep "$interval"
-    i=$((i + 1))
-  done
+          ;;
+        2)
+          if [[ "$line" == "--------" ]]; then
+            state=3
+            break
+          fi
+          if [[ "$line" =~ ^"model: "(.+)$ ]]; then
+            model="${BASH_REMATCH[1]}"
+          elif [[ "$line" =~ ^"reasoning effort: "(.+)$ ]]; then
+            effort="${BASH_REMATCH[1]}"
+          fi
+          ;;
+      esac
+    done < "$log_file"
+  fi
 
   local model_source effort_source
-  if [[ -n "$model" ]]; then
+  if [[ "$state" == "3" && -n "$model" ]]; then
     model_source="cli_log"
   else
     model="unresolved"
     model_source="unresolved"
   fi
-  if [[ -n "$effort" ]]; then
+  if [[ "$state" == "3" && -n "$effort" ]]; then
     effort_source="cli_log"
   else
     effort="unresolved"

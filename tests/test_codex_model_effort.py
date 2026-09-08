@@ -1,16 +1,35 @@
-"""bin/_codex_common.sh + codex-review/codex-impl の model/effort 配線を試験する。
+"""bin/_codex_common.sh + codex-review/codex-impl/codex-status/codex-watch の
+model/effort 配線を試験する。
 
-経緯（2026-09-08 codex レビュー [Must]1+2 差し戻し）: 当初 config.toml を自前 awk で
-パースしていたが TOML の字句規則を実装しておらず食い違いが構成された。撤去して
-「要求値は env のみ state に requested_* として書く」「実効値は codex 起動ログの
-ヘッダーから読む」の2本立てへ変更した。ここではその配線を試験する:
+経緯:
+- 2026-09-08 codex レビュー巡1 [Must]1+2: config.toml の自前 awk 解析（TOML の
+  字句規則を実装しておらず食い違いが構成された）を撤去し、実際に起動された値は
+  codex 起動ログのヘッダーから読む方式にした。
+- 2026-09-08 codex レビュー巡2 [Must]1: 起動側がヘッダー出力を待ってから run id を
+  返す設計は、待機中に中断すると codex プロセスだけ記録なしで残る。**起動側は待たず
+  requested_* のみを即時に state へ書き、実効値は読み手側（codex-status /
+  codex-watch）が呼び出し時に毎回ログから導出する**方式へ変更した。
+- 2026-09-08 codex レビュー巡2 [Must]2: 「任意の2本目の --------」で打ち切る実装は
+  プロンプト本文に混ざった偽ヘッダーを拾う。`^OpenAI Codex v` 行の**直後**が
+  `--------` である場合だけをヘッダー区間の開始とする厳密な判定へ変更した。
+
+ここで試験するのは:
   ① env 未指定時、codex へ渡る引数列に -m/-c が付かないこと（従来と同一）
   ② env 指定時、-m が1つだけ付くこと
-  ③ ヘッダーを含む合成ログから実効値を取り出せること（extract_codex_log_header 単体）
-  ④ ヘッダー不在のログで unresolved になること（extract_codex_log_header 単体）
+  ③ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
+     書かれないこと（起動側は待たない）
+  ④ run id が待たずに返ること（ヘッダーの無いログでもラッパーが即座に state と
+     run id を返す）
+  ⑤ extract_codex_log_header() 単体: 正常ヘッダーから実効値が取れる
+  ⑥ 同: ヘッダー不在で unresolved になる
+  ⑦ 回帰: 行頭固定を外すと埋め込み文字列を誤検出すること（陰性試験の固定化）
+  ⑧ 回帰: 偽ヘッダー→本物のヘッダーの順で並ぶログで、偽ヘッダーの値
+     （gpt-wrong）を返さないこと（巡2 [Must]2 の再現ケース）
+  ⑨ codex-status が読み手側として extract_codex_log_header を呼び、要求値と
+     実効値を両方表示すること
 
-実際の `codex` CLI は一切呼ばない（fake スタブに差し替える。fake は argv を側路ファイルへ
-書き出し、標準出力へ合成ヘッダーを吐くだけ）。
+実際の `codex` CLI は一切呼ばない（fake スタブに差し替える。fake は argv を側路
+ファイルへ書き出し、標準出力へ合成ヘッダーを吐くだけ）。
 """
 from __future__ import annotations
 
@@ -24,6 +43,7 @@ import pytest
 BIN_DIR = Path(__file__).resolve().parent.parent / "bin"
 CODEX_REVIEW = BIN_DIR / "codex-review"
 CODEX_IMPL = BIN_DIR / "codex-impl"
+CODEX_STATUS = BIN_DIR / "codex-status"
 COMMON_SH = BIN_DIR / "_codex_common.sh"
 
 VALID_GOAL_CUT = "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26"
@@ -44,6 +64,25 @@ user
 dummy
 """
 
+# 巡2 [Must]2 の再現ケース: 本文中に埋め込まれた偽のヘッダー風テキストの後に
+# 本物のヘッダーが続くログ。「任意の2本目の --------」で打ち切る実装だと
+# gpt-wrong を誤って cli_log として返す。
+POISONED_THEN_REAL_HEADER = """\
+user
+model: gpt-wrong
+some analysis referencing model: gpt-wrong again
+--------
+prompt body continues here
+--------
+OpenAI Codex v0.153.4
+--------
+model: gpt-actual
+reasoning effort: medium
+--------
+user
+dummy
+"""
+
 
 def _write_executable(path: Path, script: str) -> None:
     path.write_text(script)
@@ -55,9 +94,9 @@ def fake_bin(tmp_path: Path) -> Path:
     """fake `gh` / `codex` を PATH に置く。
 
     `codex` は標準入力を読み捨て、自分の argv を `$ARGV_CAPTURE_FILE` へ1行1引数で書き出し、
-    合成ヘッダー（SYNTHETIC_HEADER 相当。呼び出し側が > "$LOG_FILE" でリダイレクトするので
-    ここでの標準出力がそのままログになる）を出力する。`gh` は codex-review の巡数ゲート発注
-    経路が呼ぶ最小限だけ相手をする（test_codex_review_cli.py の fake_bin と同じ形）。
+    合成ヘッダー（呼び出し側が > "$LOG_FILE" でリダイレクトするので、ここでの標準出力が
+    そのままログになる）を出力する。`gh` は codex-review の巡数ゲート発注経路が呼ぶ
+    最小限だけ相手をする（test_codex_review_cli.py の fake_bin と同じ形）。
     """
     d = tmp_path / "fakebin"
     d.mkdir()
@@ -117,7 +156,6 @@ def _run_impl(
     env["CODEX_WATCH_DIR"] = str(state_dir)
     env["CODEX_IMPL_ALLOW_MAIN"] = "1"  # tmp_path は git repo ではないため
     env["ARGV_CAPTURE_FILE"] = str(argv_capture)
-    env["CODEX_LOG_HEADER_TIMEOUT_S"] = "1"
     if header_file is not None:
         env["FAKE_CODEX_HEADER_FILE"] = str(header_file)
     else:
@@ -140,6 +178,29 @@ def _run_impl(
     )
 
 
+def _state_dict(state_file: Path) -> dict[str, str]:
+    return dict(ln.split("=", 1) for ln in state_file.read_text().splitlines() if "=" in ln)
+
+
+def _wait_for_file(path: Path, timeout_s: float = 2.0, contains: str | None = None) -> None:
+    """テスト側の待機。ラッパー自体は待たない設計（[Must]1）なので、バックグラウンドの
+    fake codex がファイルを書き終えるまでの短いレースはテスト側で吸収する。
+    `contains` を渡すと、単なる非空チェックでなく指定文字列が現れるまで待つ
+    （ストリーミング書込み中の部分読みを避ける）。
+    """
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if path.exists():
+            if contains is None:
+                if path.stat().st_size > 0:
+                    return
+            elif contains in path.read_text(errors="ignore"):
+                return
+        time.sleep(0.02)
+
+
 # ---------------------------------------------------------------------------
 # ① env 未指定時、codex へ渡る引数列に -m/-c が付かない（従来と同一）
 # ---------------------------------------------------------------------------
@@ -153,6 +214,7 @@ def test_impl_no_model_env_produces_no_extra_flags(fake_bin: Path, tmp_path: Pat
     result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=header_file)
     assert result.returncode == 0, result.stdout + result.stderr
 
+    _wait_for_file(argv_capture)
     argv_lines = argv_capture.read_text().splitlines()
     assert "-m" not in argv_lines, argv_lines
     assert not any(a.startswith("model_reasoning_effort=") for a in argv_lines), argv_lines
@@ -173,6 +235,7 @@ def test_impl_model_env_adds_exactly_one_dash_m(fake_bin: Path, tmp_path: Path):
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
+    _wait_for_file(argv_capture)
     argv_lines = argv_capture.read_text().splitlines()
     assert argv_lines.count("-m") == 1, argv_lines
     idx = argv_lines.index("-m")
@@ -180,11 +243,12 @@ def test_impl_model_env_adds_exactly_one_dash_m(fake_bin: Path, tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# state には requested_* と env で渡した値が一致し、config.toml を経由していないこと
+# ③④ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
+#    書かれない（起動側は待たない・run id は待たず返る）
 # ---------------------------------------------------------------------------
 
 
-def test_impl_state_records_requested_and_effective_from_log(fake_bin: Path, tmp_path: Path):
+def test_impl_state_has_requested_only_no_effective_fields(fake_bin: Path, tmp_path: Path):
     header_file = tmp_path / "header.txt"
     header_file.write_text(SYNTHETIC_HEADER)
     argv_capture = tmp_path / "argv.txt"
@@ -201,55 +265,46 @@ def test_impl_state_records_requested_and_effective_from_log(fake_bin: Path, tmp
     run_id = result.stdout.strip().splitlines()[-1]
     state_file = tmp_path / "state" / f"{run_id}.state"
     assert state_file.is_file()
-    lines = dict(
-        ln.split("=", 1) for ln in state_file.read_text().splitlines() if "=" in ln
-    )
+    lines = _state_dict(state_file)
+
     assert lines["requested_model"] == "gpt-test-model"
     assert lines["requested_effort"] == "high"
-    # ヘッダーは常に gpt-5.6-sol/medium を返す fake なので、実効値はそれと一致する
-    # （要求値と実効値が別物であることを示す＝実際の起動が要求どおりとは限らない）
-    assert lines["model"] == "gpt-5.6-sol"
-    assert lines["model_source"] == "cli_log"
-    assert lines["effort"] == "medium"
-    assert lines["effort_source"] == "cli_log"
+    # 起動側は実効値を書かない（読み手側の責務）。
+    assert "model" not in lines
+    assert "effort" not in lines
+    assert "model_source" not in lines
+    assert "effort_source" not in lines
 
 
-# ---------------------------------------------------------------------------
-# ④ ヘッダー不在のログで unresolved になる（state 経由の統合試験）
-# ---------------------------------------------------------------------------
-
-
-def test_impl_state_unresolved_when_no_header(fake_bin: Path, tmp_path: Path):
+def test_impl_returns_run_id_without_waiting_when_header_absent(fake_bin: Path, tmp_path: Path):
+    """ヘッダーの無いログ（fake codex がヘッダーを一切出さない）でも、
+    ラッパーが待たずに即座に state と run id を返すことを確認する（[Must]1）。
+    タイムアウトを要求しない（サブプロセス自体に長い timeout を掛けているが、
+    実際の所要時間はヘッダー待ちが無ければ数百ms以内で完了するはず）。
+    """
     argv_capture = tmp_path / "argv.txt"
     result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None)
     assert result.returncode == 0, result.stdout + result.stderr
     run_id = result.stdout.strip().splitlines()[-1]
     state_file = tmp_path / "state" / f"{run_id}.state"
-    lines = dict(
-        ln.split("=", 1) for ln in state_file.read_text().splitlines() if "=" in ln
-    )
-    assert lines["model_source"] == "unresolved"
-    assert lines["effort_source"] == "unresolved"
-    assert "model" not in lines
-    assert "effort" not in lines
+    assert state_file.is_file()
+    lines = _state_dict(state_file)
+    # 待たずに返る設計では、そもそも model_source 自体が state に存在しない
+    assert "model_source" not in lines
+    assert "effort_source" not in lines
 
 
 # ---------------------------------------------------------------------------
-# ③④ extract_codex_log_header 単体（bin/_codex_common.sh 直接試験）
+# ⑤⑥ extract_codex_log_header 単体（bin/_codex_common.sh 直接試験）
 # ---------------------------------------------------------------------------
 
 
-def _run_extract(log_text: str | None, tmp_path: Path, timeout_s: int = 1) -> str:
+def _run_extract(log_text: str | None, tmp_path: Path) -> str:
     log_file = tmp_path / "extract.log"
     if log_text is not None:
         log_file.write_text(log_text)
-    script = (
-        f'source "{COMMON_SH}"\n'
-        f'extract_codex_log_header "{log_file}" {timeout_s}\n'
-    )
-    result = subprocess.run(
-        ["bash", "-c", script], capture_output=True, text=True, timeout=30
-    )
+    script = f'source "{COMMON_SH}"\nextract_codex_log_header "{log_file}"\n'
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     return result.stdout.strip()
 
@@ -273,7 +328,7 @@ def test_extract_log_header_unresolved_when_absent(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# 陰性試験（回帰防止）: 行頭固定を外すと埋め込み文字列を誤って拾う
+# ⑦ 陰性試験（回帰防止）: 行頭固定を外すと埋め込み文字列を誤って拾う
 # ---------------------------------------------------------------------------
 
 
@@ -290,3 +345,83 @@ def test_extract_log_header_line_anchor_prevents_embedded_match(tmp_path: Path):
     model, model_source, _effort, _effort_source = out.split("\t")
     assert model == "gpt-5.6-sol", "行頭固定が外れて埋め込み文字列を拾った可能性がある"
     assert model_source == "cli_log"
+
+
+# ---------------------------------------------------------------------------
+# ⑧ 陰性試験（巡2 [Must]2 再現）: 偽ヘッダー→本物ヘッダーの順で並ぶログで
+#    偽ヘッダーの値（gpt-wrong）を返さない
+# ---------------------------------------------------------------------------
+
+
+def test_extract_log_header_does_not_return_poisoned_value_before_real_header(tmp_path: Path):
+    out = _run_extract(POISONED_THEN_REAL_HEADER, tmp_path)
+    model, _model_source, _effort, _effort_source = out.split("\t")
+    assert model != "gpt-wrong", f"偽ヘッダー由来の値を返した: {out}"
+    # unresolved でも gpt-actual でもよい（今回の厳密な実装では本物のヘッダーを
+    # 正しく検出できるので gpt-actual になるはず）。
+    assert model in ("gpt-actual", "unresolved"), out
+
+
+def test_extract_log_header_loose_boundary_would_misdetect_poisoned_value(tmp_path: Path):
+    """「任意の2本目の -------- で打ち切る」旧実装を模した壊れた関数で、
+    実際に gpt-wrong を誤検出することを確認する（回帰の再発防止・実際に壊して赤にする）。
+    """
+    log_file = tmp_path / "poisoned.log"
+    log_file.write_text(POISONED_THEN_REAL_HEADER)
+    script = f"""
+extract_broken() {{
+  local log_file="$1" model="" effort="" dash_count=0 line
+  while IFS= read -r line; do
+    if [[ "$line" == "--------" ]]; then
+      dash_count=$((dash_count + 1))
+      if (( dash_count >= 2 )); then break; fi
+      continue
+    fi
+    if [[ "$line" =~ ^model:\\ (.+)$ ]]; then
+      model="${{BASH_REMATCH[1]}}"
+    fi
+  done < "$log_file"
+  printf '%s\\n' "$model"
+}}
+extract_broken "{log_file}"
+"""
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "gpt-wrong", "壊れた実装が期待どおり誤検出しなかった"
+
+
+# ---------------------------------------------------------------------------
+# ⑨ codex-status が読み手側として要求値・実効値を両方表示する
+# ---------------------------------------------------------------------------
+
+
+def test_status_shows_requested_and_effective(fake_bin: Path, tmp_path: Path):
+    header_file = tmp_path / "header.txt"
+    header_file.write_text(SYNTHETIC_HEADER)
+    argv_capture = tmp_path / "argv.txt"
+
+    result = _run_impl(
+        fake_bin,
+        tmp_path,
+        argv_capture=argv_capture,
+        header_file=header_file,
+        model_env="gpt-test-model",
+        effort_env="high",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    run_id = result.stdout.strip().splitlines()[-1]
+    state_dir = tmp_path / "state"
+    log_file = state_dir / f"{run_id}.log"
+    _wait_for_file(log_file, contains="reasoning effort:")
+
+    env = dict(os.environ)
+    env["CODEX_WATCH_DIR"] = str(state_dir)
+    status_result = subprocess.run(
+        [str(CODEX_STATUS), run_id], env=env, capture_output=True, text=True, timeout=30
+    )
+    assert status_result.returncode == 0, status_result.stdout + status_result.stderr
+    assert "要求値" in status_result.stdout
+    assert "gpt-test-model" in status_result.stdout
+    assert "実効値" in status_result.stdout
+    assert "gpt-5.6-sol" in status_result.stdout
+    assert "cli_log" in status_result.stdout

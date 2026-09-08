@@ -15,6 +15,8 @@
 # codex-watch と同じ共有関数を使う（正本を二重管理しない）。
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/report_rebuild.sh"
+# shellcheck source=SCRIPTDIR/_codex_common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
 
 set -euo pipefail
 
@@ -39,6 +41,8 @@ show_one() {
   log=$(sed -n 's/^log=//p' "$state_file")
   workdir=$(sed -n 's/^workdir=//p' "$state_file")
   started_at=$(sed -n 's/^started_at=//p' "$state_file")
+  requested_model=$(sed -n 's/^requested_model=//p' "$state_file")
+  requested_effort=$(sed -n 's/^requested_effort=//p' "$state_file")
 
   local now alive elapsed silent verdict_count size lines
   now=$(date +%s)
@@ -72,6 +76,12 @@ show_one() {
   echo "判定行   : ${verdict_count}件（'tokens used' の完全一致）"
   echo "ログ     : $log (${size}B / ${lines}行)"
   echo "対象     : $workdir"
+  # 実効値（実際に起動された model / effort）はここで初めてログから read 時に導出する
+  # （state には requested_* しか書かれていない。起動側で待たない設計・2026-09-08）。
+  local eff_model eff_model_source eff_effort eff_effort_source
+  IFS=$'\t' read -r eff_model eff_model_source eff_effort eff_effort_source <<<"$(extract_codex_log_header "$log")"
+  echo "要求値   : model=${requested_model:-(未指定)} effort=${requested_effort:-(未指定)}"
+  echo "実効値   : model=$eff_model($eff_model_source) effort=$eff_effort($eff_effort_source)"
   if [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
     # 終了後は report を組み立て直してから表示する（逐次出力運用では log の
     # 'tokens used' 以降＝最終セクションだけの複製で、report と同じ欠落を持つ。
