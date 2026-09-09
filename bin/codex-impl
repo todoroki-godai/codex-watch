@@ -53,6 +53,25 @@ if [[ "${CODEX_IMPL_ALLOW_MAIN:-0}" != "1" ]]; then
   fi
 fi
 
+# --- 下準備ゲート: node_modules の実体が無い worktree への投入を拒否する ---
+#   実測（2026-09-09）: 部品一式が入っていない worktree を渡した結果、Codex の実行環境が
+#   外部取得不可でログに ENOTCACHED が出るだけで静かに待ち続け、2時間12分 1ファイルも書けな
+#   かった（赤にならないので気づけない）。判定は「実体の有無」のみで、パッケージ名の列挙や
+#   バージョン照合はしない（名前で同一性を判定する検査は回避形を無限に構成できるため・
+#   ~/.claude/rules/verify-checks-by-breaking.md）。空ディレクトリが残っている実例があるため
+#   ディレクトリの存在だけでは通さず、中身が1件以上あることを実測する。
+if [[ "${CODEX_IMPL_ALLOW_MISSING_NODE_MODULES:-0}" != "1" ]]; then
+  NODE_MODULES_DIR="$WORKDIR/node_modules"
+  if [[ ! -d "$NODE_MODULES_DIR" ]] || [[ -z "$(ls -A "$NODE_MODULES_DIR" 2>/dev/null)" ]]; then
+    echo "拒否: 下準備未完了（node_modules の実体がありません）: $NODE_MODULES_DIR" >&2
+    echo "  これに静かに Codex を投入すると、外部取得不可の環境ではエラーにならず待ち続けるだけになります。" >&2
+    echo "  対処: 次を実行してから再度 codex-impl を起動してください。" >&2
+    echo "    pnpm --dir \"$WORKDIR\" install --frozen-lockfile" >&2
+    echo "  意図的に無効化する場合のみ CODEX_IMPL_ALLOW_MISSING_NODE_MODULES=1 を付けて再実行してください。" >&2
+    exit 4
+  fi
+fi
+
 STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
 mkdir -p "$STATE_DIR"
 
