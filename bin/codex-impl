@@ -99,6 +99,19 @@ REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_IMPL_EFFORT:-}")"
 [[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
 
+# 初回プロンプトに画像を添付する（codex exec -i）。参照画像を渡して何かを作らせる用途で使う。
+# CODEX_IMPL_IMAGES は「改行区切り」で複数パスを渡す（パスに空白が入りうるので空白区切りにしない）。
+# 実在しないパスは無視せず即エラーにする — 黙って画像なしで走ると「画像を見た上での結果」と
+# 誤読され、比較実験の結論が丸ごと無効になる（沈黙して劣化する経路を塞ぐ）。
+if [[ -n "${CODEX_IMPL_IMAGES:-}" ]]; then
+  while IFS= read -r _img; do
+    [[ -z "$_img" ]] && continue
+    [[ "$_img" = /* ]] || { echo "CODEX_IMPL_IMAGES は絶対パスで指定してください: $_img" >&2; exit 2; }
+    [[ -f "$_img" ]] || { echo "CODEX_IMPL_IMAGES の画像がありません: $_img" >&2; exit 2; }
+    CODEX_CLI_ARGS+=(-i "$_img")
+  done <<< "${CODEX_IMPL_IMAGES}"
+fi
+
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
 nohup codex exec -C "$WORKDIR" -s workspace-write ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
