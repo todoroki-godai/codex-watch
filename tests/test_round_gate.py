@@ -384,6 +384,150 @@ def test_compute_backfill_value_no_jsonl(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
+# 受領時 SHA / 内容ハッシュ突合（claude-config#55）
+# ---------------------------------------------------------------------------
+
+SHA_A = "a" * 40
+SHA_B = "b" * 40
+HASH_A = "1" * 64
+HASH_B = "2" * 64
+
+
+def test_content_hash_from_texts_is_deterministic():
+    h1 = rg.content_hash_from_texts("status\n", "diff\n")
+    h2 = rg.content_hash_from_texts("status\n", "diff\n")
+    assert h1 == h2
+    assert len(h1) == 64
+
+
+def test_content_hash_from_texts_differs_for_different_input():
+    h1 = rg.content_hash_from_texts("status A\n", "diff\n")
+    h2 = rg.content_hash_from_texts("status B\n", "diff\n")
+    assert h1 != h2
+
+
+def test_content_hash_from_texts_differs_when_only_diff_changes():
+    # status_text が同一でも diff_text だけが違えば結果が変わること
+    # （diff_text を計算に含めない変異を検出する。status のみで判定すると、
+    # 追跡済みファイルの中身変更以外の差分＝ステージ済みだが未コミットの変更内容の違いを見逃す）。
+    h1 = rg.content_hash_from_texts("M a.txt\n", "diff content A\n")
+    h2 = rg.content_hash_from_texts("M a.txt\n", "diff content B\n")
+    assert h1 != h2
+
+
+def test_git_content_hash_differs_between_clean_and_dirty(tmp_path: Path):
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "a.txt").write_text("hello\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    clean_hash = rg.git_content_hash(str(repo))
+    # 同一 HEAD・同一状態なら再計算しても一致する（決定論性）
+    assert rg.git_content_hash(str(repo)) == clean_hash
+
+    (repo / "a.txt").write_text("hello world\n")
+    dirty_hash = rg.git_content_hash(str(repo))
+    assert dirty_hash != clean_hash, "未コミット差分があるのに同一 HEAD で内容ハッシュが変わらない"
+
+
+def test_parse_receipt_claim_extracts_from_head():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    sha, chash = rg.parse_receipt_claim(report)
+    assert sha == SHA_A
+    assert chash == HASH_A
+
+
+def test_parse_receipt_claim_uppercase_normalized_to_lowercase():
+    report = f"read_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
+    sha, chash = rg.parse_receipt_claim(report)
+    assert sha == SHA_A
+    assert chash == HASH_A
+
+
+def test_parse_receipt_claim_missing_returns_none():
+    sha, chash = rg.parse_receipt_claim("判定: マージ可\n本文のみ\n")
+    assert sha is None
+    assert chash is None
+
+
+def test_parse_receipt_claim_ignores_claim_outside_head_window():
+    # RECEIPT_HEAD_LINES(10) より後ろに出てくる申告（例: 過去ログの引用）は拾わない
+    body = "\n".join([f"line{i}" for i in range(12)])
+    report = body + f"\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    sha, chash = rg.parse_receipt_claim(report)
+    assert sha is None
+    assert chash is None
+
+
+def test_check_receipt_ok_on_match():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "ok"
+
+
+def test_check_receipt_ok_when_report_uses_uppercase_hex():
+    report = f"read_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "ok"
+
+
+def test_check_receipt_rejects_legacy_state_missing_expected_sha():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    result = rg.check_receipt("", HASH_A, report)
+    assert result.status == "rejected"
+    assert "旧形式" in result.reason
+
+
+def test_check_receipt_rejects_legacy_state_missing_expected_hash():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    result = rg.check_receipt(SHA_A, "", report)
+    assert result.status == "rejected"
+    assert "旧形式" in result.reason
+
+
+def test_check_receipt_rejects_missing_claim():
+    result = rg.check_receipt(SHA_A, HASH_A, "判定: マージ可\n本文のみ\n")
+    assert result.status == "rejected"
+    assert "申告" in result.reason
+
+
+def test_check_receipt_rejects_sha_mismatch():
+    report = f"read_sha={SHA_B}\ncontent_hash={HASH_A}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+    assert "read_sha" in result.reason
+
+
+def test_check_receipt_rejects_content_hash_mismatch():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_B}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+    assert "content_hash" in result.reason
+
+
+def test_check_receipt_rejects_on_none_report_text():
+    # report ファイルが読めない等で report_text が空文字になったケース（呼び出し側の既定挙動）
+    result = rg.check_receipt(SHA_A, HASH_A, "")
+    assert result.status == "rejected"
+
+
+def test_check_receipt_fail_closed_on_exception():
+    class Boom:
+        def splitlines(self):
+            raise RuntimeError("boom")
+
+    result = rg.check_receipt(SHA_A, HASH_A, Boom())
+    assert result.status == "rejected"
+    assert "照合不能" in result.reason
+
+
+# ---------------------------------------------------------------------------
 # check_goal_cut（review.md 入口条件⑥の機械 enforce）
 # ---------------------------------------------------------------------------
 

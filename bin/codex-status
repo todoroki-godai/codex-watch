@@ -20,6 +20,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
 
 set -euo pipefail
 
+GATE_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/round_gate.py"
 STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
 STALL_SEC="${CODEX_WATCH_STALL_SEC:-180}"
 
@@ -90,6 +91,12 @@ show_one() {
     local report
     report="${log%.log}.report"
     rebuild_report_if_needed "$log" "$report" || true
+    # 受領時 SHA / 内容ハッシュ突合（claude-config#55）。レビュー本文が申告した
+    # 「読んだ版」を発注時に固定した head_sha / content_hash と機械で突合する。
+    # fail-closed: 判定できないときも「受領不可」側へ倒す（round_gate.py check_receipt）。
+    local receipt_msg
+    receipt_msg="$(python3 "$GATE_PY" receipt --state-file "$state_file" --report "$report" 2>&1)"
+    echo "受領     : $receipt_msg"
     if [[ -s "$report" ]]; then
       echo "--- 判定: $(extract_verdict_line "$report") / report ($(wc -l < "$report" | tr -d ' ') 行) ---"
       cat "$report"

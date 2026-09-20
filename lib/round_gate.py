@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -295,6 +296,89 @@ def body_own_round(body: str) -> int:
     """本文が示す「own target の巡数」= 承認行が宣言する巡番号の最大値。無ければ0。"""
     rounds = parse_approval_rounds(body)
     return max(rounds) if rounds else 0
+
+
+# ---------------------------------------------------------------------------
+# 受領時 SHA / 内容ハッシュ突合（claude-config#55）
+# ---------------------------------------------------------------------------
+#
+# review.md「本文に読んだ commit SHA と、未コミット差分または対象ファイル集合の内容ハッシュを
+# 必須記載させ、欠落・不一致なら受領せず取り直す」の機械 enforce。人間の手順としてのみ
+# 存在していたため、2026-09-09 にレビュアーが作り直し前の版を読み [Must] 8件中7件が
+# 既に直っているコードへの指摘、という事故が実際に起きた（出所は同 rule 本文）。
+#
+# 判定に使うのは実体の同一性（commit SHA そのものと、対象ファイル集合の内容ハッシュ）で、
+# 名前・文字列パターン・構文形では判定しない（`no-denylist-checks.md`）。fail-closed:
+# 期待値の欠落（旧形式 state）・申告欠落・不一致・例外のいずれでも受領不可（rejected）にする。
+
+RE_RECEIPT_READ_SHA = re.compile(r"^read_sha=([0-9a-fA-F]{40})\s*$", re.MULTILINE)
+RE_RECEIPT_CONTENT_HASH = re.compile(r"^content_hash=([0-9a-fA-F]{64})\s*$", re.MULTILINE)
+# レポート先頭の何行までを申告の探索対象にするか。全文検索にしないのは、本文中に引用された
+# 過去の SHA・ハッシュ（別 run のログ断片の引用等）を拾わないため（review.md「file:line の
+# 実在確認も代用にしない」と同型の懸念）。
+RECEIPT_HEAD_LINES = 10
+
+
+def parse_receipt_claim(report_text: str) -> tuple[str | None, str | None]:
+    """レポート先頭 `RECEIPT_HEAD_LINES` 行から `read_sha=` / `content_hash=` の申告を読む。
+
+    どちらか一方でも見つからなければ `None` を返す（呼び出し側が「欠落」として扱う）。
+    """
+    head = "\n".join((report_text or "").splitlines()[:RECEIPT_HEAD_LINES])
+    m_sha = RE_RECEIPT_READ_SHA.search(head)
+    m_hash = RE_RECEIPT_CONTENT_HASH.search(head)
+    sha = m_sha.group(1).lower() if m_sha else None
+    content_hash = m_hash.group(1).lower() if m_hash else None
+    return sha, content_hash
+
+
+@dataclass(frozen=True)
+class ReceiptCheck:
+    status: str  # "ok" | "rejected"
+    reason: str
+
+
+def check_receipt(expected_head_sha: str, expected_content_hash: str, report_text: str) -> ReceiptCheck:
+    """レビュー本文が申告した「読んだ版」を、発注時に固定した値と機械で突合する。
+
+    緑（"ok"）になるのは実体（SHA・内容ハッシュ）が一致したときだけ。それ以外は全て
+    "rejected"（fail-closed）: 期待値が欠落（旧形式 state）・申告が欠落・不一致・例外。
+    """
+    try:
+        if not expected_head_sha or not expected_content_hash:
+            return ReceiptCheck(
+                "rejected",
+                "旧形式の state です（head_sha または content_hash が記録されていません）。"
+                "判定不能のため受領不可とします。",
+            )
+        claimed_sha, claimed_hash = parse_receipt_claim(report_text)
+        if claimed_sha is None or claimed_hash is None:
+            return ReceiptCheck(
+                "rejected", "レポート先頭に read_sha= / content_hash= の申告がありません。"
+            )
+        if claimed_sha != expected_head_sha.lower():
+            return ReceiptCheck(
+                "rejected",
+                f"read_sha が発注時の値と不一致です（申告={claimed_sha} 期待={expected_head_sha}）。",
+            )
+        if claimed_hash != expected_content_hash.lower():
+            return ReceiptCheck(
+                "rejected",
+                f"content_hash が発注時の値と不一致です（申告={claimed_hash} 期待={expected_content_hash}）。",
+            )
+        return ReceiptCheck("ok", "受領可: read_sha/content_hash が発注時の値と一致しました。")
+    except Exception as e:  # fail-closed: 想定外の例外も受領不可にする
+        return ReceiptCheck("rejected", f"照合不能: {e}")
+
+
+def content_hash_from_texts(status_text: str, diff_text: str) -> str:
+    """`git status --porcelain -uall` と `git diff HEAD` の出力を連結して sha256 する。
+
+    同一 workdir・同一状態（同一 HEAD + 同一未コミット差分）なら発注時とレビュアーの
+    サンドボックス内再計算の両方で決定論的に同じ値になる。同一 head_sha でも未コミット差分が
+    あれば複数の内容を指しうるため、head_sha 単独の代わりにこれを併記する（review.md 出所）。
+    """
+    return hashlib.sha256((status_text + diff_text).encode("utf-8", errors="surrogateescape")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -752,6 +836,37 @@ def git_remote_repo(workdir: str) -> tuple[str, str] | None:
     return m.group(1), m.group(2)
 
 
+def git_content_hash(workdir: str) -> str:
+    """workdir の未コミット差分を含む内容ハッシュを計算する（`content_hash_from_texts` 参照）。
+
+    レビュアーのサンドボックス側にも同じ手順（`git status --porcelain -uall` と
+    `git diff HEAD` を連結して sha256）を実行させ、申告値と突合する。手順を二重管理すると
+    片側だけ変更されたときに常に不一致になるため、コマンド自体をプロンプトへ verbatim で書く
+    （`bin/codex-review` 側）。
+    """
+    try:
+        status = subprocess.run(
+            ["git", "-C", workdir, "status", "--porcelain", "-uall"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        diff = subprocess.run(
+            ["git", "-C", workdir, "diff", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise Indeterminate(f"判定不能: content_hash の計算に失敗しました（{e}）") from e
+    if status.returncode != 0 or diff.returncode != 0:
+        raise Indeterminate(
+            "判定不能: content_hash の計算に失敗しました "
+            f"(git status rc={status.returncode} / git diff rc={diff.returncode})"
+        )
+    return content_hash_from_texts(status.stdout, diff.stdout)
+
+
 def gh_fetch_body(target: Target) -> str:
     cmd = [
         "gh",
@@ -882,6 +997,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
     backfill.add_argument("--state-file", required=True)
     backfill.add_argument("--sessions-dir", default=DEFAULT_SESSIONS_DIR)
     backfill.add_argument("--json", action="store_true")
+
+    content_hash = sub.add_parser("content-hash", help="workdir の内容ハッシュ（未コミット差分込み）を計算する")
+    content_hash.add_argument("--workdir", required=True)
+
+    receipt = sub.add_parser("receipt", help="レビュー受領時に read_sha/content_hash を機械照合する")
+    receipt.add_argument("--state-file", required=True)
+    receipt.add_argument("--report", required=True)
+    receipt.add_argument("--json", action="store_true")
 
     return p
 
@@ -1205,6 +1328,28 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(result, ensure_ascii=False))
         else:
             print(result.get("message") or result.get("status"))
+        return exit_code
+
+    if args.cmd == "content-hash":
+        try:
+            print(git_content_hash(args.workdir))
+            return EXIT_PASS
+        except Indeterminate as e:
+            print(e.reason, file=sys.stderr)
+            return EXIT_INDETERMINATE
+
+    if args.cmd == "receipt":
+        d = read_state_file(Path(args.state_file))
+        try:
+            report_text = Path(args.report).read_text()
+        except OSError:
+            report_text = ""  # ファイル不在も「申告なし」と同じ扱い（check_receipt が rejected にする）
+        result = check_receipt(d.get("head_sha", ""), d.get("content_hash", ""), report_text)
+        exit_code = EXIT_PASS if result.status == "ok" else EXIT_BLOCKED
+        if args.json:
+            print(json.dumps({"status": result.status, "reason": result.reason}, ensure_ascii=False))
+        else:
+            print(result.reason)
         return exit_code
 
     return EXIT_USAGE

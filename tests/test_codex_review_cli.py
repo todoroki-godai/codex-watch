@@ -182,6 +182,180 @@ def test_cli_saved_goal_cut_state_line_is_single_line(fake_bin: Path, tmp_path: 
     assert parsed.get("review_target") == "issue:example-org/example-repo#1"
 
 
+# ---------------------------------------------------------------------------
+# ⑤ content_hash= が実発注時に state へ書かれ、receipt サブコマンドで機械照合できる
+#    （claude-config#55: レビュー受領時に「読んだ版」を機械で照合するゲートの発注口）
+# ---------------------------------------------------------------------------
+
+
+def _init_git_repo(repo: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "a.txt").write_text("hello\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+    # workdir の origin が REVIEW_TARGET の repo と一致することをゲートが要求するため設定する
+    subprocess.run(
+        ["git", "remote", "add", "origin", "https://github.com/example-org/example-repo.git"],
+        cwd=repo,
+        check=True,
+    )
+
+
+def _run_in_git_workdir(
+    fake_bin: Path,
+    tmp_path: Path,
+    workdir: Path,
+    *,
+    review_target: str,
+    review_goal_cut: str,
+) -> subprocess.CompletedProcess:
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("dummy prompt\n")
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(exist_ok=True)
+
+    env = dict(os.environ)
+    env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
+    env["CODEX_WATCH_DIR"] = str(state_dir)
+    env["REVIEW_TARGET"] = review_target
+    env["REVIEW_GOAL_CUT"] = review_goal_cut
+    env["FAKE_GH_BODY"] = str(tmp_path / "fake_gh_body.txt")
+    env.pop("CODEX_REVIEW_GATE_CHECK", None)
+
+    return subprocess.run(
+        [str(CODEX_REVIEW), str(workdir), str(prompt), "clitest"],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def test_cli_dispatch_writes_content_hash_for_git_managed_workdir(fake_bin: Path, tmp_path: Path):
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    _init_git_repo(workdir)
+
+    result = _run_in_git_workdir(
+        fake_bin,
+        tmp_path,
+        workdir,
+        review_target="issue:example-org/example-repo#1",
+        review_goal_cut=VALID_GOAL_CUT,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    run_id = result.stdout.strip().splitlines()[-1]
+    state_file = tmp_path / "state" / f"{run_id}.state"
+    assert state_file.is_file()
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+    import round_gate as rg  # noqa: E402
+
+    parsed = rg.read_state_file(state_file)
+    assert parsed.get("head_sha"), "head_sha が state に書かれていない"
+    assert parsed.get("content_hash"), "content_hash が state に書かれていない"
+    # 独立に計算した値と一致すること（発注口が計算した値の正しさそのものを確認する）
+    assert parsed["content_hash"] == rg.git_content_hash(str(workdir))
+    assert len(parsed["content_hash"]) == 64
+
+
+def test_cli_dispatch_content_hash_changes_with_uncommitted_diff(fake_bin: Path, tmp_path: Path):
+    """同一 HEAD でも未コミット差分があれば content_hash が変わることを、実発注口で確認する。"""
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    _init_git_repo(workdir)
+
+    result_clean = _run_in_git_workdir(
+        fake_bin,
+        tmp_path,
+        workdir,
+        review_target="issue:example-org/example-repo#1",
+        review_goal_cut=VALID_GOAL_CUT,
+    )
+    assert result_clean.returncode == 0, result_clean.stdout + result_clean.stderr
+    run_id_clean = result_clean.stdout.strip().splitlines()[-1]
+
+    (workdir / "a.txt").write_text("hello world\n")
+
+    result_dirty = _run_in_git_workdir(
+        fake_bin,
+        tmp_path,
+        workdir,
+        review_target="issue:example-org/example-repo#1",
+        review_goal_cut=VALID_GOAL_CUT,
+    )
+    assert result_dirty.returncode == 0, result_dirty.stdout + result_dirty.stderr
+    run_id_dirty = result_dirty.stdout.strip().splitlines()[-1]
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+    import round_gate as rg  # noqa: E402
+
+    clean_hash = rg.read_state_file(tmp_path / "state" / f"{run_id_clean}.state")["content_hash"]
+    dirty_hash = rg.read_state_file(tmp_path / "state" / f"{run_id_dirty}.state")["content_hash"]
+    assert clean_hash != dirty_hash
+
+
+def test_receipt_cli_ok_on_matching_claim(tmp_path: Path):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+    import round_gate as rg  # noqa: E402
+
+    state_file = tmp_path / "run1.state"
+    state_file.write_text("head_sha=" + "a" * 40 + "\ncontent_hash=" + "1" * 64 + "\n")
+    report_file = tmp_path / "run1.report"
+    report_file.write_text(f"read_sha={'a' * 40}\ncontent_hash={'1' * 64}\n判定: マージ可\n")
+
+    result = subprocess.run(
+        ["python3", str(Path(__file__).resolve().parent.parent / "lib" / "round_gate.py"),
+         "receipt", "--state-file", str(state_file), "--report", str(report_file)],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "受領可" in result.stdout
+
+
+def test_receipt_cli_rejects_on_mismatched_claim(tmp_path: Path):
+    state_file = tmp_path / "run2.state"
+    state_file.write_text("head_sha=" + "a" * 40 + "\ncontent_hash=" + "1" * 64 + "\n")
+    report_file = tmp_path / "run2.report"
+    report_file.write_text(f"read_sha={'b' * 40}\ncontent_hash={'1' * 64}\n判定: マージ可\n")
+
+    result = subprocess.run(
+        ["python3", str(Path(__file__).resolve().parent.parent / "lib" / "round_gate.py"),
+         "receipt", "--state-file", str(state_file), "--report", str(report_file)],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 4  # EXIT_BLOCKED
+    assert "read_sha" in result.stdout
+
+
+def test_receipt_cli_rejects_on_legacy_state_without_content_hash(tmp_path: Path):
+    state_file = tmp_path / "run3.state"
+    state_file.write_text("head_sha=" + "a" * 40 + "\n")  # content_hash 欄が無い旧形式
+    report_file = tmp_path / "run3.report"
+    report_file.write_text(f"read_sha={'a' * 40}\ncontent_hash={'1' * 64}\n判定: マージ可\n")
+
+    result = subprocess.run(
+        ["python3", str(Path(__file__).resolve().parent.parent / "lib" / "round_gate.py"),
+         "receipt", "--state-file", str(state_file), "--report", str(report_file)],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 4
+    assert "旧形式" in result.stdout
+
+
+def test_receipt_cli_rejects_on_missing_report_file(tmp_path: Path):
+    state_file = tmp_path / "run4.state"
+    state_file.write_text("head_sha=" + "a" * 40 + "\ncontent_hash=" + "1" * 64 + "\n")
+    result = subprocess.run(
+        ["python3", str(Path(__file__).resolve().parent.parent / "lib" / "round_gate.py"),
+         "receipt", "--state-file", str(state_file), "--report", str(tmp_path / "does-not-exist.report")],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 4
+
+
 def test_cli_cr_injection_cannot_corrupt_saved_state(fake_bin: Path, tmp_path: Path):
     """CR 注入が仮に bash 側の早期拒否をすり抜けたとしても、python 側の goal-cut ブロックで
     dispatch 自体が止まり state ファイルが作られないことを確認する（レビュアー実測の再現）。
