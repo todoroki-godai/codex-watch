@@ -95,7 +95,9 @@ show_one() {
     # 「読んだ版」を発注時に固定した head_sha / content_hash と機械で突合する。
     # fail-closed: 判定できないときも「受領不可」側へ倒す（round_gate.py check_receipt）。
     local receipt_msg
-    receipt_msg="$(python3 "$GATE_PY" receipt --state-file "$state_file" --report "$report" 2>&1)"
+    # receipt は照合結果次第で非0を返す（rejected=4）。判定結果の表示が目的であって
+    # codex-status 自体の異常終了ではないため、ここでは exit code を握りつぶして表示のみ行う。
+    receipt_msg="$(python3 "$GATE_PY" receipt --state-file "$state_file" --report "$report" 2>&1 || true)"
     echo "受領     : $receipt_msg"
     if [[ -s "$report" ]]; then
       echo "--- 判定: $(extract_verdict_line "$report") / report ($(wc -l < "$report" | tr -d ' ') 行) ---"

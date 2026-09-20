@@ -517,6 +517,103 @@ def test_check_receipt_rejects_on_none_report_text():
     assert result.status == "rejected"
 
 
+def test_check_receipt_rejects_read_sha_short_prefix_claim():
+    # 完全一致であること（前方一致に緩めると `read_sha=a` のような短縮申告が通ってしまう）。
+    # 実際に RE_RECEIPT_READ_SHA は40桁16進数以外にマッチしないため、7桁の短縮値を
+    # そのまま `read_sha=` 行に書いても parse_receipt_claim は None を返し「申告なし」になる。
+    # 「完全一致検査」自体が効いているかを確かめるため、ここでは regex を素通りする
+    # ちょうど40桁だが値の一部だけが一致する（先頭一致）ケースを試す。
+    prefix_only = SHA_A[:7] + "0" * 33  # SHA_A と先頭7桁だけ一致・残りは不一致（40桁は保つ）
+    assert prefix_only != SHA_A
+    report = f"read_sha={prefix_only}\ncontent_hash={HASH_A}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_read_sha_truly_short_claim_as_missing():
+    # regex が40桁固定のため、短い申告は「申告なし」として rejected になる
+    # （前方一致に緩められた場合に real な脅威になるのは、次の empty/prefix ケース）。
+    report = "read_sha=aaaaaaa\ncontent_hash=" + HASH_A + "\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_empty_read_sha_claim():
+    # `startswith("")` は常に True になるため、前方一致に緩めると空文字申告すら通ってしまう。
+    # 完全一致の検査であることを固定する。
+    report = f"read_sha=\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_content_hash_short_prefix_claim():
+    prefix_only = HASH_A[:7] + "0" * 57  # HASH_A と先頭7桁だけ一致・残りは不一致（64桁は保つ）
+    assert prefix_only != HASH_A
+    report = f"read_sha={SHA_A}\ncontent_hash={prefix_only}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_empty_content_hash_claim():
+    report = f"read_sha={SHA_A}\ncontent_hash=\n判定: マージ可\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_when_only_tail_character_differs():
+    """完全一致であることの直接固定: 期待値と末尾1文字だけ異なる申告（先頭39桁は一致）
+    でも rejected になる。前方一致（`expected.startswith(claimed)` 等）へ緩める変異は
+    「先頭一致で ok」を返すため、この末尾差分1件では検出できない — この観点は
+    `test_check_receipt_rejects_read_sha_short_prefix_claim` /
+    `test_check_receipt_rejects_content_hash_short_prefix_claim`（長さを短く保ったまま
+    先頭だけ一致させる申告）が担当する。ここは「完全一致」条件そのものの直接固定。
+    """
+    tail_flip_sha = SHA_A[:-1] + ("b" if SHA_A[-1] != "b" else "c")
+    assert len(tail_flip_sha) == 40 and tail_flip_sha != SHA_A
+    result = rg.check_receipt(SHA_A, HASH_A, f"read_sha={tail_flip_sha}\ncontent_hash={HASH_A}\n")
+    assert result.status == "rejected"
+
+    tail_flip_hash = HASH_A[:-1] + ("b" if HASH_A[-1] != "b" else "c")
+    assert len(tail_flip_hash) == 64 and tail_flip_hash != HASH_A
+    result2 = rg.check_receipt(SHA_A, HASH_A, f"read_sha={SHA_A}\ncontent_hash={tail_flip_hash}\n")
+    assert result2.status == "rejected"
+
+
+def test_check_receipt_rejects_short_read_sha_claim_via_direct_injection(monkeypatch):
+    """check_receipt の比較自体が完全一致であることを、regex の40桁固定に頼らず直接固定する。
+
+    `parse_receipt_claim` は40桁固定 regex のおかげで実運用では短い claimed_sha を作れないが、
+    それは「安全域が regex 側に隠れているだけ」であり、check_receipt 自身の比較演算が
+    前方一致（例: `expected.startswith(claimed)`）に緩められても regex がある限り実害が
+    出ない、という状態は「検査（比較演算）が効いていない」のを覆い隠す（regex を変えた
+    瞬間に穴が開く）。ここでは `parse_receipt_claim` をモックして「期待値の先頭7桁だけの
+    短い claimed_sha」を直接注入し、比較そのものが完全一致であることを regex 非依存に固定する
+    （2026-09-21 頭レビュー [Must]1: 前方一致への変異が既存試験群で緑のまま残った指摘への対応）。
+    """
+    monkeypatch.setattr(rg, "parse_receipt_claim", lambda text: (SHA_A[:7], HASH_A))
+    result = rg.check_receipt(SHA_A, HASH_A, "irrelevant report text")
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_empty_read_sha_claim_via_direct_injection(monkeypatch):
+    # 前方一致に緩めると `expected.startswith("")` が常に True になり、空文字申告が通る。
+    monkeypatch.setattr(rg, "parse_receipt_claim", lambda text: ("", HASH_A))
+    result = rg.check_receipt(SHA_A, HASH_A, "irrelevant report text")
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_short_content_hash_claim_via_direct_injection(monkeypatch):
+    monkeypatch.setattr(rg, "parse_receipt_claim", lambda text: (SHA_A, HASH_A[:7]))
+    result = rg.check_receipt(SHA_A, HASH_A, "irrelevant report text")
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_empty_content_hash_claim_via_direct_injection(monkeypatch):
+    monkeypatch.setattr(rg, "parse_receipt_claim", lambda text: (SHA_A, ""))
+    result = rg.check_receipt(SHA_A, HASH_A, "irrelevant report text")
+    assert result.status == "rejected"
+
+
 def test_check_receipt_fail_closed_on_exception():
     class Boom:
         def splitlines(self):
