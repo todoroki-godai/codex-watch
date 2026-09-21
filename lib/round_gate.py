@@ -298,6 +298,114 @@ def body_own_round(body: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# 受領時 SHA / 内容ハッシュ突合（claude-config#55）
+# ---------------------------------------------------------------------------
+#
+# review.md「本文に読んだ commit SHA と、未コミット差分または対象ファイル集合の内容ハッシュを
+# 必須記載させ、欠落・不一致なら受領せず取り直す」の機械 enforce。人間の手順としてのみ
+# 存在していたため、2026-09-09 にレビュアーが作り直し前の版を読み [Must] 8件中7件が
+# 既に直っているコードへの指摘、という事故が実際に起きた（出所は同 rule 本文）。
+#
+# 判定に使うのは実体の同一性（commit SHA そのものと、対象ファイル集合の内容ハッシュ）で、
+# 名前・文字列パターン・構文形では判定しない（`no-denylist-checks.md`）。fail-closed:
+# 期待値の欠落（旧形式 state）・申告欠落・不一致・例外のいずれでも受領不可（rejected）にする。
+
+RE_RECEIPT_READ_SHA = re.compile(r"^read_sha=([0-9a-fA-F]{40})\s*$", re.MULTILINE)
+RE_RECEIPT_CONTENT_HASH = re.compile(r"^content_hash=([0-9a-fA-F]{64})\s*$", re.MULTILINE)
+# レポート先頭の何行までを申告の探索対象にするか。全文検索にしないのは、本文中に引用された
+# 過去の SHA・ハッシュ（別 run のログ断片の引用等）を拾わないため（review.md「file:line の
+# 実在確認も代用にしない」と同型の懸念）。
+RECEIPT_HEAD_LINES = 10
+
+
+def parse_receipt_claim(report_text: str) -> tuple[str | None, str | None]:
+    """レポート先頭 `RECEIPT_HEAD_LINES` 行から `read_sha=` / `content_hash=` の申告を読む。
+
+    どちらか一方でも見つからなければ `None` を返す（呼び出し側が「欠落」として扱う）。
+    """
+    head = "\n".join((report_text or "").splitlines()[:RECEIPT_HEAD_LINES])
+    m_sha = RE_RECEIPT_READ_SHA.search(head)
+    m_hash = RE_RECEIPT_CONTENT_HASH.search(head)
+    sha = m_sha.group(1).lower() if m_sha else None
+    content_hash = m_hash.group(1).lower() if m_hash else None
+    return sha, content_hash
+
+
+@dataclass(frozen=True)
+class ReceiptCheck:
+    status: str  # "ok" | "rejected"
+    reason: str
+
+
+def check_receipt(expected_head_sha: str, expected_content_hash: str, report_text: str) -> ReceiptCheck:
+    """レビュー本文が申告した「読んだ版」を、発注時に固定した値と機械で突合する。
+
+    緑（"ok"）になるのは実体（SHA・内容ハッシュ）が一致したときだけ。それ以外は全て
+    "rejected"（fail-closed）: 期待値が欠落（旧形式 state）・申告が欠落・不一致・例外。
+    """
+    try:
+        if not expected_head_sha or not expected_content_hash:
+            return ReceiptCheck(
+                "rejected",
+                "旧形式の state です（head_sha または content_hash が記録されていません）。"
+                "判定不能のため受領不可とします。",
+            )
+        claimed_sha, claimed_hash = parse_receipt_claim(report_text)
+        if claimed_sha is None or claimed_hash is None:
+            return ReceiptCheck(
+                "rejected", "レポート先頭に read_sha= / content_hash= の申告がありません。"
+            )
+        if claimed_sha != expected_head_sha.lower():
+            return ReceiptCheck(
+                "rejected",
+                f"read_sha が発注時の値と不一致です（申告={claimed_sha} 期待={expected_head_sha}）。",
+            )
+        if claimed_hash != expected_content_hash.lower():
+            return ReceiptCheck(
+                "rejected",
+                f"content_hash が発注時の値と不一致です（申告={claimed_hash} 期待={expected_content_hash}）。",
+            )
+        return ReceiptCheck("ok", "受領可: read_sha/content_hash が発注時の値と一致しました。")
+    except Exception as e:  # fail-closed: 想定外の例外も受領不可にする
+        return ReceiptCheck("rejected", f"照合不能: {e}")
+
+
+# content_hash の「唯一の正」となるシェルレシピ。発注側（round_gate.py の `git_content_hash`）と
+# 申告側（レビュアーのサンドボックス。プロンプトへ `recipe` サブコマンドの出力をそのまま埋め込む）が
+# **文字列として同一のコマンドを実行する**ことで、Python 側と shell 側で別々に手順を実装したことに
+# よる食い違いを構造的に無くす（2026-09-21 tacchi レビュー2巡目 [Must]2: 手順が二重管理になり
+# `content_hash_from_texts` の連結順 swap・`-uall` 脱落・`git diff HEAD`→`git diff` のいずれの
+# 変異も検出できなかった指摘への対応）。
+#
+# 各要素:
+# - `git status --porcelain -uall`: 追跡ファイルの状態変化（add/削除/リネーム含む）と、
+#   未追跡ファイルの**存在**をパスの一覧として拾う（中身は拾わない）。
+# - `git diff HEAD`: 追跡ファイルの**内容差分**（ステージ済み・未ステージ双方、HEAD との差分）。
+# - `git ls-files -o --exclude-standard -z | xargs -0 -r git hash-object`: 未追跡ファイルの
+#   **中身**を git blob ハッシュ（追加ファイルの中身が変わっても `git status`/`git diff HEAD` の
+#   どちらにも出ない＝未追跡ファイルの中身の取りこぼしへの対処。2026-09-21 [Must]3①）。
+#   index には触れない（`git add` しない）。`-r`（GNU xargs 互換。macOS xargs は既定で
+#   空入力なら実行しないため実害はないが、Linux 実行系でも空入力時に `git hash-object` を
+#   引数なしで起動して標準入力待ちに陥らないよう明示する）。
+# - `shasum -a 256`: 生バイトのまま sha256 する（Python 側の `subprocess.run(text=True)` は
+#   universal newlines で `\r\n`→`\n` を畳むため、CRLF を含む差分でこの手順と食い違っていた
+#   ＝2026-09-21 [Must]1）。この手順を Python 側でも `/bin/sh -c` へそのまま渡して実行するため、
+#   Python 側は生バイトの解釈を一切行わない。
+#
+# 既知の対象外（意図的な仕様。2026-09-21 [Must]3②③）:
+# - `.gitignore` 対象のファイルは検出しない（`--exclude-standard` の定義どおり。無視ファイルの
+#   中身は差分の対象外という通常の git の意味論に従う）
+# - submodule 内部の未コミット差分は検出しない（親の `git diff HEAD` は submodule を
+#   `Subproject commit <sha>` の1行としてしか扱わないため）。submodule のコミット自体が
+#   変われば通常どおり検出される
+CONTENT_HASH_RECIPE = (
+    "(git status --porcelain -uall; git diff HEAD; "
+    "git ls-files -o --exclude-standard -z | xargs -0 -r git hash-object) "
+    "| shasum -a 256 | awk '{print $1}'"
+)
+
+
+# ---------------------------------------------------------------------------
 # 台帳（state dir）
 # ---------------------------------------------------------------------------
 
@@ -752,6 +860,41 @@ def git_remote_repo(workdir: str) -> tuple[str, str] | None:
     return m.group(1), m.group(2)
 
 
+RE_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def git_content_hash(workdir: str) -> str:
+    """`CONTENT_HASH_RECIPE` を workdir で実行し、内容ハッシュ（sha256）を取得する。
+
+    レビュアーのサンドボックス側にも**文字列として同一の** `CONTENT_HASH_RECIPE` を実行させ、
+    申告値と突合する（`bin/codex-review` が `python3 round_gate.py recipe` の出力をそのまま
+    プロンプトへ埋め込む）。ここで Python 側が生バイトのまま `/bin/sh -c` へ丸投げすることで、
+    `subprocess.run(text=True)` の universal newlines（CRLF→LF）や、Python 側だけ別ロジックで
+    手順を再実装したことによる二重管理の食い違いを構造的に無くす（2026-09-21 レビュー[Must]1/2）。
+    """
+    try:
+        out = subprocess.run(
+            ["/bin/sh", "-c", CONTENT_HASH_RECIPE],
+            cwd=workdir,
+            capture_output=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise Indeterminate(f"判定不能: content_hash の計算に失敗しました（{e}）") from e
+    if out.returncode != 0:
+        raise Indeterminate(
+            f"判定不能: content_hash の計算に失敗しました (rc={out.returncode}) "
+            f"stderr={out.stderr!r}"
+        )
+    try:
+        value = out.stdout.decode("ascii").strip()
+    except UnicodeDecodeError as e:
+        raise Indeterminate(f"判定不能: content_hash の出力が ASCII として読めません（{e}）") from e
+    if not RE_SHA256_HEX.match(value):
+        raise Indeterminate(f"判定不能: content_hash の出力が sha256 の形式ではありません: {value!r}")
+    return value
+
+
 def gh_fetch_body(target: Target) -> str:
     cmd = [
         "gh",
@@ -882,6 +1025,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     backfill.add_argument("--state-file", required=True)
     backfill.add_argument("--sessions-dir", default=DEFAULT_SESSIONS_DIR)
     backfill.add_argument("--json", action="store_true")
+
+    content_hash = sub.add_parser("content-hash", help="workdir の内容ハッシュ（未コミット差分込み）を計算する")
+    content_hash.add_argument("--workdir", required=True)
+
+    receipt = sub.add_parser("receipt", help="レビュー受領時に read_sha/content_hash を機械照合する")
+    receipt.add_argument("--state-file", required=True)
+    receipt.add_argument("--report", required=True)
+    receipt.add_argument("--json", action="store_true")
+
+    sub.add_parser("recipe", help="content_hash の唯一の正となるシェルレシピを1行で出力する")
 
     return p
 
@@ -1206,6 +1359,32 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(result.get("message") or result.get("status"))
         return exit_code
+
+    if args.cmd == "content-hash":
+        try:
+            print(git_content_hash(args.workdir))
+            return EXIT_PASS
+        except Indeterminate as e:
+            print(e.reason, file=sys.stderr)
+            return EXIT_INDETERMINATE
+
+    if args.cmd == "receipt":
+        d = read_state_file(Path(args.state_file))
+        try:
+            report_text = Path(args.report).read_text()
+        except OSError:
+            report_text = ""  # ファイル不在も「申告なし」と同じ扱い（check_receipt が rejected にする）
+        result = check_receipt(d.get("head_sha", ""), d.get("content_hash", ""), report_text)
+        exit_code = EXIT_PASS if result.status == "ok" else EXIT_BLOCKED
+        if args.json:
+            print(json.dumps({"status": result.status, "reason": result.reason}, ensure_ascii=False))
+        else:
+            print(result.reason)
+        return exit_code
+
+    if args.cmd == "recipe":
+        print(CONTENT_HASH_RECIPE)
+        return EXIT_PASS
 
     return EXIT_USAGE
 

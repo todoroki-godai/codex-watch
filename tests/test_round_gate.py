@@ -384,6 +384,343 @@ def test_compute_backfill_value_no_jsonl(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
+# 受領時 SHA / 内容ハッシュ突合（claude-config#55）
+# ---------------------------------------------------------------------------
+
+SHA_A = "a" * 40
+SHA_B = "b" * 40
+HASH_A = "1" * 64
+HASH_B = "2" * 64
+
+
+def _init_repo(repo: Path) -> None:
+    import subprocess
+
+    repo.mkdir(exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+
+
+def test_git_content_hash_matches_recipe_executed_independently(tmp_path: Path):
+    """`git_content_hash` が実行する内容と `CONTENT_HASH_RECIPE`（＝プロンプトへ埋め込む
+    レシピそのもの）が同一であることを、round_gate.py に頼らず独立に実行して突合する。
+
+    レシピを人間がテストへ書き写すと二重管理になり同じ穴が空く（2026-09-21 レビュー2巡目
+    [Must]2）ため、`rg.CONTENT_HASH_RECIPE`（発注側・申告側の唯一の正）を「そのまま」
+    `/bin/sh -c` へ渡して実行する。CRLF ファイル・ステージ済み変更・未追跡ファイルを含む
+    fixture で、M1（連結順 swap）/ M2（`-uall` 脱落）/ M10（`git diff HEAD`→`git diff`）の
+    いずれの変異が入っても、この比較先の独立実行では変異の影響を受けないため必ず不一致になる。
+    """
+    import subprocess
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "a.txt").write_text("hello\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+    (repo / "crlf.txt").write_bytes(b"CRLF line\r\nsecond\r\n")
+    subprocess.run(["git", "add", "crlf.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "crlf"], cwd=repo, check=True)
+    with (repo / "crlf.txt").open("ab") as fh:
+        fh.write(b"staged change\r\n")
+    subprocess.run(["git", "add", "crlf.txt"], cwd=repo, check=True)
+    (repo / "untracked.txt").write_text("untracked content\n")
+
+    from_impl = rg.git_content_hash(str(repo))
+    independent = subprocess.run(
+        ["/bin/sh", "-c", rg.CONTENT_HASH_RECIPE], cwd=repo, capture_output=True, timeout=30
+    ).stdout.decode("ascii").strip()
+
+    assert from_impl == independent
+    assert len(from_impl) == 64
+
+
+def test_git_content_hash_differs_between_clean_and_dirty(tmp_path: Path):
+    import subprocess
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "a.txt").write_text("hello\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    clean_hash = rg.git_content_hash(str(repo))
+    # 同一 HEAD・同一状態なら再計算しても一致する（決定論性）
+    assert rg.git_content_hash(str(repo)) == clean_hash
+
+    (repo / "a.txt").write_text("hello world\n")
+    dirty_hash = rg.git_content_hash(str(repo))
+    assert dirty_hash != clean_hash, "未コミット差分があるのに同一 HEAD で内容ハッシュが変わらない"
+
+
+def test_git_content_hash_stable_across_crlf_and_binary_bytes(tmp_path: Path):
+    """CRLF・非UTF-8バイトを含む差分でも例外にならず、決定論的に同じ値になること
+    （2026-09-21 レビュー2巡目 [Must]1: `subprocess.run(text=True)` の universal newlines
+    による CRLF→LF 畳み込み・非UTF-8バイトでの `UnicodeDecodeError` の再発防止）。
+    """
+    import subprocess
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "a.txt").write_text("hello\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    # CRLF を含む未コミット差分
+    (repo / "a.txt").write_bytes(b"hello\r\nworld\r\n")
+    crlf_hash_1 = rg.git_content_hash(str(repo))
+    crlf_hash_2 = rg.git_content_hash(str(repo))
+    assert crlf_hash_1 == crlf_hash_2
+    assert len(crlf_hash_1) == 64
+
+    # 非UTF-8バイト（例: Latin-1 の café）を含む未コミット差分
+    (repo / "a.txt").write_bytes(b"caf\xe9\n")
+    binary_hash = rg.git_content_hash(str(repo))
+    assert len(binary_hash) == 64
+    assert binary_hash != crlf_hash_1
+
+
+def test_git_content_hash_detects_untracked_file_content_change(tmp_path: Path):
+    """未追跡ファイルの中身が変わっても content_hash が変わること
+    （2026-09-21 レビュー2巡目 [Must]3①: `-uall` はパスしか出さず `git diff HEAD` にも
+    出ないため、`git add` せずに発注すると中身の変更を取りこぼしていた）。
+    """
+    import subprocess
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "a.txt").write_text("hello\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    (repo / "new.txt").write_text("original untracked content\n")
+    before = rg.git_content_hash(str(repo))
+
+    (repo / "new.txt").write_text("CHANGED untracked content\n")
+    after = rg.git_content_hash(str(repo))
+
+    assert before != after, "未追跡ファイルの中身の変更が content_hash に反映されていない"
+
+
+def test_git_content_hash_differs_for_fully_staged_content_with_no_working_tree_diff(tmp_path: Path):
+    """内容Aを `git add` した状態と、内容Bを `git add` した状態（どちらも working tree と
+    index が一致＝working tree 側の diff はゼロ）で content_hash が異なること。
+
+    `git diff`（引数なし）は index と working tree の差分しか見ないため、完全にステージ済みで
+    working tree との差が無い場合は常に空文字を返し、内容 A と B が同一ハッシュに収束する
+    （2026-09-21 レビュー2巡目 [Must]2 M10: `git diff HEAD` を `git diff` に差し替える変異が
+    実際にこの衝突を起こすことをレビュアーが実測済み）。`git diff HEAD` は index/working tree
+    どちらの変更も HEAD との差分として拾うため、このケースを区別できる。
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "a.txt").write_text("hello\n")
+    import subprocess
+
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    (repo / "a.txt").write_text("content A\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)  # working tree == index
+    hash_a = rg.git_content_hash(str(repo))
+
+    (repo / "a.txt").write_text("content B\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)  # working tree == index
+    hash_b = rg.git_content_hash(str(repo))
+
+    assert hash_a != hash_b, "完全にステージ済みの異なる内容が同一 content_hash に収束している"
+
+
+def test_parse_receipt_claim_extracts_from_head():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    sha, chash = rg.parse_receipt_claim(report)
+    assert sha == SHA_A
+    assert chash == HASH_A
+
+
+def test_parse_receipt_claim_uppercase_normalized_to_lowercase():
+    report = f"read_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
+    sha, chash = rg.parse_receipt_claim(report)
+    assert sha == SHA_A
+    assert chash == HASH_A
+
+
+def test_parse_receipt_claim_missing_returns_none():
+    sha, chash = rg.parse_receipt_claim("判定: マージ可\n本文のみ\n")
+    assert sha is None
+    assert chash is None
+
+
+def test_parse_receipt_claim_ignores_claim_outside_head_window():
+    # RECEIPT_HEAD_LINES(10) より後ろに出てくる申告（例: 過去ログの引用）は拾わない
+    body = "\n".join([f"line{i}" for i in range(12)])
+    report = body + f"\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    sha, chash = rg.parse_receipt_claim(report)
+    assert sha is None
+    assert chash is None
+
+
+def test_check_receipt_ok_on_match():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "ok"
+
+
+def test_check_receipt_ok_when_report_uses_uppercase_hex():
+    report = f"read_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "ok"
+
+
+def test_check_receipt_rejects_legacy_state_missing_expected_sha():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    result = rg.check_receipt("", HASH_A, report)
+    assert result.status == "rejected"
+    assert "旧形式" in result.reason
+
+
+def test_check_receipt_rejects_legacy_state_missing_expected_hash():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    result = rg.check_receipt(SHA_A, "", report)
+    assert result.status == "rejected"
+    assert "旧形式" in result.reason
+
+
+def test_check_receipt_rejects_missing_claim():
+    result = rg.check_receipt(SHA_A, HASH_A, "判定: マージ可\n本文のみ\n")
+    assert result.status == "rejected"
+    assert "申告" in result.reason
+
+
+def test_check_receipt_rejects_sha_mismatch():
+    report = f"read_sha={SHA_B}\ncontent_hash={HASH_A}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+    assert "read_sha" in result.reason
+
+
+def test_check_receipt_rejects_content_hash_mismatch():
+    report = f"read_sha={SHA_A}\ncontent_hash={HASH_B}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+    assert "content_hash" in result.reason
+
+
+def test_check_receipt_rejects_on_none_report_text():
+    # report ファイルが読めない等で report_text が空文字になったケース（呼び出し側の既定挙動）
+    result = rg.check_receipt(SHA_A, HASH_A, "")
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_read_sha_short_prefix_claim():
+    # 完全一致であること（前方一致に緩めると `read_sha=a` のような短縮申告が通ってしまう）。
+    # 実際に RE_RECEIPT_READ_SHA は40桁16進数以外にマッチしないため、7桁の短縮値を
+    # そのまま `read_sha=` 行に書いても parse_receipt_claim は None を返し「申告なし」になる。
+    # 「完全一致検査」自体が効いているかを確かめるため、ここでは regex を素通りする
+    # ちょうど40桁だが値の一部だけが一致する（先頭一致）ケースを試す。
+    prefix_only = SHA_A[:7] + "0" * 33  # SHA_A と先頭7桁だけ一致・残りは不一致（40桁は保つ）
+    assert prefix_only != SHA_A
+    report = f"read_sha={prefix_only}\ncontent_hash={HASH_A}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_read_sha_truly_short_claim_as_missing():
+    # regex が40桁固定のため、短い申告は「申告なし」として rejected になる
+    # （前方一致に緩められた場合に real な脅威になるのは、次の empty/prefix ケース）。
+    report = "read_sha=aaaaaaa\ncontent_hash=" + HASH_A + "\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_empty_read_sha_claim():
+    # `startswith("")` は常に True になるため、前方一致に緩めると空文字申告すら通ってしまう。
+    # 完全一致の検査であることを固定する。
+    report = f"read_sha=\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_content_hash_short_prefix_claim():
+    prefix_only = HASH_A[:7] + "0" * 57  # HASH_A と先頭7桁だけ一致・残りは不一致（64桁は保つ）
+    assert prefix_only != HASH_A
+    report = f"read_sha={SHA_A}\ncontent_hash={prefix_only}\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_empty_content_hash_claim():
+    report = f"read_sha={SHA_A}\ncontent_hash=\n判定: マージ可\n"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_when_only_tail_character_differs():
+    """完全一致であることの直接固定: 期待値と末尾1文字だけ異なる申告（先頭39桁は一致）
+    でも rejected になる。前方一致（`expected.startswith(claimed)` 等）へ緩める変異は
+    「先頭一致で ok」を返すため、この末尾差分1件では検出できない — この観点は
+    `test_check_receipt_rejects_read_sha_short_prefix_claim` /
+    `test_check_receipt_rejects_content_hash_short_prefix_claim`（長さを短く保ったまま
+    先頭だけ一致させる申告）が担当する。ここは「完全一致」条件そのものの直接固定。
+    """
+    tail_flip_sha = SHA_A[:-1] + ("b" if SHA_A[-1] != "b" else "c")
+    assert len(tail_flip_sha) == 40 and tail_flip_sha != SHA_A
+    result = rg.check_receipt(SHA_A, HASH_A, f"read_sha={tail_flip_sha}\ncontent_hash={HASH_A}\n")
+    assert result.status == "rejected"
+
+    tail_flip_hash = HASH_A[:-1] + ("b" if HASH_A[-1] != "b" else "c")
+    assert len(tail_flip_hash) == 64 and tail_flip_hash != HASH_A
+    result2 = rg.check_receipt(SHA_A, HASH_A, f"read_sha={SHA_A}\ncontent_hash={tail_flip_hash}\n")
+    assert result2.status == "rejected"
+
+
+def test_check_receipt_rejects_short_read_sha_claim_via_direct_injection(monkeypatch):
+    """check_receipt の比較自体が完全一致であることを、regex の40桁固定に頼らず直接固定する。
+
+    `parse_receipt_claim` は40桁固定 regex のおかげで実運用では短い claimed_sha を作れないが、
+    それは「安全域が regex 側に隠れているだけ」であり、check_receipt 自身の比較演算が
+    前方一致（例: `expected.startswith(claimed)`）に緩められても regex がある限り実害が
+    出ない、という状態は「検査（比較演算）が効いていない」のを覆い隠す（regex を変えた
+    瞬間に穴が開く）。ここでは `parse_receipt_claim` をモックして「期待値の先頭7桁だけの
+    短い claimed_sha」を直接注入し、比較そのものが完全一致であることを regex 非依存に固定する
+    （2026-09-21 頭レビュー [Must]1: 前方一致への変異が既存試験群で緑のまま残った指摘への対応）。
+    """
+    monkeypatch.setattr(rg, "parse_receipt_claim", lambda text: (SHA_A[:7], HASH_A))
+    result = rg.check_receipt(SHA_A, HASH_A, "irrelevant report text")
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_empty_read_sha_claim_via_direct_injection(monkeypatch):
+    # 前方一致に緩めると `expected.startswith("")` が常に True になり、空文字申告が通る。
+    monkeypatch.setattr(rg, "parse_receipt_claim", lambda text: ("", HASH_A))
+    result = rg.check_receipt(SHA_A, HASH_A, "irrelevant report text")
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_short_content_hash_claim_via_direct_injection(monkeypatch):
+    monkeypatch.setattr(rg, "parse_receipt_claim", lambda text: (SHA_A, HASH_A[:7]))
+    result = rg.check_receipt(SHA_A, HASH_A, "irrelevant report text")
+    assert result.status == "rejected"
+
+
+def test_check_receipt_rejects_empty_content_hash_claim_via_direct_injection(monkeypatch):
+    monkeypatch.setattr(rg, "parse_receipt_claim", lambda text: (SHA_A, ""))
+    result = rg.check_receipt(SHA_A, HASH_A, "irrelevant report text")
+    assert result.status == "rejected"
+
+
+def test_check_receipt_fail_closed_on_exception():
+    class Boom:
+        def splitlines(self):
+            raise RuntimeError("boom")
+
+    result = rg.check_receipt(SHA_A, HASH_A, Boom())
+    assert result.status == "rejected"
+    assert "照合不能" in result.reason
+
+
+# ---------------------------------------------------------------------------
 # check_goal_cut（review.md 入口条件⑥の機械 enforce）
 # ---------------------------------------------------------------------------
 
@@ -904,11 +1241,17 @@ def test_same_head_dispatch_limit_value_is_pinned():
 
 
 def _dead_pid() -> int:
-    """確実に生きていない PID を得る（起動して即 wait し回収済みにする）。"""
-    import subprocess
-    p = subprocess.Popen(["true"])
-    p.wait()
-    return p.pid
+    """確実に生きていない PID を得る。
+
+    旧実装は子プロセスを起動して即 `wait()` した後の PID を返していたが、その PID は
+    OS がすぐに別の（生きている）プロセスへ再利用しうる。並行実行時に再利用が起きると
+    `os.kill(pid, 0)` が「生存」と誤判定し、テストが原因不明のまま間欠的に赤くなる
+    （2026-09-21 頭の対照実験: `tests/test_codex_status_receipt.py` の同型の欠陥
+    ＝終了済み子プロセスの PID を state の `pid=` に書いていたケースで実際に再現・確定した。
+    ここも同型のため同じ修正を当てる）。PID の実用上限を超える固定値を使い、実プロセスとの
+    衝突を構造的に排除する（`0` はプロセスグループ全体を指すため使えない）。
+    """
+    return 2147483647
 
 
 def write_state_full(state_dir, run_id, target, head, started_at, pid, report_path):

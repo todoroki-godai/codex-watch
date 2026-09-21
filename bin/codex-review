@@ -144,7 +144,16 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
   fi
   echo 'これは依頼者自身が保有する社内リポジトリのコードに対する、通常の品質レビューです。目的は自社の防御機構が期待どおり動くかを確認することです。'
   echo
-  echo '**重要: 出力は最後にまとめて1回で返さず、セクションを1つ書き終えるたびに、そのセクションだけを1つのメッセージとして出力すること。判定行（`マージ可` / `修正要` など）は最初のメッセージで先に出すこと。以降のセクションは順に出力し、最後に全体を再掲しない。**'
+  echo '**重要: 出力は最後にまとめて1回で返さず、セクションを1つ書き終えるたびに、そのセクションだけを1つのメッセージとして出力すること。判定行（`マージ可` / `修正要` など）は最初のメッセージの1行目で先に出すこと。以降のセクションは順に出力し、最後に全体を再掲しない。**'
+  echo
+  echo '**重要: 最初のメッセージの2行目・3行目は、必ずこのサンドボックス内で実際にコマンドを実行して得た値を書くこと（推測・省略・値の書き写しは禁止）。1行目の判定行の位置は変えないこと。**'
+  echo '2行目: `read_sha=` の直後に、対象ディレクトリで `git rev-parse HEAD` を実行した出力（40桁の16進数）をそのまま続ける。'
+  echo '3行目: `content_hash=` の直後に、対象ディレクトリで次のコマンドを実行した出力（64桁の16進数）をそのまま続ける:'
+  # レシピは round_gate.py の CONTENT_HASH_RECIPE が唯一の正（recipe サブコマンドの出力を
+  # そのまま埋め込む）。ここで手書きし直すと二重管理になり、手順が食い違っても気づけない
+  # （2026-09-21 レビュー2巡目 [Must]2 の再発防止）。
+  echo "\`$(python3 "$GATE_PY" recipe)\`"
+  echo 'この2行が欠けている、または実際にコマンドを実行した値でない場合、このレビューは機械照合で受領不可（取り直し）になる。'
   echo
   cat "$PROMPT_FILE"
 } > "$EFFECTIVE_PROMPT"
@@ -194,6 +203,27 @@ GATE_HEAD="$(sed -n '3p' <<<"$GATE_FIELDS")"
 GATE_GOAL_CUT="$(sed -n '4p' <<<"$GATE_FIELDS")"
 GATE_MANDATORY_GATE="$(sed -n '5p' <<<"$GATE_FIELDS")"
 
+# 受領時 SHA / 内容ハッシュ突合（claude-config#55）用の対象値。未コミット差分があると
+# 同一 head_sha が複数の内容を指すため、head_sha 単独では不足（review.md 出所）。
+# 実発注（pr:/issue:）かつ git 管理下（GATE_HEAD が非空）のときだけ計算する。
+CONTENT_HASH=""
+case "$GATE_TARGET" in
+  pr:*|issue:*)
+    if [[ -n "$GATE_HEAD" ]]; then
+      # stderr を捨てない: 計算失敗（例: 非UTF-8/巨大差分でのタイムアウト等）を発注直後に
+      # 気づけないと、受領時に「旧形式の state」という誤った理由で永久 rejected になる
+      # （2026-09-21 レビュー2巡目 [Must]1）。失敗しても発注自体は止めない（既存方針を維持）。
+      CONTENT_HASH_ERR="$(mktemp "$STATE_DIR/$RUN_ID.content_hash_err.XXXXXX")"
+      CONTENT_HASH="$(python3 "$GATE_PY" content-hash --workdir "$WORKDIR" 2>"$CONTENT_HASH_ERR" || true)"
+      if [[ -z "$CONTENT_HASH" ]]; then
+        echo "警告: content_hash の計算に失敗しました（run_id=$RUN_ID）。このレビューは受領時に機械照合で拒否されます。理由:" >&2
+        cat "$CONTENT_HASH_ERR" >&2
+      fi
+      rm -f "$CONTENT_HASH_ERR"
+    fi
+    ;;
+esac
+
 {
   echo "run_id=$RUN_ID"
   echo "pid=$CODEX_PID"
@@ -211,6 +241,7 @@ GATE_MANDATORY_GATE="$(sed -n '5p' <<<"$GATE_FIELDS")"
   echo "review_target=$GATE_TARGET"
   echo "round=$GATE_ROUND"
   echo "head_sha=$GATE_HEAD"
+  echo "content_hash=$CONTENT_HASH"
   echo "goal_cut=$GATE_GOAL_CUT"
   echo "mandatory_gate=$GATE_MANDATORY_GATE"
   echo "reviewer=$LABEL"
