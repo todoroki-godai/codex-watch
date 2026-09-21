@@ -1241,11 +1241,17 @@ def test_same_head_dispatch_limit_value_is_pinned():
 
 
 def _dead_pid() -> int:
-    """確実に生きていない PID を得る（起動して即 wait し回収済みにする）。"""
-    import subprocess
-    p = subprocess.Popen(["true"])
-    p.wait()
-    return p.pid
+    """確実に生きていない PID を得る。
+
+    旧実装は子プロセスを起動して即 `wait()` した後の PID を返していたが、その PID は
+    OS がすぐに別の（生きている）プロセスへ再利用しうる。並行実行時に再利用が起きると
+    `os.kill(pid, 0)` が「生存」と誤判定し、テストが原因不明のまま間欠的に赤くなる
+    （2026-09-21 頭の対照実験: `tests/test_codex_status_receipt.py` の同型の欠陥
+    ＝終了済み子プロセスの PID を state の `pid=` に書いていたケースで実際に再現・確定した。
+    ここも同型のため同じ修正を当てる）。PID の実用上限を超える固定値を使い、実プロセスとの
+    衝突を構造的に排除する（`0` はプロセスグループ全体を指すため使えない）。
+    """
+    return 2147483647
 
 
 def write_state_full(state_dir, run_id, target, head, started_at, pid, report_path):

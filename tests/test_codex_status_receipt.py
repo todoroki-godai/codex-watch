@@ -20,6 +20,16 @@ CODEX_STATUS = BIN_DIR / "codex-status"
 SHA = "a" * 40
 HASH = "1" * 64
 
+# `kill -0 $PID` で「終了」と判定させるための到達不能 PID。
+# 終了済みの子プロセスの PID を使う実装は、並行実行時に OS が同じ PID を別プロセスへ
+# 再利用すると `kill -0` が「生存」と誤判定し、完了分岐（受領行を出す分岐）に
+# 入らないまま赤くなる（2026-09-21 頭の対照実験で確定: pid を `os.getpid()` に
+# 差し替えたところ同じ2件が赤くなり、原因と一致した）。`0` はプロセスグループ全体を指すため
+# 使えない（`kill -0 0` は常に「生存」と判定される）。PID の実用上限（32bit 環境の
+# `/proc/sys/kernel/pid_max` 既定値・`PID_MAX_LIMIT`）を超える値を使い、実プロセスとの
+# 衝突を構造的に排除する。
+UNREACHABLE_PID = 2147483647
+
 
 def _write_finished_run(state_dir: Path, run_id: str, *, head_sha: str, content_hash: str, report_body: str) -> None:
     """終了済み（判定行あり）の run 一式（.state/.log/.report）を用意する。"""
@@ -30,15 +40,11 @@ def _write_finished_run(state_dir: Path, run_id: str, *, head_sha: str, content_
     log.write_text("some log\ntokens used\n")
     report.write_text(report_body)
 
-    # 確実に「終了」判定になるよう、既に終了済みの子プロセスの PID を使う。
-    p = subprocess.Popen(["true"])
-    p.wait()
-
     state.write_text(
         "\n".join(
             [
                 f"run_id={run_id}",
-                f"pid={p.pid}",
+                f"pid={UNREACHABLE_PID}",
                 f"log={log}",
                 f"workdir=/tmp",
                 f"started_at={0}",
