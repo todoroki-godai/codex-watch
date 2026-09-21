@@ -393,36 +393,54 @@ HASH_A = "1" * 64
 HASH_B = "2" * 64
 
 
-def test_content_hash_from_texts_is_deterministic():
-    h1 = rg.content_hash_from_texts("status\n", "diff\n")
-    h2 = rg.content_hash_from_texts("status\n", "diff\n")
-    assert h1 == h2
-    assert len(h1) == 64
+def _init_repo(repo: Path) -> None:
+    import subprocess
+
+    repo.mkdir(exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
 
 
-def test_content_hash_from_texts_differs_for_different_input():
-    h1 = rg.content_hash_from_texts("status A\n", "diff\n")
-    h2 = rg.content_hash_from_texts("status B\n", "diff\n")
-    assert h1 != h2
+def test_git_content_hash_matches_recipe_executed_independently(tmp_path: Path):
+    """`git_content_hash` が実行する内容と `CONTENT_HASH_RECIPE`（＝プロンプトへ埋め込む
+    レシピそのもの）が同一であることを、round_gate.py に頼らず独立に実行して突合する。
 
+    レシピを人間がテストへ書き写すと二重管理になり同じ穴が空く（2026-09-21 レビュー2巡目
+    [Must]2）ため、`rg.CONTENT_HASH_RECIPE`（発注側・申告側の唯一の正）を「そのまま」
+    `/bin/sh -c` へ渡して実行する。CRLF ファイル・ステージ済み変更・未追跡ファイルを含む
+    fixture で、M1（連結順 swap）/ M2（`-uall` 脱落）/ M10（`git diff HEAD`→`git diff`）の
+    いずれの変異が入っても、この比較先の独立実行では変異の影響を受けないため必ず不一致になる。
+    """
+    import subprocess
 
-def test_content_hash_from_texts_differs_when_only_diff_changes():
-    # status_text が同一でも diff_text だけが違えば結果が変わること
-    # （diff_text を計算に含めない変異を検出する。status のみで判定すると、
-    # 追跡済みファイルの中身変更以外の差分＝ステージ済みだが未コミットの変更内容の違いを見逃す）。
-    h1 = rg.content_hash_from_texts("M a.txt\n", "diff content A\n")
-    h2 = rg.content_hash_from_texts("M a.txt\n", "diff content B\n")
-    assert h1 != h2
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "a.txt").write_text("hello\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+    (repo / "crlf.txt").write_bytes(b"CRLF line\r\nsecond\r\n")
+    subprocess.run(["git", "add", "crlf.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "crlf"], cwd=repo, check=True)
+    with (repo / "crlf.txt").open("ab") as fh:
+        fh.write(b"staged change\r\n")
+    subprocess.run(["git", "add", "crlf.txt"], cwd=repo, check=True)
+    (repo / "untracked.txt").write_text("untracked content\n")
+
+    from_impl = rg.git_content_hash(str(repo))
+    independent = subprocess.run(
+        ["/bin/sh", "-c", rg.CONTENT_HASH_RECIPE], cwd=repo, capture_output=True, timeout=30
+    ).stdout.decode("ascii").strip()
+
+    assert from_impl == independent
+    assert len(from_impl) == 64
 
 
 def test_git_content_hash_differs_between_clean_and_dirty(tmp_path: Path):
     import subprocess
 
     repo = tmp_path / "repo"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    _init_repo(repo)
     (repo / "a.txt").write_text("hello\n")
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
@@ -434,6 +452,84 @@ def test_git_content_hash_differs_between_clean_and_dirty(tmp_path: Path):
     (repo / "a.txt").write_text("hello world\n")
     dirty_hash = rg.git_content_hash(str(repo))
     assert dirty_hash != clean_hash, "未コミット差分があるのに同一 HEAD で内容ハッシュが変わらない"
+
+
+def test_git_content_hash_stable_across_crlf_and_binary_bytes(tmp_path: Path):
+    """CRLF・非UTF-8バイトを含む差分でも例外にならず、決定論的に同じ値になること
+    （2026-09-21 レビュー2巡目 [Must]1: `subprocess.run(text=True)` の universal newlines
+    による CRLF→LF 畳み込み・非UTF-8バイトでの `UnicodeDecodeError` の再発防止）。
+    """
+    import subprocess
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "a.txt").write_text("hello\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    # CRLF を含む未コミット差分
+    (repo / "a.txt").write_bytes(b"hello\r\nworld\r\n")
+    crlf_hash_1 = rg.git_content_hash(str(repo))
+    crlf_hash_2 = rg.git_content_hash(str(repo))
+    assert crlf_hash_1 == crlf_hash_2
+    assert len(crlf_hash_1) == 64
+
+    # 非UTF-8バイト（例: Latin-1 の café）を含む未コミット差分
+    (repo / "a.txt").write_bytes(b"caf\xe9\n")
+    binary_hash = rg.git_content_hash(str(repo))
+    assert len(binary_hash) == 64
+    assert binary_hash != crlf_hash_1
+
+
+def test_git_content_hash_detects_untracked_file_content_change(tmp_path: Path):
+    """未追跡ファイルの中身が変わっても content_hash が変わること
+    （2026-09-21 レビュー2巡目 [Must]3①: `-uall` はパスしか出さず `git diff HEAD` にも
+    出ないため、`git add` せずに発注すると中身の変更を取りこぼしていた）。
+    """
+    import subprocess
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "a.txt").write_text("hello\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    (repo / "new.txt").write_text("original untracked content\n")
+    before = rg.git_content_hash(str(repo))
+
+    (repo / "new.txt").write_text("CHANGED untracked content\n")
+    after = rg.git_content_hash(str(repo))
+
+    assert before != after, "未追跡ファイルの中身の変更が content_hash に反映されていない"
+
+
+def test_git_content_hash_differs_for_fully_staged_content_with_no_working_tree_diff(tmp_path: Path):
+    """内容Aを `git add` した状態と、内容Bを `git add` した状態（どちらも working tree と
+    index が一致＝working tree 側の diff はゼロ）で content_hash が異なること。
+
+    `git diff`（引数なし）は index と working tree の差分しか見ないため、完全にステージ済みで
+    working tree との差が無い場合は常に空文字を返し、内容 A と B が同一ハッシュに収束する
+    （2026-09-21 レビュー2巡目 [Must]2 M10: `git diff HEAD` を `git diff` に差し替える変異が
+    実際にこの衝突を起こすことをレビュアーが実測済み）。`git diff HEAD` は index/working tree
+    どちらの変更も HEAD との差分として拾うため、このケースを区別できる。
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "a.txt").write_text("hello\n")
+    import subprocess
+
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+
+    (repo / "a.txt").write_text("content A\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)  # working tree == index
+    hash_a = rg.git_content_hash(str(repo))
+
+    (repo / "a.txt").write_text("content B\n")
+    subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)  # working tree == index
+    hash_b = rg.git_content_hash(str(repo))
+
+    assert hash_a != hash_b, "完全にステージ済みの異なる内容が同一 content_hash に収束している"
 
 
 def test_parse_receipt_claim_extracts_from_head():

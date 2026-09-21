@@ -149,7 +149,10 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
   echo '**重要: 最初のメッセージの2行目・3行目は、必ずこのサンドボックス内で実際にコマンドを実行して得た値を書くこと（推測・省略・値の書き写しは禁止）。1行目の判定行の位置は変えないこと。**'
   echo '2行目: `read_sha=` の直後に、対象ディレクトリで `git rev-parse HEAD` を実行した出力（40桁の16進数）をそのまま続ける。'
   echo '3行目: `content_hash=` の直後に、対象ディレクトリで次のコマンドを実行した出力（64桁の16進数）をそのまま続ける:'
-  echo '`(git status --porcelain -uall; git diff HEAD) | shasum -a 256 | awk '"'"'{print $1}'"'"'`'
+  # レシピは round_gate.py の CONTENT_HASH_RECIPE が唯一の正（recipe サブコマンドの出力を
+  # そのまま埋め込む）。ここで手書きし直すと二重管理になり、手順が食い違っても気づけない
+  # （2026-09-21 レビュー2巡目 [Must]2 の再発防止）。
+  echo "\`$(python3 "$GATE_PY" recipe)\`"
   echo 'この2行が欠けている、または実際にコマンドを実行した値でない場合、このレビューは機械照合で受領不可（取り直し）になる。'
   echo
   cat "$PROMPT_FILE"
@@ -207,7 +210,16 @@ CONTENT_HASH=""
 case "$GATE_TARGET" in
   pr:*|issue:*)
     if [[ -n "$GATE_HEAD" ]]; then
-      CONTENT_HASH="$(python3 "$GATE_PY" content-hash --workdir "$WORKDIR" 2>/dev/null || true)"
+      # stderr を捨てない: 計算失敗（例: 非UTF-8/巨大差分でのタイムアウト等）を発注直後に
+      # 気づけないと、受領時に「旧形式の state」という誤った理由で永久 rejected になる
+      # （2026-09-21 レビュー2巡目 [Must]1）。失敗しても発注自体は止めない（既存方針を維持）。
+      CONTENT_HASH_ERR="$(mktemp "$STATE_DIR/$RUN_ID.content_hash_err.XXXXXX")"
+      CONTENT_HASH="$(python3 "$GATE_PY" content-hash --workdir "$WORKDIR" 2>"$CONTENT_HASH_ERR" || true)"
+      if [[ -z "$CONTENT_HASH" ]]; then
+        echo "警告: content_hash の計算に失敗しました（run_id=$RUN_ID）。このレビューは受領時に機械照合で拒否されます。理由:" >&2
+        cat "$CONTENT_HASH_ERR" >&2
+      fi
+      rm -f "$CONTENT_HASH_ERR"
     fi
     ;;
 esac

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import hashlib
 import json
 import os
 import re
@@ -371,14 +370,39 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
         return ReceiptCheck("rejected", f"照合不能: {e}")
 
 
-def content_hash_from_texts(status_text: str, diff_text: str) -> str:
-    """`git status --porcelain -uall` と `git diff HEAD` の出力を連結して sha256 する。
-
-    同一 workdir・同一状態（同一 HEAD + 同一未コミット差分）なら発注時とレビュアーの
-    サンドボックス内再計算の両方で決定論的に同じ値になる。同一 head_sha でも未コミット差分が
-    あれば複数の内容を指しうるため、head_sha 単独の代わりにこれを併記する（review.md 出所）。
-    """
-    return hashlib.sha256((status_text + diff_text).encode("utf-8", errors="surrogateescape")).hexdigest()
+# content_hash の「唯一の正」となるシェルレシピ。発注側（round_gate.py の `git_content_hash`）と
+# 申告側（レビュアーのサンドボックス。プロンプトへ `recipe` サブコマンドの出力をそのまま埋め込む）が
+# **文字列として同一のコマンドを実行する**ことで、Python 側と shell 側で別々に手順を実装したことに
+# よる食い違いを構造的に無くす（2026-09-21 tacchi レビュー2巡目 [Must]2: 手順が二重管理になり
+# `content_hash_from_texts` の連結順 swap・`-uall` 脱落・`git diff HEAD`→`git diff` のいずれの
+# 変異も検出できなかった指摘への対応）。
+#
+# 各要素:
+# - `git status --porcelain -uall`: 追跡ファイルの状態変化（add/削除/リネーム含む）と、
+#   未追跡ファイルの**存在**をパスの一覧として拾う（中身は拾わない）。
+# - `git diff HEAD`: 追跡ファイルの**内容差分**（ステージ済み・未ステージ双方、HEAD との差分）。
+# - `git ls-files -o --exclude-standard -z | xargs -0 -r git hash-object`: 未追跡ファイルの
+#   **中身**を git blob ハッシュ（追加ファイルの中身が変わっても `git status`/`git diff HEAD` の
+#   どちらにも出ない＝未追跡ファイルの中身の取りこぼしへの対処。2026-09-21 [Must]3①）。
+#   index には触れない（`git add` しない）。`-r`（GNU xargs 互換。macOS xargs は既定で
+#   空入力なら実行しないため実害はないが、Linux 実行系でも空入力時に `git hash-object` を
+#   引数なしで起動して標準入力待ちに陥らないよう明示する）。
+# - `shasum -a 256`: 生バイトのまま sha256 する（Python 側の `subprocess.run(text=True)` は
+#   universal newlines で `\r\n`→`\n` を畳むため、CRLF を含む差分でこの手順と食い違っていた
+#   ＝2026-09-21 [Must]1）。この手順を Python 側でも `/bin/sh -c` へそのまま渡して実行するため、
+#   Python 側は生バイトの解釈を一切行わない。
+#
+# 既知の対象外（意図的な仕様。2026-09-21 [Must]3②③）:
+# - `.gitignore` 対象のファイルは検出しない（`--exclude-standard` の定義どおり。無視ファイルの
+#   中身は差分の対象外という通常の git の意味論に従う）
+# - submodule 内部の未コミット差分は検出しない（親の `git diff HEAD` は submodule を
+#   `Subproject commit <sha>` の1行としてしか扱わないため）。submodule のコミット自体が
+#   変われば通常どおり検出される
+CONTENT_HASH_RECIPE = (
+    "(git status --porcelain -uall; git diff HEAD; "
+    "git ls-files -o --exclude-standard -z | xargs -0 -r git hash-object) "
+    "| shasum -a 256 | awk '{print $1}'"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -836,35 +860,39 @@ def git_remote_repo(workdir: str) -> tuple[str, str] | None:
     return m.group(1), m.group(2)
 
 
-def git_content_hash(workdir: str) -> str:
-    """workdir の未コミット差分を含む内容ハッシュを計算する（`content_hash_from_texts` 参照）。
+RE_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 
-    レビュアーのサンドボックス側にも同じ手順（`git status --porcelain -uall` と
-    `git diff HEAD` を連結して sha256）を実行させ、申告値と突合する。手順を二重管理すると
-    片側だけ変更されたときに常に不一致になるため、コマンド自体をプロンプトへ verbatim で書く
-    （`bin/codex-review` 側）。
+
+def git_content_hash(workdir: str) -> str:
+    """`CONTENT_HASH_RECIPE` を workdir で実行し、内容ハッシュ（sha256）を取得する。
+
+    レビュアーのサンドボックス側にも**文字列として同一の** `CONTENT_HASH_RECIPE` を実行させ、
+    申告値と突合する（`bin/codex-review` が `python3 round_gate.py recipe` の出力をそのまま
+    プロンプトへ埋め込む）。ここで Python 側が生バイトのまま `/bin/sh -c` へ丸投げすることで、
+    `subprocess.run(text=True)` の universal newlines（CRLF→LF）や、Python 側だけ別ロジックで
+    手順を再実装したことによる二重管理の食い違いを構造的に無くす（2026-09-21 レビュー[Must]1/2）。
     """
     try:
-        status = subprocess.run(
-            ["git", "-C", workdir, "status", "--porcelain", "-uall"],
+        out = subprocess.run(
+            ["/bin/sh", "-c", CONTENT_HASH_RECIPE],
+            cwd=workdir,
             capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        diff = subprocess.run(
-            ["git", "-C", workdir, "diff", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=30,
+            timeout=60,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         raise Indeterminate(f"判定不能: content_hash の計算に失敗しました（{e}）") from e
-    if status.returncode != 0 or diff.returncode != 0:
+    if out.returncode != 0:
         raise Indeterminate(
-            "判定不能: content_hash の計算に失敗しました "
-            f"(git status rc={status.returncode} / git diff rc={diff.returncode})"
+            f"判定不能: content_hash の計算に失敗しました (rc={out.returncode}) "
+            f"stderr={out.stderr!r}"
         )
-    return content_hash_from_texts(status.stdout, diff.stdout)
+    try:
+        value = out.stdout.decode("ascii").strip()
+    except UnicodeDecodeError as e:
+        raise Indeterminate(f"判定不能: content_hash の出力が ASCII として読めません（{e}）") from e
+    if not RE_SHA256_HEX.match(value):
+        raise Indeterminate(f"判定不能: content_hash の出力が sha256 の形式ではありません: {value!r}")
+    return value
 
 
 def gh_fetch_body(target: Target) -> str:
@@ -1005,6 +1033,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     receipt.add_argument("--state-file", required=True)
     receipt.add_argument("--report", required=True)
     receipt.add_argument("--json", action="store_true")
+
+    sub.add_parser("recipe", help="content_hash の唯一の正となるシェルレシピを1行で出力する")
 
     return p
 
@@ -1351,6 +1381,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(result.reason)
         return exit_code
+
+    if args.cmd == "recipe":
+        print(CONTENT_HASH_RECIPE)
+        return EXIT_PASS
 
     return EXIT_USAGE
 

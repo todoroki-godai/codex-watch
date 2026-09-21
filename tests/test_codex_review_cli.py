@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -259,6 +260,67 @@ def test_cli_dispatch_writes_content_hash_for_git_managed_workdir(fake_bin: Path
     # 独立に計算した値と一致すること（発注口が計算した値の正しさそのものを確認する）
     assert parsed["content_hash"] == rg.git_content_hash(str(workdir))
     assert len(parsed["content_hash"]) == 64
+
+
+def test_cli_dispatch_content_hash_matches_recipe_extracted_from_generated_prompt(
+    fake_bin: Path, tmp_path: Path
+):
+    """発注口が state へ書いた content_hash が、**実際に生成されたプロンプト（`effective_prompt`）
+    に埋め込まれたレシピ行**をそのまま bash で実行した値と一致することを、CRLFファイル・
+    ステージ済み変更・未追跡ファイルを含む fixture で確認する。
+
+    レシピを人間がテストへ書き写すと二重管理になり同じ穴が空く（2026-09-21 レビュー2巡目
+    [Must]2）ため、プロンプト文字列から**正規表現で抜き出して**実行する（決め打ちの文字列を
+    テスト側に再入力しない）。この1本で M1（連結順 swap）/ M2（プロンプト側の `-uall` 脱落）/
+    M10（`git diff HEAD`→`git diff`）/ [Must]1（CRLF・非UTF-8）のいずれの変異も、
+    発注側と申告側どちらか片方だけが変わることで検出できる。
+    """
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    _init_git_repo(workdir)
+    # CRLF ファイル
+    (workdir / "crlf.txt").write_bytes(b"CRLF line\r\nsecond\r\n")
+    subprocess.run(["git", "add", "crlf.txt"], cwd=workdir, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "crlf"], cwd=workdir, check=True)
+    # ステージ済み変更
+    with (workdir / "crlf.txt").open("ab") as fh:
+        fh.write(b"staged change\r\n")
+    subprocess.run(["git", "add", "crlf.txt"], cwd=workdir, check=True)
+    # 未追跡ファイル
+    (workdir / "untracked.txt").write_text("untracked content\n")
+
+    result = _run_in_git_workdir(
+        fake_bin,
+        tmp_path,
+        workdir,
+        review_target="issue:example-org/example-repo#1",
+        review_goal_cut=VALID_GOAL_CUT,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    run_id = result.stdout.strip().splitlines()[-1]
+    state_file = tmp_path / "state" / f"{run_id}.state"
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+    import round_gate as rg  # noqa: E402
+
+    parsed = rg.read_state_file(state_file)
+    effective_prompt = Path(parsed["effective_prompt"])
+    prompt_text = effective_prompt.read_text()
+
+    # プロンプト中の「`...`」（バッククォートで囲まれた1行）からレシピを抜き出す。
+    # bin/codex-review は `python3 round_gate.py recipe` の出力をそのまま埋め込むため、
+    # 複数のバッククォート区間のうち shasum を含むものを選ぶ（判定行の書式説明等、他の
+    # バッククォート区間と区別するため）。
+    recipe_candidates = re.findall(r"`([^`]*shasum[^`]*)`", prompt_text)
+    assert len(recipe_candidates) == 1, f"レシピ行を一意に特定できない: {recipe_candidates}"
+    extracted_recipe = recipe_candidates[0]
+    assert extracted_recipe == rg.CONTENT_HASH_RECIPE, "プロンプトに埋め込まれたレシピが round_gate.py の CONTENT_HASH_RECIPE と食い違っている"
+
+    independent = subprocess.run(
+        ["/bin/sh", "-c", extracted_recipe], cwd=workdir, capture_output=True, timeout=30
+    ).stdout.decode("ascii").strip()
+
+    assert parsed["content_hash"] == independent
 
 
 def test_cli_dispatch_content_hash_changes_with_uncommitted_diff(fake_bin: Path, tmp_path: Path):
