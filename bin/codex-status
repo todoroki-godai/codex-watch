@@ -84,10 +84,7 @@ show_one() {
   IFS=$'\t' read -r hdr_model hdr_model_source hdr_effort hdr_effort_source <<<"$(extract_codex_log_header "$log")"
   echo "要求値               : model=${requested_model:-(未指定)} effort=${requested_effort:-(未指定)}"
   echo "ログ先頭のヘッダー（参考・run同一性は未検証）: model=$hdr_model($hdr_model_source) effort=$hdr_effort($hdr_effort_source)"
-  if [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
-    # 終了後は report を組み立て直してから表示する（逐次出力運用では log の
-    # 'tokens used' 以降＝最終セクションだけの複製で、report と同じ欠落を持つ。
-    # 2026-08-26 rev435r2 実測: どちらも最終節のみで判定行を失っていた）。
+  if [[ "$alive" == "終了" ]]; then
     local report
     report="${log%.log}.report"
     rebuild_report_if_needed "$log" "$report" || true
@@ -99,6 +96,11 @@ show_one() {
     # codex-status 自体の異常終了ではないため、ここでは exit code を握りつぶして表示のみ行う。
     receipt_msg="$(python3 "$GATE_PY" receipt --state-file "$state_file" --report "$report" 2>&1 || true)"
     echo "受領     : $receipt_msg"
+  fi
+  if [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
+    # 終了後は report を組み立て直してから表示する（逐次出力運用では log の
+    # 'tokens used' 以降＝最終セクションだけの複製で、report と同じ欠落を持つ。
+    # 2026-08-26 rev435r2 実測: どちらも最終節のみで判定行を失っていた）。
     if [[ -s "$report" ]]; then
       echo "--- 判定: $(extract_verdict_line "$report") / report ($(wc -l < "$report" | tr -d ' ') 行) ---"
       cat "$report"

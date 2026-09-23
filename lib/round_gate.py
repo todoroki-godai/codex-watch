@@ -312,20 +312,14 @@ def body_own_round(body: str) -> int:
 
 RE_RECEIPT_READ_SHA = re.compile(r"^read_sha=([0-9a-fA-F]{40})\s*$", re.MULTILINE)
 RE_RECEIPT_CONTENT_HASH = re.compile(r"^content_hash=([0-9a-fA-F]{64})\s*$", re.MULTILINE)
-# レポート先頭の何行までを申告の探索対象にするか。全文検索にしないのは、本文中に引用された
-# 過去の SHA・ハッシュ（別 run のログ断片の引用等）を拾わないため（review.md「file:line の
-# 実在確認も代用にしない」と同型の懸念）。
-RECEIPT_HEAD_LINES = 10
+# 1行目は既存の判定行契約。申告はプロンプトで指定する2・3行目だけを読む。
 
 
 def parse_receipt_claim(report_text: str) -> tuple[str | None, str | None]:
-    """レポート先頭 `RECEIPT_HEAD_LINES` 行から `read_sha=` / `content_hash=` の申告を読む。
-
-    どちらか一方でも見つからなければ `None` を返す（呼び出し側が「欠落」として扱う）。
-    """
-    head = "\n".join((report_text or "").splitlines()[:RECEIPT_HEAD_LINES])
-    m_sha = RE_RECEIPT_READ_SHA.search(head)
-    m_hash = RE_RECEIPT_CONTENT_HASH.search(head)
+    """2行目の read_sha と3行目の content_hash を読む。位置ずれは欠落扱い。"""
+    lines = (report_text or "").splitlines()
+    m_sha = RE_RECEIPT_READ_SHA.fullmatch(lines[1]) if len(lines) > 1 else None
+    m_hash = RE_RECEIPT_CONTENT_HASH.fullmatch(lines[2]) if len(lines) > 2 else None
     sha = m_sha.group(1).lower() if m_sha else None
     content_hash = m_hash.group(1).lower() if m_hash else None
     return sha, content_hash
@@ -398,10 +392,14 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
 # - submodule 内部の未コミット差分は検出しない（親の `git diff HEAD` は submodule を
 #   `Subproject commit <sha>` の1行としてしか扱わないため）。submodule のコミット自体が
 #   変われば通常どおり検出される
+# && は個別の git、pipefail は内外のパイプの失敗を伝播する。
+# 成功するまで出力を保留するため、失敗した部分入力のハッシュを表示しない。
 CONTENT_HASH_RECIPE = (
-    "(git status --porcelain -uall; git diff HEAD; "
-    "git ls-files -o --exclude-standard -z | xargs -0 -r git hash-object) "
-    "| shasum -a 256 | awk '{print $1}'"
+    "bash -o pipefail -c '"
+    'hash=$( { git status --porcelain -uall && git diff HEAD && '
+    'git ls-files -o --exclude-standard -z | xargs -0 -r git hash-object; } '
+    '| shasum -a 256) && printf "%s\\n" "${hash%% *}"'
+    "'"
 )
 
 
@@ -1379,7 +1377,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             print(json.dumps({"status": result.status, "reason": result.reason}, ensure_ascii=False))
         else:
-            print(result.reason)
+            print(result.reason if result.status == "ok" else f"受領不可: {result.reason}")
         return exit_code
 
     if args.cmd == "recipe":
