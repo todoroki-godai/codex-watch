@@ -132,8 +132,30 @@ if [[ -n "${CODEX_IMPL_IMAGES:-}" ]]; then
   done <<< "${CODEX_IMPL_IMAGES}"
 fi
 
+# 出力節約の前置き（常に付与。2026-09-24 ユーザー承認・実測は
+# _work/notes/codex-token-usage-20260924.md）。
+# なぜ要るか: 実装依頼1回あたりの token 消費の主因は、型チェック・テストの全量出力や
+# 無制限の検索結果を会話へそのまま読み込み、以後の全ターンで再送されることだった
+# （直近14日average 2,024,796 token/回、最大 run は 33,295,306 token）。
+# コマンド自体の実行を制限するのではなく、出力の「読み方」を前置きで固定する
+# （毎回同じ文面を依頼本文より前に置き、プロンプトキャッシュを効かせる）。
+case "${CODEX_IMPL_ALLOW_BIG_OUTPUT:-}" in
+  1|true|yes) OUTPUT_GUARD=no ;;
+  *)          OUTPUT_GUARD=yes ;;
+esac
+# 生成先は mktemp で排他確保する（codex-review と同じ理由: 第2引数が生成先と同じパスだと
+# リダイレクトが原本を先に空にして前置きだけが届く）。
+EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
+{
+  if [[ "$OUTPUT_GUARD" == yes ]]; then
+    echo '**重要: 長くなりうるコマンド（型チェック・テスト・lint・ビルド・全体検索・大きなファイルの表示）の出力を、会話にそのまま読み込まないこと。** まず出力をファイルへ書き出す（`<コマンド> > <ファイル> 2>&1`）。会話に読むのは、終了コード・件数などの要約・先頭と末尾の数十行・`grep` で絞った該当行だけにする。検索は対象ディレクトリと件数上限を付ける（パスを限定し `--max-count` 等を使う。`rg ... | head -N` だけに頼らない）。ファイルは必要な行範囲だけ読む。エラーを直すときは、書き出したファイルから該当エラーを絞り込んで読み、全文を表示し直さない。目安: 1回のコマンドで会話に入れる出力は数千文字以内に収める。'
+    echo
+  fi
+  cat "$PROMPT_FILE"
+} > "$EFFECTIVE_PROMPT"
+
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
-nohup codex exec -C "$WORKDIR" ${CODEX_SANDBOX_FLAG[@]+"${CODEX_SANDBOX_FLAG[@]}"} ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
+nohup codex exec -C "$WORKDIR" ${CODEX_SANDBOX_FLAG[@]+"${CODEX_SANDBOX_FLAG[@]}"} ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
 # 実効値（実際に起動された model / effort）はここでは解決しない・待たない。
@@ -148,6 +170,8 @@ CODEX_PID=$!
   echo "report=$REPORT_FILE"
   echo "workdir=$WORKDIR"
   echo "prompt=$PROMPT_FILE"
+  echo "effective_prompt=$EFFECTIVE_PROMPT"
+  echo "output_guard=$OUTPUT_GUARD"
   echo "mode=workspace-write"
   echo "writable_git_common=${GIT_COMMON_ABS:-}"
   echo "requested_model=$REQUESTED_MODEL"

@@ -155,6 +155,21 @@ MANDATORY_GATES = {
 }
 
 
+def is_valid_consult_reason(raw: str) -> bool:
+    """REVIEW_CONSULT_REASON が「相談」例外の条件を満たすかを返す。
+
+    条件は2つだけ: 1行であること（state への行注入防止）と、空白のみでないこと。
+    内容の正しさは機械判定できないので課さない代わりに、値は state の `consult_reason=` に
+    そのまま残し、後から台帳で数えられるようにする。
+
+    **この例外が緩めるのは goal-cut が0のときの発注可否だけ**で、巡数カウント・同一巡の
+    発注本数上限・形式検査は一切緩めない（review.md「種別名を『相談・顧問』へ替えても
+    2回目は2本目」＝相談を巡数から外すのは、そのルールが名指しで警告している抜け道）。
+    """
+    value = raw or ""
+    return bool(is_single_line(value) and value.strip())
+
+
 @dataclass(frozen=True)
 class GoalCutCheck:
     status: str  # "ok" | "not_applicable" | "blocked"
@@ -196,7 +211,9 @@ def check_mandatory_gate(raw: str) -> tuple[str, str]:
     return value, ""
 
 
-def check_goal_cut(raw: str, mandatory_gate: str = "") -> GoalCutCheck:
+def check_goal_cut(
+    raw: str, mandatory_gate: str = "", consult_reason: str = ""
+) -> GoalCutCheck:
     """REVIEW_GOAL_CUT を検査する（実発注 pr:/issue: のみ呼び出し側が使う）。
 
     受理する形式（厳密一致）: `<数値><単位> | 根拠: <再現手段または出所> | 取得日: YYYY-MM-DD`
@@ -240,14 +257,21 @@ def check_goal_cut(raw: str, mandatory_gate: str = "") -> GoalCutCheck:
         return GoalCutCheck(
             "blocked", f"REVIEW_GOAL_CUT の数値部が不正です: {number_str!r}。{GOAL_CUT_EXAMPLE}", value
         )
-    if number == 0 and mandatory_gate not in MANDATORY_GATES:
+    if (
+        number == 0
+        and mandatory_gate not in MANDATORY_GATES
+        and not is_valid_consult_reason(consult_reason)
+    ):
         return GoalCutCheck(
             "blocked",
             "REVIEW_GOAL_CUT が0です。目的の物差しで0の成果物は発注せず issue へ落としてください"
             "（review.md 入口条件⑥）。"
             "review.md が必須と定めるゲート（実装着手前の設計レビュー1巡・指示文書のレビュー1巡・"
             "系統独立レビュー）のための発注に限り、REVIEW_MANDATORY_GATE にその名前を指定すれば"
-            f"発注できます: {' / '.join(sorted(MANDATORY_GATES))}",
+            f"発注できます: {' / '.join(sorted(MANDATORY_GATES))}。"
+            "また、成果物のレビューではなく『進め方の相談』を出す場合に限り、"
+            "REVIEW_CONSULT_REASON に理由（1行・空白のみ不可）を書けば発注できます"
+            "（巡数には従来どおり数えます＝review.md「種別名を替えても2回目は2本目」）。",
             value,
         )
     try:
@@ -871,6 +895,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=os.environ.get("REVIEW_MANDATORY_GATE", ""),
         help="goal-cut が0でも発注を認める必須ゲート名（review.md が名指しするものに限る）",
     )
+    gate.add_argument(
+        "--consult-reason",
+        default=os.environ.get("REVIEW_CONSULT_REASON", ""),
+        help="成果物レビューでなく進め方の相談として発注する理由（1行）。goal-cut が0でも発注できるが巡数は数える",
+    )
     gate.add_argument("--json", action="store_true")
 
     record = sub.add_parser("record", help="gate 通過後、巡行を本文へ追記する")
@@ -905,6 +934,7 @@ def run_gate(
     fetch_body=gh_fetch_body,
     goal_cut: str = "",
     mandatory_gate: str = "",
+    consult_reason: str = "",
 ) -> dict:
     """判定のみを行い、副作用（body 追記・state 書込）は行わない。呼び出し側（bash）が
     exit code を見て dispatch の可否を決め、通過時に record を別途呼ぶ。
@@ -1011,7 +1041,7 @@ def run_gate(
         head_sha = git_head_sha(workdir)
 
     # goal-cut ゲート（review.md 入口条件⑥）。実発注（pr:/issue:）は必須・巡数判定より前に検査する。
-    goal_cut_check = check_goal_cut(goal_cut, mandatory_gate_value)
+    goal_cut_check = check_goal_cut(goal_cut, mandatory_gate_value, consult_reason)
     if goal_cut_check.status == "blocked":
         return {
             "status": "blocked",
@@ -1172,9 +1202,15 @@ def main(argv: list[str] | None = None) -> int:
                 args.no_gate_reason,
                 goal_cut=args.goal_cut,
                 mandatory_gate=args.mandatory_gate,
+                consult_reason=args.consult_reason,
             )
             # どの分岐で返っても state に残せるよう、通過側の dict にも必ず載せる。
             result.setdefault("mandatory_gate", check_mandatory_gate(args.mandatory_gate)[0])
+            # consult_reason は state へ残して後から数えられるようにする（例外の使用実績の可視化）。
+            result.setdefault(
+                "consult_reason",
+                args.consult_reason if is_valid_consult_reason(args.consult_reason) else "",
+            )
         except Indeterminate as e:
             result = {"status": "indeterminate", "exit_code": EXIT_INDETERMINATE, "message": e.reason}
         if args.json:

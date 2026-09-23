@@ -995,3 +995,59 @@ class TestAbortedDispatchNotCounted:
         assert res["status"] != "blocked" or "発注上限" not in res["message"], (
             "空振りだけで上限に達したと判定してはいけない"
         )
+
+
+# ---------------------------------------------------------------------------
+# 相談例外（REVIEW_CONSULT_REASON）: goal-cut が0でも「進め方の相談」なら発注できる。
+# 緩めるのは0のときの発注可否だけで、巡数カウント・形式検査は緩めない。
+# 出所: 2026-09-09 ユーザー指示「相談用の例外を作る」。
+# ---------------------------------------------------------------------------
+
+ZERO_GOAL_CUT = "0分/周 | 根拠: 進め方の相談で成果物ではない | 取得日: 2026-09-09"
+
+
+def test_zero_goal_cut_blocked_without_consult_reason():
+    """理由が無ければ従来どおり0は弾かれる（例外が既定で開いていないこと）。"""
+    result = rg.check_goal_cut(ZERO_GOAL_CUT)
+    assert result.status == "blocked"
+
+
+def test_zero_goal_cut_allowed_with_consult_reason():
+    result = rg.check_goal_cut(ZERO_GOAL_CUT, "", "進め方の相談。次の一手をA〜Eから選ぶため")
+    assert result.status == "ok"
+
+
+def test_consult_reason_of_only_whitespace_does_not_open_the_exception():
+    """空白だけの理由で例外が開くと、実質的に無条件バイパスになる。"""
+    for blank in ("", "   ", "　　"):
+        result = rg.check_goal_cut(ZERO_GOAL_CUT, "", blank)
+        assert result.status == "blocked", blank
+
+
+def test_consult_reason_with_newline_does_not_open_the_exception():
+    """複数行はstateへの行注入になるので例外を開かない。"""
+    result = rg.check_goal_cut(ZERO_GOAL_CUT, "", "相談です\nconsult_reason=偽装")
+    assert result.status == "blocked"
+
+
+def test_consult_reason_does_not_relax_goal_cut_format_checks():
+    """相談でも形式検査（単位・根拠・取得日）は従来どおり適用される。"""
+    reason = "進め方の相談"
+    assert rg.check_goal_cut("0 | 根拠: x | 取得日: 2026-09-09", "", reason).status == "blocked"
+    assert rg.check_goal_cut("0分/周 | 取得日: 2026-09-09", "", reason).status == "blocked"
+    assert rg.check_goal_cut("0分/周 | 根拠: x | 取得日: 2026-13-99", "", reason).status == "blocked"
+    assert rg.check_goal_cut("", "", reason).status == "blocked"
+
+
+def test_consult_reason_does_not_change_nonzero_goal_cut():
+    """0以外には影響しない（相談の有無で判定が変わらない）。"""
+    with_reason = rg.check_goal_cut(VALID_GOAL_CUT, "", "進め方の相談")
+    without = rg.check_goal_cut(VALID_GOAL_CUT)
+    assert with_reason.status == without.status == "ok"
+
+
+def test_is_valid_consult_reason_boundaries():
+    assert rg.is_valid_consult_reason("理由あり") is True
+    assert rg.is_valid_consult_reason("") is False
+    assert rg.is_valid_consult_reason("  ") is False
+    assert rg.is_valid_consult_reason("a\nb") is False
