@@ -1440,3 +1440,18 @@ def test_content_hash_recipe_survives_backslash_loss(tmp_path):
     result = subprocess.run(["/bin/sh", "-c", recipe], cwd=tmp_path, capture_output=True, text=True, timeout=10)
     assert result.returncode == 0
     assert result.stdout == expected + "\n"
+
+
+@pytest.mark.parametrize("dirty", [False, True])
+def test_echo_recipe_matches_legacy_printf_bytes(tmp_path, dirty):
+    import subprocess
+    _init_repo(tmp_path)
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "initial"], cwd=tmp_path, check=True)
+    if dirty:
+        (tmp_path / "untracked.txt").write_text("content\n")
+    legacy = rg.CONTENT_HASH_RECIPE.replace('echo "${hash%% *}"', 'printf "%s\\n" "${hash%% *}"')
+    current = subprocess.run(["/bin/sh", "-c", rg.CONTENT_HASH_RECIPE], cwd=tmp_path, capture_output=True, timeout=10)
+    previous = subprocess.run(["/bin/sh", "-c", legacy], cwd=tmp_path, capture_output=True, timeout=10)
+    assert current.returncode == previous.returncode == 0
+    assert current.stdout == previous.stdout
+    assert len(current.stdout) == 65

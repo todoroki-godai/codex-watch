@@ -128,3 +128,25 @@ def test_finished_receipt_without_tokens(tmp_path, report_kind, log_kind):
     else:
         assert "受領不可" in result.stdout
         assert "申告がありません" in result.stdout
+
+
+@pytest.mark.parametrize("claimed_sha,expected_label", [
+    (SHA, "受領可:"),
+    ("b" * 40, "受領不可"),
+])
+def test_status_rebuilds_preamble_and_displays_receipt(tmp_path, claimed_sha, expected_label):
+    _write_finished_run(tmp_path, "preamble", head_sha=SHA, content_hash=HASH,
+                        report_body="判定はレビュー後に出します。")
+    (tmp_path / "preamble.log").write_text(
+        "codex\n判定はレビュー後に出します。\nhook: done\ncodex\n"
+        f"マージ可\nread_sha={claimed_sha}\ncontent_hash={HASH}\n本文\n"
+        "tokens used\n"
+    )
+    result = _run_status(tmp_path, "preamble")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "受領" in result.stdout
+    assert expected_label in result.stdout
+    assert "判定行を特定できず" not in result.stdout
+    assert (tmp_path / "preamble.report").read_text().splitlines()[:3] == [
+        "マージ可", f"read_sha={claimed_sha}", f"content_hash={HASH}",
+    ]
