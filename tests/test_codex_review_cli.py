@@ -366,7 +366,7 @@ def test_receipt_cli_ok_on_matching_claim(tmp_path: Path):
     state_file = tmp_path / "run1.state"
     state_file.write_text("head_sha=" + "a" * 40 + "\ncontent_hash=" + "1" * 64 + "\n")
     report_file = tmp_path / "run1.report"
-    report_file.write_text(f"read_sha={'a' * 40}\ncontent_hash={'1' * 64}\n判定: マージ可\n")
+    report_file.write_text(f"マージ可\nread_sha={'a' * 40}\ncontent_hash={'1' * 64}\n判定: マージ可\n")
 
     result = subprocess.run(
         ["python3", str(Path(__file__).resolve().parent.parent / "lib" / "round_gate.py"),
@@ -381,7 +381,7 @@ def test_receipt_cli_rejects_on_mismatched_claim(tmp_path: Path):
     state_file = tmp_path / "run2.state"
     state_file.write_text("head_sha=" + "a" * 40 + "\ncontent_hash=" + "1" * 64 + "\n")
     report_file = tmp_path / "run2.report"
-    report_file.write_text(f"read_sha={'b' * 40}\ncontent_hash={'1' * 64}\n判定: マージ可\n")
+    report_file.write_text(f"マージ可\nread_sha={'b' * 40}\ncontent_hash={'1' * 64}\n判定: マージ可\n")
 
     result = subprocess.run(
         ["python3", str(Path(__file__).resolve().parent.parent / "lib" / "round_gate.py"),
@@ -396,7 +396,7 @@ def test_receipt_cli_rejects_on_legacy_state_without_content_hash(tmp_path: Path
     state_file = tmp_path / "run3.state"
     state_file.write_text("head_sha=" + "a" * 40 + "\n")  # content_hash 欄が無い旧形式
     report_file = tmp_path / "run3.report"
-    report_file.write_text(f"read_sha={'a' * 40}\ncontent_hash={'1' * 64}\n判定: マージ可\n")
+    report_file.write_text(f"マージ可\nread_sha={'a' * 40}\ncontent_hash={'1' * 64}\n判定: マージ可\n")
 
     result = subprocess.run(
         ["python3", str(Path(__file__).resolve().parent.parent / "lib" / "round_gate.py"),

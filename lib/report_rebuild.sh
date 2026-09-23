@@ -25,11 +25,16 @@ REPORT_REBUILD_VERDICT_REGEX='^(マージ可|マージ不可|修正要|実装着
 _report_rebuild_extract_sections() {
   local log="$1"
   [[ -r "$log" ]] || return 1
-  awk '
-    /^codex$/ { f=1; seen=1; next }
-    /^(user|hook: )/ { if (f) { print "" }; f=0; next }
-    f { print }
-    END { if (!seen) exit 1 }
+  awk -v verdict="$REPORT_REBUILD_VERDICT_REGEX" '
+    /^codex$/ { f=1; seen=1; first=1; next }
+    /^(user|hook: )/ { if (f) { output=output "\n" }; f=0; next }
+    f {
+      # 最初の判定セクションより前だけを落とす。判定が無ければ全内容を残す。
+      if (first && !found && $0 ~ verdict) { output=""; found=1 }
+      first=0
+      output=output $0 "\n"
+    }
+    END { if (!seen) exit 1; printf "%s", output }
   ' "$log"
 }
 

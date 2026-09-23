@@ -533,14 +533,14 @@ def test_git_content_hash_differs_for_fully_staged_content_with_no_working_tree_
 
 
 def test_parse_receipt_claim_extracts_from_head():
-    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
     sha, chash = rg.parse_receipt_claim(report)
     assert sha == SHA_A
     assert chash == HASH_A
 
 
 def test_parse_receipt_claim_uppercase_normalized_to_lowercase():
-    report = f"read_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
+    report = f"マージ可\nread_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
     sha, chash = rg.parse_receipt_claim(report)
     assert sha == SHA_A
     assert chash == HASH_A
@@ -553,7 +553,7 @@ def test_parse_receipt_claim_missing_returns_none():
 
 
 def test_parse_receipt_claim_ignores_claim_outside_head_window():
-    # RECEIPT_HEAD_LINES(10) より後ろに出てくる申告（例: 過去ログの引用）は拾わない
+    # 2・3行目より後ろに出てくる申告（例: 過去ログの引用）は拾わない
     body = "\n".join([f"line{i}" for i in range(12)])
     report = body + f"\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
     sha, chash = rg.parse_receipt_claim(report)
@@ -561,27 +561,36 @@ def test_parse_receipt_claim_ignores_claim_outside_head_window():
     assert chash is None
 
 
+def test_parse_receipt_claim_rejects_read_sha_on_verdict_line():
+    # 1行目は判定行。判定行を欠いて read_sha を1行目に置いた report は、
+    # 3行目に content_hash があっても read_sha を欠落として扱う
+    report = f"read_sha={SHA_A}\n本文\ncontent_hash={HASH_A}\n"
+    sha, chash = rg.parse_receipt_claim(report)
+    assert sha is None
+    assert chash == HASH_A
+
+
 def test_check_receipt_ok_on_match():
-    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "ok"
 
 
 def test_check_receipt_ok_when_report_uses_uppercase_hex():
-    report = f"read_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
+    report = f"マージ可\nread_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "ok"
 
 
 def test_check_receipt_rejects_legacy_state_missing_expected_sha():
-    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
     result = rg.check_receipt("", HASH_A, report)
     assert result.status == "rejected"
     assert "旧形式" in result.reason
 
 
 def test_check_receipt_rejects_legacy_state_missing_expected_hash():
-    report = f"read_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
     result = rg.check_receipt(SHA_A, "", report)
     assert result.status == "rejected"
     assert "旧形式" in result.reason
@@ -594,14 +603,14 @@ def test_check_receipt_rejects_missing_claim():
 
 
 def test_check_receipt_rejects_sha_mismatch():
-    report = f"read_sha={SHA_B}\ncontent_hash={HASH_A}\n"
+    report = f"マージ可\nread_sha={SHA_B}\ncontent_hash={HASH_A}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
     assert "read_sha" in result.reason
 
 
 def test_check_receipt_rejects_content_hash_mismatch():
-    report = f"read_sha={SHA_A}\ncontent_hash={HASH_B}\n"
+    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_B}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
     assert "content_hash" in result.reason
@@ -621,7 +630,7 @@ def test_check_receipt_rejects_read_sha_short_prefix_claim():
     # ちょうど40桁だが値の一部だけが一致する（先頭一致）ケースを試す。
     prefix_only = SHA_A[:7] + "0" * 33  # SHA_A と先頭7桁だけ一致・残りは不一致（40桁は保つ）
     assert prefix_only != SHA_A
-    report = f"read_sha={prefix_only}\ncontent_hash={HASH_A}\n"
+    report = f"マージ可\nread_sha={prefix_only}\ncontent_hash={HASH_A}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
@@ -629,7 +638,7 @@ def test_check_receipt_rejects_read_sha_short_prefix_claim():
 def test_check_receipt_rejects_read_sha_truly_short_claim_as_missing():
     # regex が40桁固定のため、短い申告は「申告なし」として rejected になる
     # （前方一致に緩められた場合に real な脅威になるのは、次の empty/prefix ケース）。
-    report = "read_sha=aaaaaaa\ncontent_hash=" + HASH_A + "\n"
+    report = "マージ可\nread_sha=aaaaaaa\ncontent_hash=" + HASH_A + "\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
@@ -637,7 +646,7 @@ def test_check_receipt_rejects_read_sha_truly_short_claim_as_missing():
 def test_check_receipt_rejects_empty_read_sha_claim():
     # `startswith("")` は常に True になるため、前方一致に緩めると空文字申告すら通ってしまう。
     # 完全一致の検査であることを固定する。
-    report = f"read_sha=\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    report = f"マージ可\nread_sha=\ncontent_hash={HASH_A}\n判定: マージ可\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
@@ -645,13 +654,13 @@ def test_check_receipt_rejects_empty_read_sha_claim():
 def test_check_receipt_rejects_content_hash_short_prefix_claim():
     prefix_only = HASH_A[:7] + "0" * 57  # HASH_A と先頭7桁だけ一致・残りは不一致（64桁は保つ）
     assert prefix_only != HASH_A
-    report = f"read_sha={SHA_A}\ncontent_hash={prefix_only}\n"
+    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={prefix_only}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
 
 def test_check_receipt_rejects_empty_content_hash_claim():
-    report = f"read_sha={SHA_A}\ncontent_hash=\n判定: マージ可\n"
+    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash=\n判定: マージ可\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
@@ -666,12 +675,12 @@ def test_check_receipt_rejects_when_only_tail_character_differs():
     """
     tail_flip_sha = SHA_A[:-1] + ("b" if SHA_A[-1] != "b" else "c")
     assert len(tail_flip_sha) == 40 and tail_flip_sha != SHA_A
-    result = rg.check_receipt(SHA_A, HASH_A, f"read_sha={tail_flip_sha}\ncontent_hash={HASH_A}\n")
+    result = rg.check_receipt(SHA_A, HASH_A, f"マージ可\nread_sha={tail_flip_sha}\ncontent_hash={HASH_A}\n")
     assert result.status == "rejected"
 
     tail_flip_hash = HASH_A[:-1] + ("b" if HASH_A[-1] != "b" else "c")
     assert len(tail_flip_hash) == 64 and tail_flip_hash != HASH_A
-    result2 = rg.check_receipt(SHA_A, HASH_A, f"read_sha={SHA_A}\ncontent_hash={tail_flip_hash}\n")
+    result2 = rg.check_receipt(SHA_A, HASH_A, f"マージ可\nread_sha={SHA_A}\ncontent_hash={tail_flip_hash}\n")
     assert result2.status == "rejected"
 
 
@@ -1338,3 +1347,111 @@ class TestAbortedDispatchNotCounted:
         assert res["status"] != "blocked" or "発注上限" not in res["message"], (
             "空振りだけで上限に達したと判定してはいけない"
         )
+
+
+@pytest.mark.parametrize("failure", ["outside", "index", "status", "diff", "ls-files", "hash-object"])
+def test_hash_failure_has_no_output(tmp_path, monkeypatch, failure):
+    import subprocess
+    import shutil
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    (repo / "tracked").write_text("base")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
+    (repo / "untracked").write_text("new")
+    if failure == "outside":
+        repo = tmp_path
+    elif failure == "index":
+        monkeypatch.setenv("GIT_INDEX_FILE", "/dev/null")
+    else:
+        real_git = shutil.which("git")
+        fake = tmp_path / "bin"
+        fake.mkdir()
+        script = fake / "git"
+        script.write_text(f'#!/bin/sh\nif [ "$1" = "{failure}" ]; then echo reached-{failure} >&2; exit 73; fi\nexec "{real_git}" "$@"\n')
+        script.chmod(0o755)
+        monkeypatch.setenv("PATH", str(fake) + os.pathsep + os.environ["PATH"])
+    result = subprocess.run(["/bin/sh", "-c", rg.CONTENT_HASH_RECIPE], cwd=repo, capture_output=True)
+    if failure not in ("outside", "index"):
+        assert f"reached-{failure}".encode() in result.stderr
+    assert result.returncode != 0
+    assert result.stdout == b""
+    with pytest.raises(rg.Indeterminate):
+        rg.git_content_hash(str(repo))
+
+
+@pytest.mark.parametrize("transform", ["quote", "shift", "swap", "no_verdict"])
+def test_receipt_rejects_misplaced_claims(transform):
+    claims = [f"read_sha={SHA_A}", f"content_hash={HASH_A}"]
+    lines = {
+        "quote": ["マージ可", "今回の申告なし", "過去の記録:", *claims],
+        "shift": ["マージ可", "", *claims],
+        "swap": ["マージ可", *reversed(claims)],
+        "no_verdict": claims,
+    }[transform]
+    result = rg.check_receipt(SHA_A, HASH_A, "\n".join(lines))
+    assert result.status == "rejected"
+    assert "申告がありません" in result.reason
+
+
+@pytest.mark.parametrize("dirty", [False, True])
+def test_receipt_positive_real_recipe(tmp_path, dirty):
+    import subprocess
+    _init_repo(tmp_path)
+    (tmp_path / "tracked").write_bytes(b"base\r\n")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
+    if dirty:
+        (tmp_path / "tracked").write_bytes(b"changed\r\n")
+        (tmp_path / "untracked").write_bytes(b"new\x00bytes")
+    expected = rg.git_content_hash(str(tmp_path))
+    claim = subprocess.run(["/bin/sh", "-c", rg.CONTENT_HASH_RECIPE], cwd=tmp_path,
+                           capture_output=True, check=True, text=True).stdout.strip()
+    sha = rg.git_head_sha(str(tmp_path))
+    assert rg.check_receipt(sha, expected, f"マージ可\r\nread_sha={sha}\r\ncontent_hash={claim}\r\n").status == "ok"
+
+
+@pytest.mark.parametrize("lines", [
+    ["マージ可"],
+    ["マージ可", "x" * 80, "y" * 80],
+    ["マージ可", "read_sha=short\tbad", "content_hash=short\x1b[31m"],
+])
+def test_missing_claim_reason_identifies_positions_and_actual_lines(lines):
+    result = rg.check_receipt(SHA_A, HASH_A, "\n".join(lines))
+    assert result.status == "rejected"
+    assert "2行目=read_sha=" in result.reason
+    assert "3行目=content_hash=" in result.reason
+    for index in (1, 2):
+        expected = "".join(c if c.isprintable() else " " for c in lines[index])[:60] if len(lines) > index else "（行なし）"
+        assert f"実際の{index + 1}行目: {expected}" in result.reason
+    assert "x" * 61 not in result.reason
+    assert "y" * 61 not in result.reason
+    assert all(c.isprintable() for c in result.reason)
+
+
+def test_content_hash_recipe_survives_backslash_loss(tmp_path):
+    """Prompt transcription must not turn a newline escape into a literal n."""
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test",
+                    "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial"], check=True)
+    expected = rg.git_content_hash(str(tmp_path))
+    recipe = rg.CONTENT_HASH_RECIPE.replace(chr(92), "")
+    result = subprocess.run(["/bin/sh", "-c", recipe], cwd=tmp_path, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0
+    assert result.stdout == expected + "\n"
+
+
+@pytest.mark.parametrize("dirty", [False, True])
+def test_echo_recipe_matches_legacy_printf_bytes(tmp_path, dirty):
+    import subprocess
+    _init_repo(tmp_path)
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "initial"], cwd=tmp_path, check=True)
+    if dirty:
+        (tmp_path / "untracked.txt").write_text("content\n")
+    legacy = rg.CONTENT_HASH_RECIPE.replace('echo "${hash%% *}"', 'printf "%s\\n" "${hash%% *}"')
+    current = subprocess.run(["/bin/sh", "-c", rg.CONTENT_HASH_RECIPE], cwd=tmp_path, capture_output=True, timeout=10)
+    previous = subprocess.run(["/bin/sh", "-c", legacy], cwd=tmp_path, capture_output=True, timeout=10)
+    assert current.returncode == previous.returncode == 0
+    assert current.stdout == previous.stdout
+    assert len(current.stdout) == 65
