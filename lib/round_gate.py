@@ -346,8 +346,16 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
             )
         claimed_sha, claimed_hash = parse_receipt_claim(report_text)
         if claimed_sha is None or claimed_hash is None:
+            lines = (report_text or "").splitlines()
+            previews = [
+                "".join(c if c.isprintable() else " " for c in lines[i][:60])
+                if len(lines) > i else "（行なし）"
+                for i in (1, 2)
+            ]
             return ReceiptCheck(
-                "rejected", "レポート先頭に read_sha= / content_hash= の申告がありません。"
+                "rejected",
+                "2行目=read_sha= / 3行目=content_hash= の申告がありません。"
+                f" 実際の2行目: {previews[0]} / 実際の3行目: {previews[1]}",
             )
         if claimed_sha != expected_head_sha.lower():
             return ReceiptCheck(
@@ -398,7 +406,7 @@ CONTENT_HASH_RECIPE = (
     "bash -o pipefail -c '"
     'hash=$( { git status --porcelain -uall && git diff HEAD && '
     'git ls-files -o --exclude-standard -z | xargs -0 -r git hash-object; } '
-    '| shasum -a 256) && printf "%s\\n" "${hash%% *}"'
+    '| shasum -a 256) && echo "${hash%% *}"'
     "'"
 )
 

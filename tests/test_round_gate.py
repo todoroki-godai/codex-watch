@@ -1409,3 +1409,34 @@ def test_receipt_positive_real_recipe(tmp_path, dirty):
                            capture_output=True, check=True, text=True).stdout.strip()
     sha = rg.git_head_sha(str(tmp_path))
     assert rg.check_receipt(sha, expected, f"マージ可\r\nread_sha={sha}\r\ncontent_hash={claim}\r\n").status == "ok"
+
+
+@pytest.mark.parametrize("lines", [
+    ["マージ可"],
+    ["マージ可", "x" * 80, "y" * 80],
+    ["マージ可", "read_sha=short\tbad", "content_hash=short\x1b[31m"],
+])
+def test_missing_claim_reason_identifies_positions_and_actual_lines(lines):
+    result = rg.check_receipt(SHA_A, HASH_A, "\n".join(lines))
+    assert result.status == "rejected"
+    assert "2行目=read_sha=" in result.reason
+    assert "3行目=content_hash=" in result.reason
+    for index in (1, 2):
+        expected = "".join(c if c.isprintable() else " " for c in lines[index])[:60] if len(lines) > index else "（行なし）"
+        assert f"実際の{index + 1}行目: {expected}" in result.reason
+    assert "x" * 61 not in result.reason
+    assert "y" * 61 not in result.reason
+    assert all(c.isprintable() for c in result.reason)
+
+
+def test_content_hash_recipe_survives_backslash_loss(tmp_path):
+    """Prompt transcription must not turn a newline escape into a literal n."""
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=Test",
+                    "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial"], check=True)
+    expected = rg.git_content_hash(str(tmp_path))
+    recipe = rg.CONTENT_HASH_RECIPE.replace(chr(92), "")
+    result = subprocess.run(["/bin/sh", "-c", recipe], cwd=tmp_path, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0
+    assert result.stdout == expected + "\n"
