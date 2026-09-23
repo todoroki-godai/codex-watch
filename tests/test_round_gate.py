@@ -553,12 +553,21 @@ def test_parse_receipt_claim_missing_returns_none():
 
 
 def test_parse_receipt_claim_ignores_claim_outside_head_window():
-    # RECEIPT_HEAD_LINES(10) より後ろに出てくる申告（例: 過去ログの引用）は拾わない
+    # 2・3行目より後ろに出てくる申告（例: 過去ログの引用）は拾わない
     body = "\n".join([f"line{i}" for i in range(12)])
     report = body + f"\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
     sha, chash = rg.parse_receipt_claim(report)
     assert sha is None
     assert chash is None
+
+
+def test_parse_receipt_claim_rejects_read_sha_on_verdict_line():
+    # 1行目は判定行。判定行を欠いて read_sha を1行目に置いた report は、
+    # 3行目に content_hash があっても read_sha を欠落として扱う
+    report = f"read_sha={SHA_A}\n本文\ncontent_hash={HASH_A}\n"
+    sha, chash = rg.parse_receipt_claim(report)
+    assert sha is None
+    assert chash == HASH_A
 
 
 def test_check_receipt_ok_on_match():
