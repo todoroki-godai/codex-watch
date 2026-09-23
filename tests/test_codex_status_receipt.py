@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import pytest
 import os
 import subprocess
 from pathlib import Path
@@ -100,4 +101,30 @@ def test_status_shows_receipt_rejected_line_on_mismatched_claim(tmp_path: Path):
     result = _run_status(state_dir, "run-bad")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "受領" in result.stdout
+    assert "read_sha が発注時の値と不一致です" in result.stdout
+    assert "受領不可" in result.stdout
     assert "受領可" not in result.stdout, "read_sha が不一致なのに受領可と表示された"
+
+
+@pytest.mark.parametrize("report_kind", ["valid", "empty", "missing"])
+@pytest.mark.parametrize("log_kind", ["no_tokens", "missing"])
+def test_finished_receipt_without_tokens(tmp_path, report_kind, log_kind):
+    _write_finished_run(tmp_path, "run", head_sha=SHA, content_hash=HASH,
+                        report_body=f"マージ可\nread_sha={SHA}\ncontent_hash={HASH}\n")
+    log = tmp_path / "run.log"
+    if log_kind == "missing":
+        log.unlink()
+    else:
+        log.write_text("interrupted after report\n")
+    report = tmp_path / "run.report"
+    if report_kind == "empty":
+        report.write_text("")
+    elif report_kind == "missing":
+        report.unlink()
+    result = _run_status(tmp_path, "run")
+    assert result.returncode == 0, result.stderr
+    if report_kind == "valid":
+        assert "受領可:" in result.stdout
+    else:
+        assert "受領不可" in result.stdout
+        assert "申告がありません" in result.stdout
