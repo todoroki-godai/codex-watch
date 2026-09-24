@@ -21,8 +21,8 @@ model/effort 配線を試験する。
   探索範囲を縮小した。
 
 ここで試験するのは:
-  ① env 未指定時、codex へ渡る引数列に -m/-c が付かないこと（従来と同一）
-  ② env 指定時、-m が1つだけ付くこと
+  ① env 未指定時、-m gpt-6-sol が1つだけ付くこと
+  ② env が空文字なら -m が付かず、モデル指定時は -m が1つだけ付くこと
   ③ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
      書かれないこと（起動側は待たない）
   ④ run id が待たずに返ること（ヘッダーの無いログでもラッパーが即座に state と
@@ -154,7 +154,7 @@ def _run_impl(
     *,
     argv_capture: Path,
     header_file: Path | None,
-    model_env: str = "",
+    model_env: str | None = None,
     effort_env: str = "",
 ) -> subprocess.CompletedProcess:
     workdir = tmp_path / "workdir"
@@ -173,7 +173,7 @@ def _run_impl(
         env["FAKE_CODEX_HEADER_FILE"] = str(header_file)
     else:
         env.pop("FAKE_CODEX_HEADER_FILE", None)
-    if model_env:
+    if model_env is not None:
         env["CODEX_IMPL_MODEL"] = model_env
     else:
         env.pop("CODEX_IMPL_MODEL", None)
@@ -215,11 +215,11 @@ def _wait_for_file(path: Path, timeout_s: float = 2.0, contains: str | None = No
 
 
 # ---------------------------------------------------------------------------
-# ① env 未指定時、codex へ渡る引数列に -m/-c が付かない（従来と同一）
+# ① env 未指定時、-m gpt-6-sol が1つだけ付く
 # ---------------------------------------------------------------------------
 
 
-def test_impl_no_model_env_produces_no_extra_flags(fake_bin: Path, tmp_path: Path):
+def test_impl_no_model_env_uses_default_model_once(fake_bin: Path, tmp_path: Path):
     header_file = tmp_path / "header.txt"
     header_file.write_text(SYNTHETIC_HEADER)
     argv_capture = tmp_path / "argv.txt"
@@ -229,8 +229,23 @@ def test_impl_no_model_env_produces_no_extra_flags(fake_bin: Path, tmp_path: Pat
 
     _wait_for_file(argv_capture)
     argv_lines = argv_capture.read_text().splitlines()
-    assert "-m" not in argv_lines, argv_lines
+    assert argv_lines.count("-m") == 1, argv_lines
+    assert argv_lines[argv_lines.index("-m") + 1] == "gpt-6-sol", argv_lines
     assert not any(a.startswith("model_reasoning_effort=") for a in argv_lines), argv_lines
+    run_id = result.stdout.strip().splitlines()[-1]
+    state = _state_dict(tmp_path / "state" / f"{run_id}.state")
+    assert state["requested_model"] == "gpt-6-sol"
+
+
+def test_impl_explicit_empty_model_uses_config_default(fake_bin: Path, tmp_path: Path):
+    argv_capture = tmp_path / "argv.txt"
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, model_env="")
+    assert result.returncode == 0, result.stdout + result.stderr
+    _wait_for_file(argv_capture)
+    assert "-m" not in argv_capture.read_text().splitlines()
+    run_id = result.stdout.strip().splitlines()[-1]
+    state = _state_dict(tmp_path / "state" / f"{run_id}.state")
+    assert state["requested_model"] == ""
 
 
 # ---------------------------------------------------------------------------

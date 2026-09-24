@@ -28,6 +28,8 @@
   外すときは `CODEX_REVIEW_ALLOW_SKILLS=1`。
 - **`codex-impl` は共有 checkout への書き込みを拒否する**（未レビューのコードがそのまま動く状態を作らないため）。
   例外口は `CODEX_IMPL_ALLOW_MAIN=1`。
+- **`codex-impl` の既定モデルは `gpt-6-sol`。** `CODEX_IMPL_MODEL` で上書きできる。
+  `CODEX_IMPL_MODEL=` と空文字を明示すると `-m` を付けず、config.toml の既定に従う。
 - **`codex-review` は発注前に `REVIEW_GOAL_CUT` を必須で検査する**（`pr:`/`issue:` の実発注のみ。
   `none:` 発注と `CODEX_REVIEW_NO_GATE` bypass は対象外）。なぜ要るか — 「目的への寄与がゼロの
   成果物がレビュー巡を費やして最後に撤去される」事故（2026-09-03。denylist 型 lint に
