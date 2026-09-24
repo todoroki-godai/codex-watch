@@ -116,7 +116,11 @@ def _run(
     )
 
 
-def test_cli_unset_model_and_effort_use_config_defaults(fake_bin: Path, tmp_path: Path):
+def test_cli_unset_model_and_effort_use_config_defaults(
+    fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("CODEX_REVIEW_MODEL", "inherited-model")
+    monkeypatch.setenv("CODEX_REVIEW_EFFORT", "high")
     result = _run(
         fake_bin, tmp_path, review_target="issue:example-org/example-repo#1",
         review_goal_cut=VALID_GOAL_CUT, gate_check=False,
