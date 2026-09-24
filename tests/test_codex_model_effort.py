@@ -21,9 +21,10 @@ model/effort 配線を試験する。
   探索範囲を縮小した。
 
 ここで試験するのは:
-  ① env 未指定時、-m gpt-6-sol が1つだけ付くこと
-  ② env が空文字なら -m が付かず、モデル指定時は -m が1つだけ付くこと
-  ③ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
+  ① impl の env 未指定時、-m gpt-6-sol と effort=medium が1つずつ付くこと
+  ② env が空文字なら対応する引数が付かず、明示値はその値で渡ること
+  ③ package.json が無い作業先は node_modules 不要、ある作業先は実体が必要なこと
+  ④ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
      書かれないこと（起動側は待たない）
   ④ run id が待たずに返ること（ヘッダーの無いログでもラッパーが即座に state と
      run id を返す）
@@ -155,16 +156,21 @@ def _run_impl(
     argv_capture: Path,
     header_file: Path | None,
     model_env: str | None = None,
-    effort_env: str = "",
+    effort_env: str | None = None,
+    node_project: bool = False,
 ) -> subprocess.CompletedProcess:
     workdir = tmp_path / "workdir"
     workdir.mkdir(exist_ok=True)
+    if node_project:
+        (workdir / "package.json").write_text('{"name":"test"}\n')
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("dummy prompt\n")
     state_dir = tmp_path / "state"
     state_dir.mkdir(exist_ok=True)
 
     env = dict(os.environ)
+    for key in ("CODEX_IMPL_ALLOW_MISSING_NODE_MODULES", "CODEX_IMPL_MODEL", "CODEX_IMPL_EFFORT"):
+        env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
     env["CODEX_IMPL_ALLOW_MAIN"] = "1"  # tmp_path は git repo ではないため
@@ -177,10 +183,8 @@ def _run_impl(
         env["CODEX_IMPL_MODEL"] = model_env
     else:
         env.pop("CODEX_IMPL_MODEL", None)
-    if effort_env:
+    if effort_env is not None:
         env["CODEX_IMPL_EFFORT"] = effort_env
-    else:
-        env.pop("CODEX_IMPL_EFFORT", None)
 
     return subprocess.run(
         [str(CODEX_IMPL), str(workdir), str(prompt), "clitest"],
@@ -215,7 +219,7 @@ def _wait_for_file(path: Path, timeout_s: float = 2.0, contains: str | None = No
 
 
 # ---------------------------------------------------------------------------
-# ① env 未指定時、-m gpt-6-sol が1つだけ付く
+# ① env 未指定時、-m gpt-6-sol と effort=medium が1つずつ付く
 # ---------------------------------------------------------------------------
 
 
@@ -231,10 +235,42 @@ def test_impl_no_model_env_uses_default_model_once(fake_bin: Path, tmp_path: Pat
     argv_lines = argv_capture.read_text().splitlines()
     assert argv_lines.count("-m") == 1, argv_lines
     assert argv_lines[argv_lines.index("-m") + 1] == "gpt-6-sol", argv_lines
-    assert not any(a.startswith("model_reasoning_effort=") for a in argv_lines), argv_lines
+    assert argv_lines.count('model_reasoning_effort="medium"') == 1, argv_lines
     run_id = result.stdout.strip().splitlines()[-1]
     state = _state_dict(tmp_path / "state" / f"{run_id}.state")
     assert state["requested_model"] == "gpt-6-sol"
+    assert state["requested_effort"] == "medium"
+
+
+def test_impl_empty_effort_uses_config_default(fake_bin: Path, tmp_path: Path):
+    argv_capture = tmp_path / "argv.txt"
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, effort_env="")
+    assert result.returncode == 0, result.stdout + result.stderr
+    _wait_for_file(argv_capture)
+    assert not any(a.startswith("model_reasoning_effort=") for a in argv_capture.read_text().splitlines())
+    run_id = result.stdout.strip().splitlines()[-1]
+    assert _state_dict(tmp_path / "state" / f"{run_id}.state")["requested_effort"] == ""
+
+
+def test_impl_explicit_effort_is_forwarded(fake_bin: Path, tmp_path: Path):
+    argv_capture = tmp_path / "argv.txt"
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, effort_env="high")
+    assert result.returncode == 0, result.stdout + result.stderr
+    _wait_for_file(argv_capture)
+    assert argv_capture.read_text().splitlines().count('model_reasoning_effort="high"') == 1
+    run_id = result.stdout.strip().splitlines()[-1]
+    assert _state_dict(tmp_path / "state" / f"{run_id}.state")["requested_effort"] == "high"
+
+
+def test_impl_non_node_workdir_passes_without_node_modules(fake_bin: Path, tmp_path: Path):
+    result = _run_impl(fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_impl_node_workdir_requires_node_modules(fake_bin: Path, tmp_path: Path):
+    result = _run_impl(fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None, node_project=True)
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "node_modules の実体がありません" in result.stderr
 
 
 def test_impl_explicit_empty_model_uses_config_default(fake_bin: Path, tmp_path: Path):
