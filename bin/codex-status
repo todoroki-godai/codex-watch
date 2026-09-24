@@ -82,7 +82,7 @@ show_one() {
   # 「実効値」と言い切らず、参考情報である旨を文言に明示する。
   local hdr_model hdr_model_source hdr_effort hdr_effort_source
   IFS=$'\t' read -r hdr_model hdr_model_source hdr_effort hdr_effort_source <<<"$(extract_codex_log_header "$log")"
-  echo "要求値               : model=${requested_model:-(未指定)} effort=${requested_effort:-(未指定)}"
+  echo "要求値               : model=${requested_model:-(config既定)} effort=${requested_effort:-(config既定)}"
   echo "ログ先頭のヘッダー（参考・run同一性は未検証）: model=$hdr_model($hdr_model_source) effort=$hdr_effort($hdr_effort_source)"
   if [[ "$alive" == "終了" ]]; then
     local report

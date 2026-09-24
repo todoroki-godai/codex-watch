@@ -83,6 +83,7 @@ def test_status_shows_receipt_ok_line_on_matching_claim(tmp_path: Path):
     )
     result = _run_status(state_dir, "run-ok")
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "model=(config既定) effort=(config既定)" in result.stdout
     assert "受領" in result.stdout, "codex-status の出力に受領判定が表示されていない"
     assert "受領可" in result.stdout
 
