@@ -273,6 +273,23 @@ def test_impl_node_workdir_requires_node_modules(fake_bin: Path, tmp_path: Path)
     assert "node_modules の実体がありません" in result.stderr
 
 
+def test_impl_helper_ignores_inherited_impl_overrides(fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("CODEX_IMPL_ALLOW_MISSING_NODE_MODULES", "1")
+    monkeypatch.setenv("CODEX_IMPL_MODEL", "inherited-model")
+    monkeypatch.setenv("CODEX_IMPL_EFFORT", "high")
+
+    argv_capture = tmp_path / "argv.txt"
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None)
+    assert result.returncode == 0, result.stdout + result.stderr
+    _wait_for_file(argv_capture)
+    argv = argv_capture.read_text().splitlines()
+    assert argv[argv.index("-m") + 1] == "gpt-6-sol"
+    assert 'model_reasoning_effort="medium"' in argv
+
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, node_project=True)
+    assert result.returncode == 4, result.stdout + result.stderr
+
+
 def test_impl_explicit_empty_model_uses_config_default(fake_bin: Path, tmp_path: Path):
     argv_capture = tmp_path / "argv.txt"
     result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, model_env="")
