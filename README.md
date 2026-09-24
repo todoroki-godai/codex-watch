@@ -32,7 +32,6 @@
   `CODEX_IMPL_MODEL=` と空文字を明示すると `-m` を付けず、config.toml の既定に従う。
 - `gpt-6-sol` は codex-cli 0.156.1 で受理を確認済み（0.154.0 では 400 で即終了）。古い CLI では codex-watch が「報告ファイルが空」と表示する。対処は CLI の更新か `CODEX_IMPL_MODEL=`。
 - `codex-impl` の effort 既定は `medium`。`CODEX_IMPL_EFFORT=` と空文字を明示すると `-c model_reasoning_effort` を付けず config.toml の既定に従う。レビューの既定は変更しない。
-- `codex-impl` の node_modules ゲートは作業先に `package.json` がある場合のみ適用する。
 - **`codex-review` は発注前に `REVIEW_GOAL_CUT` を必須で検査する**（`pr:`/`issue:` の実発注のみ。
   `none:` 発注と `CODEX_REVIEW_NO_GATE` bypass は対象外）。なぜ要るか — 「目的への寄与がゼロの
   成果物がレビュー巡を費やして最後に撤去される」事故（2026-09-03。denylist 型 lint に

@@ -23,23 +23,23 @@ model/effort 配線を試験する。
 ここで試験するのは:
   ① impl の env 未指定時、-m gpt-6-sol と effort=medium が1つずつ付くこと
   ② env が空文字なら対応する引数が付かず、明示値はその値で渡ること
-  ③ package.json が無い作業先は node_modules 不要、ある作業先は実体が必要なこと
+  ③ node_modules が非空なら通り、欠損・空なら拒否し、明示した例外口では通ること
   ④ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
      書かれないこと（起動側は待たない）
-  ④ run id が待たずに返ること（ヘッダーの無いログでもラッパーが即座に state と
+  ⑤ run id が待たずに返ること（ヘッダーの無いログでもラッパーが即座に state と
      run id を返す）
-  ⑤ extract_codex_log_header() 単体: 正常ヘッダーからログ先頭の参考値が取れる
-  ⑥ 同: ヘッダー不在で unresolved になる
-  ⑦ 回帰: 行頭固定を外すと埋め込み文字列を誤検出すること（陰性試験の固定化）
-  ⑧ 回帰: 偽ヘッダー→本物のヘッダーの順で並ぶログで、偽ヘッダーの値
+  ⑥ extract_codex_log_header() 単体: 正常ヘッダーからログ先頭の参考値が取れる
+  ⑦ 同: ヘッダー不在で unresolved になる
+  ⑧ 回帰: 行頭固定を外すと埋め込み文字列を誤検出すること（陰性試験の固定化）
+  ⑨ 回帰: 偽ヘッダー→本物のヘッダーの順で並ぶログで、偽ヘッダーの値
      （gpt-wrong）を返さないこと（巡2 [Must]2 の再現ケース。巡3の1行目固定で
      常に unresolved になる）
-  ⑨ codex-status が読み手側として extract_codex_log_header を呼び、要求値と
+  ⑩ codex-status が読み手側として extract_codex_log_header を呼び、要求値と
      「ログ先頭のヘッダー（参考）」を両方表示し、**「実効値」という語は
      出さない**こと
-  ⑩ 回帰（巡3 [Must]3 再現）: ヘッダーではない任意のテキストファイル
+  ⑪ 回帰（巡3 [Must]3 再現）: ヘッダーではない任意のテキストファイル
      （このテストファイル自身）を渡すと unresolved になること
-  ⑪ 回帰（巡3 [Should]2）: ヘッダーは開くが閉じる区切りが先頭200行の外にある
+  ⑫ 回帰（巡3 [Should]2）: ヘッダーは開くが閉じる区切りが先頭200行の外にある
      ログは unresolved になること（走査コストの打ち切り）
 
 実際の `codex` CLI は一切呼ばない（fake スタブに差し替える。fake は argv を側路
@@ -48,6 +48,7 @@ model/effort 配線を試験する。
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -138,8 +139,9 @@ def fake_bin(tmp_path: Path) -> Path:
         "#!/bin/sh\n"
         "cat >/dev/null\n"  # 標準入力（プロンプト）を読み捨てる
         "if [ -n \"$ARGV_CAPTURE_FILE\" ]; then\n"
-        "  : > \"$ARGV_CAPTURE_FILE\"\n"
-        "  for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"$ARGV_CAPTURE_FILE\"; done\n"
+        "  : > \"$ARGV_CAPTURE_FILE.tmp\"\n"
+        "  for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"$ARGV_CAPTURE_FILE.tmp\"; done\n"
+        "  mv \"$ARGV_CAPTURE_FILE.tmp\" \"$ARGV_CAPTURE_FILE\"\n"
         "fi\n"
         "if [ -n \"$FAKE_CODEX_HEADER_FILE\" ] && [ -f \"$FAKE_CODEX_HEADER_FILE\" ]; then\n"
         "  cat \"$FAKE_CODEX_HEADER_FILE\"\n"
@@ -157,12 +159,20 @@ def _run_impl(
     header_file: Path | None,
     model_env: str | None = None,
     effort_env: str | None = None,
-    node_project: bool = False,
+    node_modules: str = "populated",
+    allow_missing_node_modules: bool = False,
 ) -> subprocess.CompletedProcess:
     workdir = tmp_path / "workdir"
     workdir.mkdir(exist_ok=True)
-    if node_project:
-        (workdir / "package.json").write_text('{"name":"test"}\n')
+    modules_dir = workdir / "node_modules"
+    if node_modules != "missing":
+        modules_dir.mkdir(exist_ok=True)
+        if node_modules == "populated":
+            (modules_dir / ".keep").write_text("ready\n")
+        elif node_modules != "empty":
+            raise ValueError(f"unknown node_modules fixture: {node_modules}")
+    elif modules_dir.exists():
+        shutil.rmtree(modules_dir)
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("dummy prompt\n")
     state_dir = tmp_path / "state"
@@ -174,6 +184,8 @@ def _run_impl(
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
     env["CODEX_IMPL_ALLOW_MAIN"] = "1"  # tmp_path は git repo ではないため
+    if allow_missing_node_modules:
+        env["CODEX_IMPL_ALLOW_MISSING_NODE_MODULES"] = "1"
     env["ARGV_CAPTURE_FILE"] = str(argv_capture)
     if header_file is not None:
         env["FAKE_CODEX_HEADER_FILE"] = str(header_file)
@@ -262,15 +274,29 @@ def test_impl_explicit_effort_is_forwarded(fake_bin: Path, tmp_path: Path):
     assert _state_dict(tmp_path / "state" / f"{run_id}.state")["requested_effort"] == "high"
 
 
-def test_impl_non_node_workdir_passes_without_node_modules(fake_bin: Path, tmp_path: Path):
+def test_impl_populated_node_modules_passes(fake_bin: Path, tmp_path: Path):
     result = _run_impl(fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_impl_node_workdir_requires_node_modules(fake_bin: Path, tmp_path: Path):
-    result = _run_impl(fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None, node_project=True)
+def test_impl_missing_node_modules_exits_4(fake_bin: Path, tmp_path: Path):
+    result = _run_impl(fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None, node_modules="missing")
     assert result.returncode == 4, result.stdout + result.stderr
     assert "node_modules の実体がありません" in result.stderr
+
+
+def test_impl_empty_node_modules_exits_4(fake_bin: Path, tmp_path: Path):
+    result = _run_impl(fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None, node_modules="empty")
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "node_modules の実体がありません" in result.stderr
+
+
+def test_impl_allow_missing_node_modules_passes(fake_bin: Path, tmp_path: Path):
+    result = _run_impl(
+        fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None,
+        node_modules="missing", allow_missing_node_modules=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_impl_helper_ignores_inherited_impl_overrides(fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -286,7 +312,7 @@ def test_impl_helper_ignores_inherited_impl_overrides(fake_bin: Path, tmp_path: 
     assert argv[argv.index("-m") + 1] == "gpt-6-sol"
     assert 'model_reasoning_effort="medium"' in argv
 
-    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, node_project=True)
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, node_modules="missing")
     assert result.returncode == 4, result.stdout + result.stderr
 
 
