@@ -21,24 +21,25 @@ model/effort 配線を試験する。
   探索範囲を縮小した。
 
 ここで試験するのは:
-  ① env 未指定時、codex へ渡る引数列に -m/-c が付かないこと（従来と同一）
-  ② env 指定時、-m が1つだけ付くこと
-  ③ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
+  ① impl の env 未指定時、-m gpt-6-sol と effort=medium が1つずつ付くこと
+  ② env が空文字なら対応する引数が付かず、明示値はその値で渡ること
+  ③ node_modules が非空なら通り、欠損・空なら拒否し、明示した例外口では通ること
+  ④ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
      書かれないこと（起動側は待たない）
-  ④ run id が待たずに返ること（ヘッダーの無いログでもラッパーが即座に state と
+  ⑤ run id が待たずに返ること（ヘッダーの無いログでもラッパーが即座に state と
      run id を返す）
-  ⑤ extract_codex_log_header() 単体: 正常ヘッダーからログ先頭の参考値が取れる
-  ⑥ 同: ヘッダー不在で unresolved になる
-  ⑦ 回帰: 行頭固定を外すと埋め込み文字列を誤検出すること（陰性試験の固定化）
-  ⑧ 回帰: 偽ヘッダー→本物のヘッダーの順で並ぶログで、偽ヘッダーの値
+  ⑥ extract_codex_log_header() 単体: 正常ヘッダーからログ先頭の参考値が取れる
+  ⑦ 同: ヘッダー不在で unresolved になる
+  ⑧ 回帰: 行頭固定を外すと埋め込み文字列を誤検出すること（陰性試験の固定化）
+  ⑨ 回帰: 偽ヘッダー→本物のヘッダーの順で並ぶログで、偽ヘッダーの値
      （gpt-wrong）を返さないこと（巡2 [Must]2 の再現ケース。巡3の1行目固定で
      常に unresolved になる）
-  ⑨ codex-status が読み手側として extract_codex_log_header を呼び、要求値と
+  ⑩ codex-status が読み手側として extract_codex_log_header を呼び、要求値と
      「ログ先頭のヘッダー（参考）」を両方表示し、**「実効値」という語は
      出さない**こと
-  ⑩ 回帰（巡3 [Must]3 再現）: ヘッダーではない任意のテキストファイル
+  ⑪ 回帰（巡3 [Must]3 再現）: ヘッダーではない任意のテキストファイル
      （このテストファイル自身）を渡すと unresolved になること
-  ⑪ 回帰（巡3 [Should]2）: ヘッダーは開くが閉じる区切りが先頭200行の外にある
+  ⑫ 回帰（巡3 [Should]2）: ヘッダーは開くが閉じる区切りが先頭200行の外にある
      ログは unresolved になること（走査コストの打ち切り）
 
 実際の `codex` CLI は一切呼ばない（fake スタブに差し替える。fake は argv を側路
@@ -47,6 +48,7 @@ model/effort 配線を試験する。
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -137,8 +139,9 @@ def fake_bin(tmp_path: Path) -> Path:
         "#!/bin/sh\n"
         "cat >/dev/null\n"  # 標準入力（プロンプト）を読み捨てる
         "if [ -n \"$ARGV_CAPTURE_FILE\" ]; then\n"
-        "  : > \"$ARGV_CAPTURE_FILE\"\n"
-        "  for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"$ARGV_CAPTURE_FILE\"; done\n"
+        "  : > \"$ARGV_CAPTURE_FILE.tmp\"\n"
+        "  for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"$ARGV_CAPTURE_FILE.tmp\"; done\n"
+        "  mv \"$ARGV_CAPTURE_FILE.tmp\" \"$ARGV_CAPTURE_FILE\"\n"
         "fi\n"
         "if [ -n \"$FAKE_CODEX_HEADER_FILE\" ] && [ -f \"$FAKE_CODEX_HEADER_FILE\" ]; then\n"
         "  cat \"$FAKE_CODEX_HEADER_FILE\"\n"
@@ -154,33 +157,46 @@ def _run_impl(
     *,
     argv_capture: Path,
     header_file: Path | None,
-    model_env: str = "",
-    effort_env: str = "",
+    model_env: str | None = None,
+    effort_env: str | None = None,
+    node_modules: str = "populated",
+    allow_missing_node_modules: bool = False,
 ) -> subprocess.CompletedProcess:
     workdir = tmp_path / "workdir"
     workdir.mkdir(exist_ok=True)
+    modules_dir = workdir / "node_modules"
+    if node_modules != "missing":
+        modules_dir.mkdir(exist_ok=True)
+        if node_modules == "populated":
+            (modules_dir / ".keep").write_text("ready\n")
+        elif node_modules != "empty":
+            raise ValueError(f"unknown node_modules fixture: {node_modules}")
+    elif modules_dir.exists():
+        shutil.rmtree(modules_dir)
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("dummy prompt\n")
     state_dir = tmp_path / "state"
     state_dir.mkdir(exist_ok=True)
 
     env = dict(os.environ)
+    for key in ("CODEX_IMPL_ALLOW_MISSING_NODE_MODULES", "CODEX_IMPL_MODEL", "CODEX_IMPL_EFFORT"):
+        env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
     env["CODEX_IMPL_ALLOW_MAIN"] = "1"  # tmp_path は git repo ではないため
+    if allow_missing_node_modules:
+        env["CODEX_IMPL_ALLOW_MISSING_NODE_MODULES"] = "1"
     env["ARGV_CAPTURE_FILE"] = str(argv_capture)
     if header_file is not None:
         env["FAKE_CODEX_HEADER_FILE"] = str(header_file)
     else:
         env.pop("FAKE_CODEX_HEADER_FILE", None)
-    if model_env:
+    if model_env is not None:
         env["CODEX_IMPL_MODEL"] = model_env
     else:
         env.pop("CODEX_IMPL_MODEL", None)
-    if effort_env:
+    if effort_env is not None:
         env["CODEX_IMPL_EFFORT"] = effort_env
-    else:
-        env.pop("CODEX_IMPL_EFFORT", None)
 
     return subprocess.run(
         [str(CODEX_IMPL), str(workdir), str(prompt), "clitest"],
@@ -215,11 +231,11 @@ def _wait_for_file(path: Path, timeout_s: float = 2.0, contains: str | None = No
 
 
 # ---------------------------------------------------------------------------
-# ① env 未指定時、codex へ渡る引数列に -m/-c が付かない（従来と同一）
+# ① env 未指定時、-m gpt-6-sol と effort=medium が1つずつ付く
 # ---------------------------------------------------------------------------
 
 
-def test_impl_no_model_env_produces_no_extra_flags(fake_bin: Path, tmp_path: Path):
+def test_impl_no_model_env_uses_default_model_once(fake_bin: Path, tmp_path: Path):
     header_file = tmp_path / "header.txt"
     header_file.write_text(SYNTHETIC_HEADER)
     argv_capture = tmp_path / "argv.txt"
@@ -229,8 +245,86 @@ def test_impl_no_model_env_produces_no_extra_flags(fake_bin: Path, tmp_path: Pat
 
     _wait_for_file(argv_capture)
     argv_lines = argv_capture.read_text().splitlines()
-    assert "-m" not in argv_lines, argv_lines
-    assert not any(a.startswith("model_reasoning_effort=") for a in argv_lines), argv_lines
+    assert argv_lines.count("-m") == 1, argv_lines
+    assert argv_lines[argv_lines.index("-m") + 1] == "gpt-6-sol", argv_lines
+    assert argv_lines.count('model_reasoning_effort="medium"') == 1, argv_lines
+    run_id = result.stdout.strip().splitlines()[-1]
+    state = _state_dict(tmp_path / "state" / f"{run_id}.state")
+    assert state["requested_model"] == "gpt-6-sol"
+    assert state["requested_effort"] == "medium"
+
+
+def test_impl_empty_effort_uses_config_default(fake_bin: Path, tmp_path: Path):
+    argv_capture = tmp_path / "argv.txt"
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, effort_env="")
+    assert result.returncode == 0, result.stdout + result.stderr
+    _wait_for_file(argv_capture)
+    assert not any(a.startswith("model_reasoning_effort=") for a in argv_capture.read_text().splitlines())
+    run_id = result.stdout.strip().splitlines()[-1]
+    assert _state_dict(tmp_path / "state" / f"{run_id}.state")["requested_effort"] == ""
+
+
+def test_impl_explicit_effort_is_forwarded(fake_bin: Path, tmp_path: Path):
+    argv_capture = tmp_path / "argv.txt"
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, effort_env="high")
+    assert result.returncode == 0, result.stdout + result.stderr
+    _wait_for_file(argv_capture)
+    assert argv_capture.read_text().splitlines().count('model_reasoning_effort="high"') == 1
+    run_id = result.stdout.strip().splitlines()[-1]
+    assert _state_dict(tmp_path / "state" / f"{run_id}.state")["requested_effort"] == "high"
+
+
+def test_impl_populated_node_modules_passes(fake_bin: Path, tmp_path: Path):
+    result = _run_impl(fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_impl_missing_node_modules_exits_4(fake_bin: Path, tmp_path: Path):
+    result = _run_impl(fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None, node_modules="missing")
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "node_modules の実体がありません" in result.stderr
+
+
+def test_impl_empty_node_modules_exits_4(fake_bin: Path, tmp_path: Path):
+    result = _run_impl(fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None, node_modules="empty")
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert "node_modules の実体がありません" in result.stderr
+
+
+def test_impl_allow_missing_node_modules_passes(fake_bin: Path, tmp_path: Path):
+    result = _run_impl(
+        fake_bin, tmp_path, argv_capture=tmp_path / "argv.txt", header_file=None,
+        node_modules="missing", allow_missing_node_modules=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_impl_helper_ignores_inherited_impl_overrides(fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("CODEX_IMPL_ALLOW_MISSING_NODE_MODULES", "1")
+    monkeypatch.setenv("CODEX_IMPL_MODEL", "inherited-model")
+    monkeypatch.setenv("CODEX_IMPL_EFFORT", "high")
+
+    argv_capture = tmp_path / "argv.txt"
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None)
+    assert result.returncode == 0, result.stdout + result.stderr
+    _wait_for_file(argv_capture)
+    argv = argv_capture.read_text().splitlines()
+    assert argv[argv.index("-m") + 1] == "gpt-6-sol"
+    assert 'model_reasoning_effort="medium"' in argv
+
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, node_modules="missing")
+    assert result.returncode == 4, result.stdout + result.stderr
+
+
+def test_impl_explicit_empty_model_uses_config_default(fake_bin: Path, tmp_path: Path):
+    argv_capture = tmp_path / "argv.txt"
+    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, model_env="")
+    assert result.returncode == 0, result.stdout + result.stderr
+    _wait_for_file(argv_capture)
+    assert "-m" not in argv_capture.read_text().splitlines()
+    run_id = result.stdout.strip().splitlines()[-1]
+    state = _state_dict(tmp_path / "state" / f"{run_id}.state")
+    assert state["requested_model"] == ""
 
 
 # ---------------------------------------------------------------------------

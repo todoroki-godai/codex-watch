@@ -65,7 +65,16 @@ def fake_bin(tmp_path: Path) -> Path:
         "esac\n"
         "exit 0\n",
     )
-    _write_executable(d / "codex", "#!/bin/sh\ncat >/dev/null\nexit 0\n")
+    _write_executable(
+        d / "codex",
+        "#!/bin/sh\n"
+        "cat >/dev/null\n"
+        "if [ -n \"$ARGV_CAPTURE_FILE\" ]; then\n"
+        "  : > \"$ARGV_CAPTURE_FILE\"\n"
+        "  for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"$ARGV_CAPTURE_FILE\"; done\n"
+        "fi\n"
+        "exit 0\n",
+    )
     return d
 
 
@@ -85,11 +94,14 @@ def _run(
     state_dir.mkdir(exist_ok=True)
 
     env = dict(os.environ)
+    for key in ("CODEX_REVIEW_MODEL", "CODEX_REVIEW_EFFORT", "CODEX_REVIEW_NO_GATE", "CODEX_REVIEW_ACK_PHRASING"):
+        env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
     env["REVIEW_TARGET"] = review_target
     env["REVIEW_GOAL_CUT"] = review_goal_cut
     env["FAKE_GH_BODY"] = str(tmp_path / "fake_gh_body.txt")
+    env["ARGV_CAPTURE_FILE"] = str(tmp_path / "argv.txt")
     if gate_check:
         env["CODEX_REVIEW_GATE_CHECK"] = "1"
     else:
@@ -102,6 +114,28 @@ def _run(
         text=True,
         timeout=30,
     )
+
+
+def test_cli_unset_model_and_effort_use_config_defaults(
+    fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("CODEX_REVIEW_MODEL", "inherited-model")
+    monkeypatch.setenv("CODEX_REVIEW_EFFORT", "high")
+    result = _run(
+        fake_bin, tmp_path, review_target="issue:example-org/example-repo#1",
+        review_goal_cut=VALID_GOAL_CUT, gate_check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    capture = tmp_path / "argv.txt"
+    import time
+
+    deadline = time.monotonic() + 2
+    while not capture.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert capture.exists()
+    argv = capture.read_text().splitlines()
+    assert "-m" not in argv, argv
+    assert not any(arg.startswith("model_reasoning_effort=") for arg in argv), argv
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +252,8 @@ def _run_in_git_workdir(
     state_dir.mkdir(exist_ok=True)
 
     env = dict(os.environ)
+    for key in ("CODEX_REVIEW_MODEL", "CODEX_REVIEW_EFFORT", "CODEX_REVIEW_NO_GATE", "CODEX_REVIEW_ACK_PHRASING"):
+        env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
     env["REVIEW_TARGET"] = review_target
