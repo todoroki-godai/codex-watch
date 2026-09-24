@@ -21,6 +21,7 @@ state ファイルへ output_guard=yes|no を記録する。
 from __future__ import annotations
 
 import os
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -31,6 +32,29 @@ BIN_DIR = Path(__file__).resolve().parent.parent / "bin"
 CODEX_IMPL = BIN_DIR / "codex-impl"
 
 GUARD_MARKER = "長くなりうるコマンド"
+
+
+def _extract_guard_prefix() -> str:
+    """bin/codex-impl 本体から前置き文言（`echo '...'` の中身）を抽出する。
+
+    部分一致でなく完全一致で判定するため、前置きの全文をここで持つ必要がある。
+    二重管理を避けるため実装から都度抽出するが、抽出自体が壊れて空文字列や
+    無関係な文字列を返すと、以後の完全一致比較（== expected）が失敗するため、
+    抽出ロジックの破損は緑ではなく赤として現れる（意図的に fail-closed）。
+    """
+    source = CODEX_IMPL.read_text()
+    match = re.search(r"^\s*echo '(.*)'\s*$", source, re.MULTILINE)
+    if not match:
+        raise AssertionError(
+            "bin/codex-impl の前置き echo '...' 行が見つからない"
+            "（実装が変わり抽出ロジックが追従できていない可能性がある）"
+        )
+    prefix = match.group(1)
+    assert GUARD_MARKER in prefix, "抽出した前置きに既知マーカーが含まれない"
+    return prefix
+
+
+GUARD_PREFIX = _extract_guard_prefix()
 
 
 def _write_executable(path: Path, script: str) -> None:
@@ -119,7 +143,10 @@ def _wait_for_file(path: Path, timeout_s: float = 2.0) -> None:
 
 def test_default_adds_guard_prefix_and_records_yes(fake_bin: Path, tmp_path: Path):
     stdin_capture = tmp_path / "stdin.txt"
-    result, state_dir = _run_impl(fake_bin, tmp_path, stdin_capture=stdin_capture)
+    prompt_text = "これはテスト用の依頼本文です。\n"
+    result, state_dir = _run_impl(
+        fake_bin, tmp_path, stdin_capture=stdin_capture, prompt_text=prompt_text
+    )
     assert result.returncode == 0, result.stdout + result.stderr
 
     run_id = result.stdout.strip().splitlines()[-1]
@@ -128,13 +155,16 @@ def test_default_adds_guard_prefix_and_records_yes(fake_bin: Path, tmp_path: Pat
     state = _state_dict(state_file)
     assert state.get("output_guard") == "yes"
 
+    # 実装（bin/codex-impl）は `echo GUARD_PREFIX; echo; cat PROMPT_FILE` で
+    # EFFECTIVE_PROMPT を組み立てるため、期待値は「前置き全文 + 空行 + 元本文そのもの」。
+    expected = f"{GUARD_PREFIX}\n\n{prompt_text}"
+
     effective_prompt = Path(state["effective_prompt"])
     assert effective_prompt.is_file()
-    effective_text = effective_prompt.read_text()
-    assert GUARD_MARKER in effective_text
+    assert effective_prompt.read_text() == expected
 
     _wait_for_file(stdin_capture)
-    assert GUARD_MARKER in stdin_capture.read_text()
+    assert stdin_capture.read_text() == expected
 
 
 # ---------------------------------------------------------------------------
@@ -144,16 +174,17 @@ def test_default_adds_guard_prefix_and_records_yes(fake_bin: Path, tmp_path: Pat
 
 def test_original_prompt_body_is_preserved(fake_bin: Path, tmp_path: Path):
     marker = "元本文マーカーXYZ123"
+    prompt_text = f"{marker}\n本文の続き\n"
     stdin_capture = tmp_path / "stdin.txt"
     result, state_dir = _run_impl(
-        fake_bin, tmp_path, stdin_capture=stdin_capture, prompt_text=f"{marker}\n本文の続き\n"
+        fake_bin, tmp_path, stdin_capture=stdin_capture, prompt_text=prompt_text
     )
     assert result.returncode == 0, result.stdout + result.stderr
     run_id = result.stdout.strip().splitlines()[-1]
     state = _state_dict(state_dir / f"{run_id}.state")
     effective_text = Path(state["effective_prompt"]).read_text()
-    assert marker in effective_text
-    assert "本文の続き" in effective_text
+    expected = f"{GUARD_PREFIX}\n\n{prompt_text}"
+    assert effective_text == expected
 
 
 # ---------------------------------------------------------------------------
@@ -163,17 +194,22 @@ def test_original_prompt_body_is_preserved(fake_bin: Path, tmp_path: Path):
 
 def test_allow_big_output_disables_guard(fake_bin: Path, tmp_path: Path):
     stdin_capture = tmp_path / "stdin.txt"
+    prompt_text = "これはテスト用の依頼本文です。\n"
     result, state_dir = _run_impl(
-        fake_bin, tmp_path, stdin_capture=stdin_capture, allow_big_output="1"
+        fake_bin,
+        tmp_path,
+        stdin_capture=stdin_capture,
+        allow_big_output="1",
+        prompt_text=prompt_text,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     run_id = result.stdout.strip().splitlines()[-1]
     state = _state_dict(state_dir / f"{run_id}.state")
     assert state.get("output_guard") == "no"
 
+    # 無効化時は前置きが一切付かず、EFFECTIVE_PROMPT は元本文と完全一致する。
     effective_prompt = Path(state["effective_prompt"])
-    effective_text = effective_prompt.read_text()
-    assert GUARD_MARKER not in effective_text
+    assert effective_prompt.read_text() == prompt_text
 
     _wait_for_file(stdin_capture)
-    assert GUARD_MARKER not in stdin_capture.read_text()
+    assert stdin_capture.read_text() == prompt_text
