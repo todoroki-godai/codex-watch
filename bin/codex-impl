@@ -91,12 +91,12 @@ if [[ -n "$GIT_COMMON_ABS" && "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]]; then
 fi
 
 # 発注ごとに model / reasoning effort を変えられるようにする（codex-review と同じ形。
-# モデル未指定なら gpt-6-sol、effort 未指定なら medium。
+# モデル未指定なら gpt-6.1-sol、effort 未指定なら medium。
 # 空文字を明示した場合は、それぞれ config.toml の既定）。
 # macOS 既定の bash 3.2 では空配列の "${a[@]}" が
 # set -u で落ちるので +展開で渡す（SANDBOX_ARGS も同じ理由でここに合わせて +展開へ直す）。
 CODEX_CLI_ARGS=()
-REQUESTED_MODEL="$(sanitize_single_line "${CODEX_IMPL_MODEL-gpt-6-sol}")"
+REQUESTED_MODEL="$(sanitize_single_line "${CODEX_IMPL_MODEL-gpt-6.1-sol}")"
 REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_IMPL_EFFORT-medium}")"
 [[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
