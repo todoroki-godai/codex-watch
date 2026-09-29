@@ -21,7 +21,7 @@ model/effort 配線を試験する。
   探索範囲を縮小した。
 
 ここで試験するのは:
-  ① impl の env 未指定時、-m gpt-6-sol と effort=medium が1つずつ付くこと
+  ① impl の env 未指定時、-m gpt-6.1-sol と effort=medium が1つずつ付くこと
   ② env が空文字なら対応する引数が付かず、明示値はその値で渡ること
   ③ node_modules が非空なら通り、欠損・空なら拒否し、明示した例外口では通ること
   ④ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
@@ -231,7 +231,7 @@ def _wait_for_file(path: Path, timeout_s: float = 2.0, contains: str | None = No
 
 
 # ---------------------------------------------------------------------------
-# ① env 未指定時、-m gpt-6-sol と effort=medium が1つずつ付く
+# ① env 未指定時、-m gpt-6.1-sol と effort=medium が1つずつ付く
 # ---------------------------------------------------------------------------
 
 
@@ -246,11 +246,11 @@ def test_impl_no_model_env_uses_default_model_once(fake_bin: Path, tmp_path: Pat
     _wait_for_file(argv_capture)
     argv_lines = argv_capture.read_text().splitlines()
     assert argv_lines.count("-m") == 1, argv_lines
-    assert argv_lines[argv_lines.index("-m") + 1] == "gpt-6-sol", argv_lines
+    assert argv_lines[argv_lines.index("-m") + 1] == "gpt-6.1-sol", argv_lines
     assert argv_lines.count('model_reasoning_effort="medium"') == 1, argv_lines
     run_id = result.stdout.strip().splitlines()[-1]
     state = _state_dict(tmp_path / "state" / f"{run_id}.state")
-    assert state["requested_model"] == "gpt-6-sol"
+    assert state["requested_model"] == "gpt-6.1-sol"
     assert state["requested_effort"] == "medium"
 
 
@@ -309,7 +309,7 @@ def test_impl_helper_ignores_inherited_impl_overrides(fake_bin: Path, tmp_path: 
     assert result.returncode == 0, result.stdout + result.stderr
     _wait_for_file(argv_capture)
     argv = argv_capture.read_text().splitlines()
-    assert argv[argv.index("-m") + 1] == "gpt-6-sol"
+    assert argv[argv.index("-m") + 1] == "gpt-6.1-sol"
     assert 'model_reasoning_effort="medium"' in argv
 
     result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, node_modules="missing")
