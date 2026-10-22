@@ -20,6 +20,26 @@ LABEL="${3:-review}"
 [[ "$WORKDIR" = /* ]] || { echo "対象ディレクトリは絶対パスで指定してください: $WORKDIR" >&2; exit 2; }
 [[ -d "$WORKDIR" ]] || { echo "対象ディレクトリがありません: $WORKDIR" >&2; exit 2; }
 [[ -f "$PROMPT_FILE" ]] || { echo "プロンプトファイルがありません: $PROMPT_FILE" >&2; exit 2; }
+
+# 巡の履歴の「種別」列（review.md / review-gate SKILL.md 正典）を必須化する。
+# なぜ要るか: 種別を渡す口が無いまま record_round() 側のデフォルト値（"コード"）へ常時
+# フォールバックしていたため、設計レビューを出しても履歴に「コード」と記録され続けていた
+# （2026-09-25 #890/#728 実測）。デフォルト値を残す設計そのものが温床だったので、
+# 未指定は exit 2 で止める（fail-closed）。既定値には戻さない。
+case "${CODEX_REVIEW_KIND_LABEL:-}" in
+  設計|コード) ;;
+  *)
+    cat >&2 <<'EOF'
+CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
+  足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
+  取りうる値: 設計 / コード
+  実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+  選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
+  実装コード（.ts/.py 等の差分）なら「コード」
+EOF
+    exit 2
+    ;;
+esac
 # state は 1行1キーの行形式なので、改行相当の文字を含む値は偽の行を注入できる（実測: パスに
 # skills_suppressed=no を仕込むと state に2行出る／2026-09-03 codex レビュー Must1: `\n` だけの
 # 判定だと `\r` 等の別の行境界文字で同じ注入ができた）。`\n`/`\r` 等を個別に列挙すると回避手段が
@@ -216,7 +236,7 @@ case "$GATE_TARGET" in
       CONTENT_HASH_ERR="$(mktemp "$STATE_DIR/$RUN_ID.content_hash_err.XXXXXX")"
       CONTENT_HASH="$(python3 "$GATE_PY" content-hash --workdir "$WORKDIR" 2>"$CONTENT_HASH_ERR" || true)"
       if [[ -z "$CONTENT_HASH" ]]; then
-        echo "警告: content_hash の計算に失敗しました（run_id=$RUN_ID）。このレビューは受領時に機械照合で拒否されます。理由:" >&2
+        echo "警告: content_hash の計算に失敗しました（run_id=${RUN_ID}）。このレビューは受領時に機械照合で拒否されます。理由:" >&2
         cat "$CONTENT_HASH_ERR" >&2
       fi
       rm -f "$CONTENT_HASH_ERR"
@@ -245,10 +265,11 @@ esac
   echo "goal_cut=$GATE_GOAL_CUT"
   echo "mandatory_gate=$GATE_MANDATORY_GATE"
   echo "reviewer=$LABEL"
+  echo "kind_label=$CODEX_REVIEW_KIND_LABEL"
 } > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
 
 # 巡行を本文へ追記する（none:/bypass は record 側が無害にスキップする）。失敗しても
 # 発注自体は既に開始済みなので dispatch を殺さない（stderr へ警告のみ）。
-python3 "$GATE_PY" record --state-file "$STATE_FILE" >&2 || echo "巡行の本文追記に失敗しました（run_id=$RUN_ID）。手動確認してください" >&2
+python3 "$GATE_PY" record --state-file "$STATE_FILE" >&2 || echo "巡行の本文追記に失敗しました（run_id=${RUN_ID}）。手動確認してください" >&2
 
 echo "$RUN_ID"
