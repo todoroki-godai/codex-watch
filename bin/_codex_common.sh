@@ -145,3 +145,99 @@ extract_codex_log_header() {
   fi
   printf '%s\t%s\t%s\t%s\n' "$model" "$model_source" "$effort" "$effort_source"
 }
+
+# PJ が宣言した場合だけ gh の設定を run ごとに隔離する。共有設定・保管庫は変更しない。
+# 呼び出し元は STATE_DIR 作成直後に呼ぶ（review の gate/record にも同じ名義を使う）。
+prepare_codex_github_account() {
+  CODEX_GITHUB_ACCOUNT=""
+  CODEX_GITHUB_CONFIG_DIR=""
+  CODEX_GITHUB_ARGS=()
+  local root declaration actual
+  root="$(git -C "$WORKDIR" rev-parse --show-toplevel 2>/dev/null || true)"
+  [[ -n "$root" ]] || return 0
+  declaration="$root/.claude/codex-github-account"
+  [[ -e "$declaration" || -L "$declaration" ]] || return 0
+  if ! CODEX_GITHUB_ACCOUNT="$(python3 - "$declaration" <<'PYACCOUNT'
+import pathlib, re, sys
+try:
+    account = pathlib.Path(sys.argv[1]).read_text().strip()
+except (OSError, UnicodeError):
+    sys.exit(1)
+# GitHub login は最大39文字。空値・内部空白・複数行・資格情報らしき値を拒否。
+if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", account):
+    sys.exit(1)
+print(account)
+PYACCOUNT
+)"; then
+    echo 'GitHub 名義の宣言が不正です（読取可能な英数字・ハイフンの1行、1〜39文字が必要）' >&2
+    return 5
+  fi
+  CODEX_GITHUB_CONFIG_DIR="$(mktemp -d "$STATE_DIR/gh-account.XXXXXX")"
+  # STATE_DIR が相対パスでも、子シェルの cwd に依存しない絶対パスを渡す。
+  CODEX_GITHUB_CONFIG_DIR="$(cd "$CODEX_GITHUB_CONFIG_DIR" && pwd)"
+  trap 'rm -rf -- "$CODEX_GITHUB_CONFIG_DIR"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  printf 'github.com:\n    users:\n        %s:\n    user: %s\n' "$CODEX_GITHUB_ACCOUNT" "$CODEX_GITHUB_ACCOUNT" > "$CODEX_GITHUB_CONFIG_DIR/hosts.yml"
+  # config.yml が無い gh 2.89 は旧形式の移行を試す。共有 config.yml を読取りでコピー。
+  local shared_config="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}/config.yml"
+  if [[ -f "$shared_config" ]]; then
+    cp "$shared_config" "$CODEX_GITHUB_CONFIG_DIR/config.yml"
+  fi
+  export GH_CONFIG_DIR="$CODEX_GITHUB_CONFIG_DIR"
+  # gh は環境の token を保管庫より優先する。値を読まず除去し、HTTP debug も抑止する。
+  unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_DEBUG GH_HOST
+  if ! actual="$(gh api --hostname github.com user --jq .login 2>/dev/null | python3 -c '
+import re, sys
+value = sys.stdin.read().strip()
+print(value if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", value) else "(invalid-or-empty)")
+')"; then
+    printf 'GitHub 名義の検証失敗: requested=%s returned=%s (gh failed)\n' "$CODEX_GITHUB_ACCOUNT" "${actual:-(none)}" >&2
+    return 5
+  fi
+  if [[ "$actual" != "$CODEX_GITHUB_ACCOUNT" ]]; then
+    printf 'GitHub 名義の不一致: requested=%s returned=%s\n' "$CODEX_GITHUB_ACCOUNT" "$actual" >&2
+    return 5
+  fi
+  # inherit=core/none や include_only に左右されず、子のシェルにも固定値を渡す。
+  CODEX_GITHUB_ARGS=(-c "$(python3 -c 'import json,sys; print("shell_environment_policy.set.GH_CONFIG_DIR=" + json.dumps(sys.argv[1]))' "$GH_CONFIG_DIR")")
+  # config.toml の set 経由で資格情報が再注入されることも防ぐ（空文字は gh が無視する）。
+  local name
+  for name in GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_DEBUG GH_HOST; do
+    CODEX_GITHUB_ARGS+=(-c "shell_environment_policy.set.$name=\"\"")
+  done
+}
+
+# state の追加は1項目だけ。宣言なしは空値、宣言ありは検証済み login。
+codex_github_account_state() {
+  printf 'github_account=%s\n' "$CODEX_GITHUB_ACCOUNT"
+}
+
+# 宣言ありの非同期 run の監督役。外側で nohup してこの関数を呼ぶ。
+# state の pid はこの監督役。Codex を待ち、終了コードを保ってから置き場を消す。
+# TERM/INT/HUP は子へ転送し、子が終了するまでは設定を残す。SIGKILL は trap 不可。
+run_codex_with_github_account() {
+  local child status
+  trap 'rm -rf -- "$CODEX_GITHUB_CONFIG_DIR"' EXIT
+  trap 'kill -HUP "$child" 2>/dev/null || :; wait "$child" || :; exit 129' HUP
+  trap 'kill -INT "$child" 2>/dev/null || :; wait "$child" || :; exit 130' INT
+  trap 'kill -TERM "$child" 2>/dev/null || :; wait "$child" || :; exit 143' TERM
+  # 非同期コマンドの stdin は明示しないと /dev/null に変わるため fd を保存する。
+  exec 3<&0
+  codex "$@" <&3 &
+  child=$!
+  if wait "$child"; then status=0; else status=$?; fi
+  exit "$status"
+}
+
+# nohup bash は共有関数を読み直すだけ。Codex 本体の PID と監督役を分離する。
+start_codex_with_github_account() {
+  exec 3<&0
+  nohup bash -c 'source "$1"; shift; run_codex_with_github_account "$@"' codex-github \
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh" "$@" <&3 &
+  # 呼び出し元が既存の state の pid 欄に書く。
+  # shellcheck disable=SC2034
+  CODEX_PID=$!
+  exec 3<&-
+}

@@ -43,6 +43,24 @@
   例: `REVIEW_GOAL_CUT="30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26"`
   未記入・形式不一致・数値部が 0・取得日が不正な日付は、いずれも発注をブロックする。
 
+## PJ ごとの GitHub 名義
+
+対象作業場所の git 最上位に `.claude/codex-github-account` を置き、
+`matsukaze-minden` などの login を1行で宣言する（資格情報は書かない）。
+前後の空白は無視する。宣言がない場合は既存の起動経路を使う。
+
+宣言がある場合、起動ごとに状態ディレクトリ内の `gh-account.XXXXXX` を使い、
+保管庫から得た `gh api user` の login が一致するまで起動しない。
+共有 `hosts.yml` は変更しない。環境の認証上書きも除去し、Codex の子シェルには
+`-c shell_environment_policy.set.GH_CONFIG_DIR=...` で同じ設定を渡す。
+状態ファイルの `github_account=` が空なら宣言なし、値があれば宣言・検証済み。
+
+宣言ありの場合、状態の PID は Codex を待つ監督プロセスを指す。
+設定置き場は通常終了・エラー終了・TERM 時とも子の終了を待って削除する。
+監督プロセスへの SIGKILL やマシン停止では trap が実行できず、置き場が残る場合がある。
+
+検証手順と実測は [tests/github-account-verification.md](tests/github-account-verification.md)。
+
 ## 必要なもの
 
 - `codex` CLI
