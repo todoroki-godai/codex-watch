@@ -74,6 +74,7 @@ fi
 
 STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
 mkdir -p "$STATE_DIR"
+prepare_codex_github_account
 
 RUN_ID="${LABEL}-$(date +%Y%m%d-%H%M%S)-$$"
 LOG_FILE="$STATE_DIR/$RUN_ID.log"
@@ -102,7 +103,7 @@ REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_IMPL_EFFORT-medium}")"
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
 
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
-nohup codex exec -C "$WORKDIR" -s workspace-write ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
+nohup codex exec -C "$WORKDIR" -s workspace-write ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
 # 実効値（実際に起動された model / effort）はここでは解決しない・待たない。
@@ -119,6 +120,7 @@ CODEX_PID=$!
   echo "prompt=$PROMPT_FILE"
   echo "mode=workspace-write"
   echo "writable_git_common=${GIT_COMMON_ABS:-}"
+  codex_github_account_state
   echo "requested_model=$REQUESTED_MODEL"
   echo "requested_effort=$REQUESTED_EFFORT"
   echo "started_at=$(date +%s)"
