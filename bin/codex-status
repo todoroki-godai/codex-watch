@@ -36,7 +36,7 @@ extract_answer() {
 show_one() {
   local state_file="$1"
   # shellcheck disable=SC1090
-  local run_id pid log workdir started_at requested_model requested_effort
+  local run_id pid log workdir started_at requested_model requested_effort content_hash
   run_id=$(sed -n 's/^run_id=//p' "$state_file")
   pid=$(sed -n 's/^pid=//p' "$state_file")
   log=$(sed -n 's/^log=//p' "$state_file")
@@ -44,6 +44,7 @@ show_one() {
   started_at=$(sed -n 's/^started_at=//p' "$state_file")
   requested_model=$(sed -n 's/^requested_model=//p' "$state_file")
   requested_effort=$(sed -n 's/^requested_effort=//p' "$state_file")
+  content_hash=$(sed -n 's/^content_hash=//p' "$state_file")
 
   local now alive elapsed silent verdict_count size lines
   now=$(date +%s)
@@ -77,6 +78,10 @@ show_one() {
   echo "判定行   : ${verdict_count}件（'tokens used' の完全一致）"
   echo "ログ     : $log (${size}B / ${lines}行)"
   echo "対象     : $workdir"
+  # 空入力の sha256（未コミット差分なし）
+  if [[ "$content_hash" == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]]; then
+    echo "内容ハッシュ: 未コミット差分なし（空入力の sha256。計算失敗ではない＝失敗時は値が空になる）"
+  fi
   # ログ先頭のヘッダーは「実際にこの run で使われた値」の証明ではない（文字列の形での
   # 抽出にすぎず、run/session の同一性は未検証・2026-09-08 レビュー巡3裁定）。
   # 「実効値」と言い切らず、参考情報である旨を文言に明示する。
