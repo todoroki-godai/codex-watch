@@ -1,3 +1,80 @@
+# PJ GitHub 名義固定 — レビュー巡2の修正・検証記録（2026-10-23）
+
+## 巡2の変更
+
+- `bin/_codex_common.sh`: config.yml は固定バイト列 `version: "1"\n`。共有 config の変数・引数・読取りを削除。atomic replace と入力検証は維持。
+- `README.md`: 固定値の説明と、codex-review の PR・課題本文の GET・PATCH も宣言名義を使う旨を追記。
+- `tests/test_codex_github_account.py`: 偽 gh と再起動試験で固定値のバイト完全一致を検査。共有 config が無い・version 行が無い場合、および既存 config に有効な version 行と余分な設定がある場合を追加（6件増）。
+- この検証記録。新しい依存・運用機構は追加していない（既存処理と Python 標準ライブラリで足りる）。
+
+## 巡2の試験コマンドと件数
+
+全生成物は指定作業場所内。git は実行せず、起動口は偽 git を使う。
+実 gh は opt-in の `api user` 読取り4件だけ。record の GET・PATCH は偽 gh とローカル本文を使う。
+共有の実設定への書込み・名義変更・トークン出力・commit はしていない。
+
+```sh
+python3 -m pytest tests/test_codex_github_account.py -q --basetemp="$PWD/.test-round2-local-final"
+# 59 passed, 5 skipped（実 gh 4件と review 専用試験の impl 側1件）
+CODEX_TEST_REAL_GH=1 python3 -m pytest tests/test_codex_github_account.py -q --basetemp="$PWD/.test-round2-real"
+# 63 passed, 1 skipped（review 専用試験の impl 側）
+PATH="$PWD/.test-tools:$PATH" CODEX_REVIEW_KIND_LABEL=コード python3 -m pytest tests/test_codex_model_effort.py tests/test_codex_status_receipt.py tests/test_report_rebuild.py tests/test_round_gate.py tests/test_codex_review_cli.py -q -k 'not git_content_hash and not hash_failure and not receipt_positive_real_recipe and not content_hash_recipe_survives_backslash_loss and not echo_recipe_matches_legacy_printf_bytes and not dispatch_writes_content_hash and not dispatch_content_hash' --basetemp="$PWD/.test-round2-regression"
+# 199 passed, 19 deselected
+bash -n bin/_codex_common.sh bin/codex-impl bin/codex-review
+shellcheck -S warning bin/_codex_common.sh bin/codex-impl bin/codex-review
+# ともに exit 0、警告0
+PYTHONDONTWRITEBYTECODE=1 python3 .test-round2-check-mutations.py
+```
+
+実 gh を含む名義試験 **63 passed, 1 skipped** と回帰 **199 passed, 19 deselected**、合計 **262 passed, 1 skipped, 19除外**。
+ローカル版は59 passed, 5 skipped（実 gh 4件を skip）。重複実行は合計件数に足していない。
+19件の除外理由は前巡と同じ git 禁止。既存試験を除外なしで全件通過したという意味ではない。
+構文・shellcheck は各 exit 0。最後に境界試験だけ再確認し4 passed, 60 deselected:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m pytest tests/test_codex_github_account.py -q -k test_fixed_config_without_shared_version --basetemp="$PWD/.test-round2-edge-final"
+```
+
+[ローカル名義試験](../.test-round2-local-final.log)・[実 gh を含む名義試験](../.test-round2-real.log)・[既存回帰](../.test-round2-regression.log)・[境界再確認](../.test-round2-edge-final.log)。
+
+## 巡2の変異・回避・陽性対照
+
+既存の変異ハーネスを再利用した作業場所内の [.test-round2-check-mutations.py](../.test-round2-check-mutations.py) で実行。
+各変異は独立コピーへ適用し、置換元がちょうど1か所であることを assertion で検査。
+試験後は復元し、元ソースとの一致と SHA-256 を検査した。
+
+| 変異・回避 | 結果 | 当たった証拠 |
+|---|---|---|
+| 指定(a) 共有 config のコピーへ戻す | 8 failed, 56 deselected in 8.78s | `test_pinned_child_and_persistence[codex-impl-matsukaze-minden]` |
+| 指定(b) 固定値を空にする | 4 failed, 60 deselected in 3.66s | `test_pinned_child_and_persistence[codex-impl-matsukaze-minden]` |
+| 追加回避(c) config の作成そのものを省く | 4 failed, 60 deselected in 4.59s | `test_pinned_child_and_persistence[codex-impl-matsukaze-minden]` |
+| 追加回避(d) 既存の version 行を信用して更新を省く | 2 failed, 2 passed, 60 deselected in 8.96s | `test_repeated_account_replaces_files[codex-impl-version: "1"\nprompt: disabled\n]` |
+| a-per-run-directory | 1 failed, 1 skipped, 62 deselected in 2.28s | `test_review_records_after_codex_exit[codex-review]` |
+| b-empty-state | 4 failed, 60 deselected in 5.03s | `test_undeclared_preserves_launch[codex-impl-False]` |
+| c-undeclared-gh | 2 failed, 62 deselected in 3.23s | `test_undeclared_never_calls_gh[codex-impl]` |
+| d-stale-config | 4 failed, 60 deselected in 7.32s | `test_repeated_account_replaces_files[codex-impl-stale invalid config]` |
+| e-nonatomic-overwrite | 4 failed, 60 deselected in 9.39s | `test_repeated_account_replaces_files[codex-impl-stale invalid config]` |
+| old-a-child-env | 4 failed, 60 deselected in 3.15s | `test_pinned_child_and_persistence[codex-impl-matsukaze-minden]` |
+| old-b-no-match | 6 failed, 22 passed, 36 deselected in 15.18s | `test_invalid_or_missing_account_stops[codex-impl-no-such-user-xyz]` |
+| old-c-require-declaration | 2 failed, 2 passed, 60 deselected in 2.57s | `test_undeclared_preserves_launch[codex-impl-False]` |
+| old-d-write-shared-hosts | 4 failed, 60 deselected, 4 errors in 2.64s | `test_pinned_child_and_persistence[codex-impl-matsukaze-minden]` |
+| old-e-first-line-only | 4 failed, 18 passed, 42 deselected in 8.83s | `test_invalid_or_missing_account_stops[codex-impl-]` |
+| old-f-drop-shell-policy | 4 failed, 60 deselected in 3.72s | `test_pinned_child_and_persistence[codex-impl-matsukaze-minden]` |
+| positive-equivalent-comparison | 26 passed, 38 deselected in 10.52s | `入力・名義試験26件が緑（別集計）` |
+
+**15変異すべて赤、生存変異0。陽性対照1件は26 passed。**
+追加回避(d)は不正な既存設定の場合には緑だが、有効な version 行と余分な設定を持つ場合の2件が赤になることを確認。
+指定の2変異、追加回避2件、前巡の11変異、陽性対照は個別に数えた。
+
+[変異結果 JSON](../.test-round2-mutations/results.json) に置換内容・exit code・失敗 node ID・復元 SHA-256、各ケースの `pytest.log` に失敗本文を保存。
+[機械照合結果](../.test-round2-artifact-check.json) は全16ケースの置換1か所・変更前後のハッシュ差・復元一致・失敗 node ID とログの一致を検査。
+名義試験の出力・state・capture 等403ファイルの資格情報形式検査は0件。
+実 Codex のモデル turn、追加サンドボックスの実環境検証、実 GitHub の PATCH は実行していない。
+
+---
+
+以下は巡1の記録（config の最終動作の説明は巡2に合わせて更新）。
+
 # PJ GitHub 名義固定 — レビュー巡1の修正・検証記録（2026-10-23）
 
 作業は依頼された `codex-watch-wt.noindex` 内だけ。git コマンドは実行していない。
@@ -27,8 +104,8 @@ Codex の終了後に設定置き場を消す要件は、今回の依頼によ�
 
 常設の置き場は `$STATE_DIR/gh-account/<login>/`（既定 `~/.codex-watch/gh-account/<login>/`）。
 相対 STATE_DIR でも GH_CONFIG_DIR には絶対パスを渡す。置き場は mode 0700。
-中身は次の hosts.yml（宣言した名義だけ・トークンなし）と共有 config.yml の写しだけ。
-共有 config.yml が無ければ空の config.yml へ更新する。
+中身は次の hosts.yml（宣言した名義だけ・トークンなし）と固定値 `version: "1"\n` の config.yml だけ。
+共有 config.yml は読み取らない。
 
 ```yaml
 github.com:
@@ -79,7 +156,7 @@ state の HEAD・内容ハッシュ、Codex 本体の PID を確認する。ネ�
 宣言なし試験では偽 Codex 自身の gh 呼出しを止め、起動口から gh が呼ばれると
 マーカーを残して exit 9 にする。起動成功だけでなく、マーカーが無いことも確認する。
 再起動試験では同名義の既存設定を壊して再起動し、両ファイルの更新・同じパスの再利用・
-inode の交換・共有 config の写しとの一致・一時ファイルの残留なしを確認する。
+inode の交換・config の固定値との完全一致・一時ファイルの残留なしを確認する。
 
 ## 変異試験と陽性対照
 

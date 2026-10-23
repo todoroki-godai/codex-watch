@@ -177,15 +177,13 @@ PYACCOUNT
   chmod 700 "$CODEX_GITHUB_CONFIG_DIR"
   # STATE_DIR が相対パスでも、子シェルの cwd に依存しない絶対パスを渡す。
   CODEX_GITHUB_CONFIG_DIR="$(cd "$CODEX_GITHUB_CONFIG_DIR" && pwd)"
-  local shared_config="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}/config.yml"
   # 同じ名義の同時起動でも、読取側に途中のファイルを見せない。
-  python3 - "$CODEX_GITHUB_CONFIG_DIR" "$CODEX_GITHUB_ACCOUNT" "$shared_config" <<'PYCONFIG'
+  python3 - "$CODEX_GITHUB_CONFIG_DIR" "$CODEX_GITHUB_ACCOUNT" <<'PYCONFIG'
 import os, pathlib, sys, tempfile
-folder, account, shared = sys.argv[1:]
-config = pathlib.Path(shared)
+folder, account = sys.argv[1:]
 files = {
     "hosts.yml": f"github.com:\n    users:\n        {account}:\n    user: {account}\n".encode(),
-    "config.yml": config.read_bytes() if config.is_file() else b"",
+    "config.yml": b'version: "1"\n',
 }
 for name, data in files.items():
     fd, temporary = tempfile.mkstemp(dir=folder, prefix="." + name + ".")

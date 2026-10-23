@@ -51,8 +51,9 @@
 
 宣言がある場合、状態ディレクトリ内の常設 `gh-account/<login>/` を使い、
 保管庫から得た `gh api user` の login が一致するまで起動しない。
-中身は宣言名義だけの hosts.yml（トークンなし）と共有 config.yml の写し。
+中身は宣言名義だけの hosts.yml（トークンなし）と固定値 `version: "1"\n` の config.yml。
 起動ごとに一時ファイルへ書き、rename で置き換える。終了後も残し、review の巡の記録に使う。
+`codex-review` の巡の記録（PR・課題の本文の GET・PATCH）も宣言した名義で行う。
 共有 `hosts.yml` は変更しない。環境の認証上書きも除去し、Codex の子シェルには
 `-c shell_environment_policy.set.GH_CONFIG_DIR=...` で同じ設定を渡す。
 状態ファイルに `github_account=` の行が無ければ宣言なし、値があれば宣言・検証済み。

@@ -124,7 +124,7 @@ assert m
 user=m[1]
 if user=='no-such-user-xyz': print('fallback-user'); sys.exit(0)
 assert s==f'github.com:\\n    users:\\n        {user}:\\n    user: {user}\\n'
-assert (p/'config.yml').read_text().startswith('version: 1')
+assert (p/'config.yml').read_bytes() == b'version: "1"\\n'
 print(user)
 ''')
     executable(fake / 'codex', '''#!/usr/bin/env python3
@@ -369,7 +369,8 @@ def test_review_records_after_codex_exit(launch):
     assert 'コード' in (launch.state / 'fake-body').read_text()
 
 
-def test_repeated_account_replaces_files(launch):
+@pytest.mark.parametrize("stale_config", ['stale invalid config', 'version: "1"\nprompt: disabled\n'])
+def test_repeated_account_replaces_files(launch, stale_config):
     result, _ = launch('matsukaze-minden')
     assert result.returncode == 0
     first = capture(launch)
@@ -377,7 +378,7 @@ def test_repeated_account_replaces_files(launch):
     # Stale same-account configuration must be refreshed on each launch.
     inodes = {name: (directory / name).stat().st_ino for name in ('hosts.yml', 'config.yml')}
     (directory / 'hosts.yml').write_text('stale invalid hosts')
-    (directory / 'config.yml').write_text('stale invalid config')
+    (directory / 'config.yml').write_text(stale_config)
     launch.shared.with_name('config.yml').write_text('version: 1\nprompt: disabled\neditor: refreshed\n')
     launch.capture.unlink()
     result, _ = launch('matsukaze-minden')
@@ -386,5 +387,23 @@ def test_repeated_account_replaces_files(launch):
     assert first['shell_dir'] == second['shell_dir']
     assert second['login'] == 'matsukaze-minden'
     assert all((directory / name).stat().st_ino != inode for name, inode in inodes.items())
-    assert (directory / 'config.yml').read_bytes() == launch.shared.with_name('config.yml').read_bytes()
+    assert (directory / 'config.yml').read_bytes() == b'version: "1"\n'
     assert {p.name for p in directory.iterdir()} == {'hosts.yml', 'config.yml'}
+
+
+@pytest.mark.parametrize('shared_config', [None, 'prompt: disabled\n'])
+def test_fixed_config_without_shared_version(launch, shared_config):
+    config = launch.shared.with_name('config.yml')
+    if shared_config is None:
+        config.unlink()
+    else:
+        config.write_text(shared_config)
+    result, _ = launch('matsukaze-minden')
+    assert result.returncode == 0, result.stderr
+    child = capture(launch)
+    assert child['gh_exit'] == 0
+    assert (Path(child['shell_dir']) / 'config.yml').read_bytes() == b'version: "1"\n'
+    if shared_config is None:
+        assert not config.exists()
+    else:
+        assert config.read_text() == shared_config
