@@ -13,26 +13,39 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / '.test-account-mutations'
+OUT = ROOT / '.test-round1-mutations'
 OUT.mkdir(exist_ok=True)
 common = (ROOT/'bin/_codex_common.sh').read_text()
 set_line = next(line for line in common.splitlines() if line.startswith('  CODEX_GITHUB_ARGS=(-c '))
 cases = [
-    ('a-child-env', 'test_pinned_child_and_cleanup',
-     [('  codex "$@" <&3 &', '  env -u GH_CONFIG_DIR codex "$@" <&3 &')]),
-    ('b-no-match', 'test_invalid_or_missing_account_stops or test_failed_preflight_stops_and_redacts',
+    ('a-per-run-directory', 'test_review_records_after_codex_exit',
+     [('  CODEX_GITHUB_CONFIG_DIR="$STATE_DIR/gh-account/$CODEX_GITHUB_ACCOUNT"',
+       '  CODEX_GITHUB_CONFIG_DIR="$(mktemp -d "$STATE_DIR/gh-account.XXXXXX")"')]),
+    ('b-empty-state', 'test_undeclared_preserves_launch',
+     [('[[ -n "$CODEX_GITHUB_ACCOUNT" ]] && printf', 'printf')]),
+    ('c-undeclared-gh', 'test_undeclared_never_calls_gh',
+     [('[[ -e "$declaration" || -L "$declaration" ]] || return 0',
+       '[[ -e "$declaration" || -L "$declaration" ]] || { gh api --hostname github.com user --jq .login >/dev/null 2>&1 || :; return 0; }')]),
+    ('d-stale-config', 'test_repeated_account_replaces_files',
+     [('    fd, temporary = tempfile.mkstemp',
+       '    if name == "config.yml" and (pathlib.Path(folder) / name).exists():\n        continue\n    fd, temporary = tempfile.mkstemp')]),
+    ('e-nonatomic-overwrite', 'test_repeated_account_replaces_files',
+     [('        os.replace(temporary, pathlib.Path(folder) / name)',
+       '        (pathlib.Path(folder) / name).write_bytes(data)')]),
+    ('old-a-child-env', 'test_pinned_child_and_persistence',
+     [('export GH_CONFIG_DIR="$CODEX_GITHUB_CONFIG_DIR"', 'GH_CONFIG_DIR="$CODEX_GITHUB_CONFIG_DIR"')]),
+    ('old-b-no-match', 'test_invalid_or_missing_account_stops or test_failed_preflight_stops_and_redacts',
      [('if [[ "$actual" != "$CODEX_GITHUB_ACCOUNT" ]]; then', 'if false; then')]),
-    ('c-require-declaration', 'test_undeclared_preserves_launch',
+    ('old-c-require-declaration', 'test_undeclared_preserves_launch',
      [('[[ -e "$declaration" || -L "$declaration" ]] || return 0', '[[ -e "$declaration" || -L "$declaration" ]] || return 5')]),
-    ('d-write-shared-hosts', 'test_pinned_child_and_cleanup',
-     [('> "$CODEX_GITHUB_CONFIG_DIR/hosts.yml"', '> "$HOME/.config/gh/hosts.yml"')]),
-    ('e-first-line-only', 'test_invalid_or_missing_account_stops',
+    ('old-d-write-shared-hosts', 'test_pinned_child_and_persistence',
+     [('os.replace(temporary, pathlib.Path(folder) / name)',
+       'os.replace(temporary, pathlib.Path(os.environ["HOME"]) / ".config/gh/hosts.yml" if name == "hosts.yml" else pathlib.Path(folder) / name)')]),
+    ('old-e-first-line-only', 'test_invalid_or_missing_account_stops',
      [('read_text().strip()', 'read_text().splitlines()[0].strip()')]),
-    ('f-drop-shell-policy', 'test_pinned_child_and_cleanup',
+    ('old-f-drop-shell-policy', 'test_pinned_child_and_persistence',
      [(set_line, '  CODEX_GITHUB_ARGS=()')]),
-    ('g-leave-directory', 'test_pinned_child_and_cleanup',
-     [("  trap 'rm -rf -- \"$CODEX_GITHUB_CONFIG_DIR\"' EXIT", "  trap ':' EXIT")]),
-    ('positive-equivalent-comparison', 'test_pinned_child_and_cleanup or test_invalid_or_missing_account_stops',
+    ('positive-equivalent-comparison', 'test_pinned_child_and_persistence or test_invalid_or_missing_account_stops',
      [('if [[ "$actual" != "$CODEX_GITHUB_ACCOUNT" ]]; then', 'if ! [[ "$actual" == "$CODEX_GITHUB_ACCOUNT" ]]; then')]),
 ]
 results = []
@@ -44,7 +57,7 @@ for name, select, replacements in cases:
         shutil.copytree(ROOT/d,folder/d,ignore=shutil.ignore_patterns('__pycache__'))
     changed = common
     for old,new in replacements:
-        assert old in changed, (name,old)
+        assert changed.count(old) == 1, (name, old, changed.count(old))
         changed = changed.replace(old,new)
     (folder/'bin/_codex_common.sh').write_text(changed)
     env=dict(os.environ, CODEX_ACCOUNT_TEST_ROOT=str(folder), PYTHONDONTWRITEBYTECODE='1')

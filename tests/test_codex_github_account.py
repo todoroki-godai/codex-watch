@@ -10,7 +10,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import signal
 import subprocess
 import time
@@ -61,11 +60,50 @@ if os.environ.get('FAKE_NON_GIT'): sys.exit(128)
 if '--show-toplevel' in sys.argv: print(os.environ['FAKE_GIT_ROOT'])
 elif '--absolute-git-dir' in sys.argv: print(os.environ['FAKE_GIT_ROOT']+'/.git/worktrees/test')
 elif '--git-common-dir' in sys.argv: print(os.environ['FAKE_GIT_ROOT']+'/.git')
+elif sys.argv[-3:]==['remote','get-url','origin']: print('https://github.com/todoroki-godai/claude-config.git')
+elif sys.argv[-2:]==['rev-parse','HEAD']: print('1'*40)
+elif sys.argv[1] in ('status','diff','ls-files'): pass
 else: sys.exit(128)
 ''')
     executable(fake / 'gh', '''#!/usr/bin/env python3
-import os,re,sys
+import json,os,re,sys,time
 from pathlib import Path
+if sys.argv[1:3]==['issue','view'] or 'PATCH' in sys.argv:
+    assert os.environ.get('FAKE_RECORD'), 'unexpected body access'
+    state=Path(os.environ['CODEX_WATCH_DIR'])
+    states=list(state.glob('*.state'))
+    if states:
+        # Ensure record runs after Codex has exited, reproducing the old cleanup race.
+        end=time.monotonic()+5
+        while not Path(os.environ['CAPTURE']).with_suffix('.done').exists():
+            assert time.monotonic()<end, 'Codex did not exit before record'
+            time.sleep(.01)
+        pid=json.loads(Path(os.environ['CAPTURE']).read_text())['pid']
+        while True:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            assert time.monotonic()<end, 'Codex still alive during record'
+            time.sleep(.01)
+    folder=Path(os.environ['GH_CONFIG_DIR'])
+    hosts=(folder/'hosts.yml').read_text()
+    if states:
+        assert folder==state/'gh-account'/'matsukaze-minden', 'record not using permanent account directory'
+    assert hosts=='github.com:\\n    users:\\n        matsukaze-minden:\\n    user: matsukaze-minden\\n'
+    body=state/'fake-body'
+    with (state/'gh-calls.jsonl').open('a') as out:
+        out.write(json.dumps({'method':'PATCH' if 'PATCH' in sys.argv else 'GET', 'record':bool(states), 'directory':str(folder), 'hosts':hosts})+'\\n')
+    if 'PATCH' in sys.argv:
+        assert sys.argv[1:]==['api','repos/todoroki-godai/claude-config/issues/55','-X','PATCH','--input','-']
+        body.write_text(json.load(sys.stdin)['body'])
+    else:
+        assert sys.argv[1:]==['issue','view','55','-R','todoroki-godai/claude-config','--json','body','-q','.body']
+        print(body.read_text() if body.exists() else '')
+    sys.exit(0)
+if os.environ.get('FAKE_FORBID_GH'):
+    Path(os.environ['CODEX_WATCH_DIR'],'unexpected-gh').touch()
+    sys.exit(9)
 assert sys.argv[1:] in (['api','--hostname','github.com','user','--jq','.login'], ['api','user','--jq','.login']), sys.argv[1:]
 mode=os.environ.get('FAKE_GH_MODE','')
 if mode=='fail':
@@ -101,13 +139,14 @@ for i,arg in enumerate(sys.argv):
         setting=tomllib.loads(sys.argv[i+1])
         env.update(setting['shell_environment_policy']['set'])
 cmd=['gh','api','user','--jq','.login']
-r=subprocess.run(cmd,env=env,capture_output=True,text=True)
+r=subprocess.run(cmd,env=env,capture_output=True,text=True) if not os.environ.get('FAKE_FORBID_GH') else subprocess.CompletedProcess(cmd,0,'','')
 value={'parent_dir':parent,'shell_dir':env.get('GH_CONFIG_DIR'),'login':r.stdout.strip(),'gh_exit':r.returncode,'argv':sys.argv[1:],'stdin':sys.stdin.read(),'pid':os.getpid()}
 p.with_suffix('.tmp').write_text(json.dumps(value))
 p.with_suffix('.tmp').replace(p)
 signal.signal(signal.SIGTERM,lambda *_:sys.exit(143))
 release=Path(os.environ['RELEASE'])
 while not release.exists(): time.sleep(.02)
+p.with_suffix('.done').touch()
 sys.exit(int(os.environ.get('FAKE_CODEX_EXIT','0')))
 ''')
     env = dict(os.environ)
@@ -140,6 +179,7 @@ sys.exit(int(os.environ.get('FAKE_CODEX_EXIT','0')))
             fields = {}
         return result, fields
 
+    run.entry = request.param
     run.work, run.state, run.env = work, state, env
     run.capture, run.release = Path(env['CAPTURE']), Path(env['RELEASE'])
     run.shared, run.before = hosts, before
@@ -150,7 +190,6 @@ sys.exit(int(os.environ.get('FAKE_CODEX_EXIT','0')))
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
-    wait_for(lambda: not list(state.glob('gh-account.*')))
     assert hosts.read_bytes() == before, 'shared hosts.yml changed'
     assert hashlib.sha256(hosts.read_bytes()).digest() == hashlib.sha256(before).digest()
     # Scan every emitted artifact, not the fixtures containing synthetic sentinels.
@@ -165,7 +204,7 @@ def capture(launch):
 
 
 @pytest.mark.parametrize('account', ['matsukaze-minden', 'todoroki-godai'])
-def test_pinned_child_and_cleanup(launch, account):
+def test_pinned_child_and_persistence(launch, account):
     result, fields = launch(' \t' + account + '\r\n')
     assert result.returncode == 0, result.stderr
     child = capture(launch)
@@ -173,12 +212,15 @@ def test_pinned_child_and_cleanup(launch, account):
     assert child['parent_dir'] == child['shell_dir']
     directory = Path(child['shell_dir'])
     assert directory.is_dir(), 'must remain alive after entry point returns'
-    assert directory.parent == launch.state
+    assert directory == launch.state / 'gh-account' / account
+    assert int(fields['pid']) == child['pid']
     assert directory.stat().st_mode & 0o777 == 0o700
     assert fields['github_account'] == account
     assert 'prompt must reach codex' in child['stdin']
     launch.release.touch()
-    wait_for(lambda: not directory.exists())
+    wait_for(lambda: launch.capture.with_suffix('.done').exists())
+    assert directory.is_dir()
+    assert {p.name for p in directory.iterdir()} == {'hosts.yml', 'config.yml'}
 
 
 @pytest.mark.parametrize('non_git', [False, True])
@@ -188,8 +230,8 @@ def test_undeclared_preserves_launch(launch, non_git):
     child = capture(launch)
     assert child['parent_dir'] is None and child['shell_dir'] is None
     assert not any('shell_environment_policy' in a for a in child['argv'])
-    assert fields['github_account'] == ''
-    assert not list(launch.state.glob('gh-account.*'))
+    assert 'github_account' not in fields
+    assert not (launch.state / 'gh-account').exists()
 
 
 def test_undeclared_preserves_inherited_gh_config(launch):
@@ -210,7 +252,8 @@ def test_invalid_or_missing_account_stops(launch, value):
     assert len(result.stderr.splitlines()) == 1, result.stderr
     assert not TOKEN_SHAPE.search((result.stdout+result.stderr).encode())
     assert fields == {} and not launch.capture.exists()
-    assert not list(launch.state.glob('gh-account.*'))
+    if value != 'no-such-user-xyz':
+        assert not (launch.state / 'gh-account').exists()
     if value == 'no-such-user-xyz':
         assert 'requested=no-such-user-xyz returned=fallback-user' in result.stderr
 
@@ -236,20 +279,23 @@ def test_environment_credentials_cannot_override(launch):
     assert 'shell_environment_policy.set.GH_DEBUG=""' in settings
 
 
-def test_cleanup_after_failed_codex(launch):
-    result, _ = launch('matsukaze-minden', changes={'FAKE_CODEX_EXIT':'17'})
+def test_persistence_after_failed_codex(launch):
+    result, fields = launch('matsukaze-minden', changes={'FAKE_CODEX_EXIT':'17'})
     assert result.returncode == 0
     child = capture(launch)
     launch.release.touch()
-    wait_for(lambda: not Path(child['parent_dir']).exists())
+    wait_for(lambda: launch.capture.with_suffix('.done').exists())
+    assert int(fields['pid']) == child['pid']
+    assert Path(child['parent_dir']).is_dir()
 
 
-def test_cleanup_after_term(launch):
+def test_persistence_after_term(launch):
     result, fields = launch('matsukaze-minden')
     assert result.returncode == 0
     child = capture(launch)
     os.kill(int(fields['pid']), signal.SIGTERM)
-    wait_for(lambda: not Path(child['parent_dir']).exists())
+    assert int(fields['pid']) == child['pid']
+    assert Path(child['parent_dir']).is_dir()
     def stopped():
         try:
             os.kill(child['pid'], 0)
@@ -279,7 +325,7 @@ def test_concurrent_runs_keep_separate_accounts(launch):
     assert first['shell_dir'] != second['shell_dir']
     assert Path(first['shell_dir']).is_dir() and Path(second['shell_dir']).is_dir()
     launch.release.touch()
-    wait_for(lambda: not Path(first['shell_dir']).exists() and not Path(second['shell_dir']).exists())
+    assert Path(first['shell_dir']).is_dir() and Path(second['shell_dir']).is_dir()
 
 
 @pytest.mark.skipif(os.environ.get('CODEX_TEST_REAL_GH') != '1', reason='opt-in real local keychain, read-only')
@@ -290,3 +336,55 @@ def test_real_gh_from_child(launch, account):
     child = capture(launch)
     assert child['login'] == account and child['gh_exit'] == 0
     assert fields['github_account'] == account
+
+
+def test_undeclared_never_calls_gh(launch):
+    result, fields = launch(changes={'FAKE_FORBID_GH':'1', 'FAKE_GH_MODE':'fail'})
+    assert result.returncode == 0, result.stderr
+    capture(launch)
+    assert 'github_account' not in fields
+    assert not (launch.state / 'unexpected-gh').exists()
+
+
+def test_review_records_after_codex_exit(launch):
+    # This is an existing issue referenced by round_gate receipt documentation.
+    # Network and real git are replaced; PATCH writes only the local fake body.
+    if launch.entry != 'codex-review':
+        pytest.skip('record belongs to review only')
+    launch.release.touch()
+    result, fields = launch('matsukaze-minden', changes={
+        'FAKE_RECORD':'1', 'REVIEW_TARGET':'issue:todoroki-godai/claude-config#55',
+        'REVIEW_GOAL_CUT':'1分/周 | 根拠: record 回帰試験 | 取得日: 2026-10-23'})
+    assert result.returncode == 0, result.stderr
+    assert fields.get('round_row_written') == '1', result.stderr
+    assert fields['head_sha'] == '1' * 40
+    assert re.fullmatch('[0-9a-f]{64}', fields['content_hash'])
+    assert launch.capture.with_suffix('.done').exists()
+    child = capture(launch)
+    assert int(fields['pid']) == child['pid']
+    calls = [json.loads(line) for line in (launch.state / 'gh-calls.jsonl').read_text().splitlines()]
+    record = [c for c in calls if c['record']]
+    assert [c['method'] for c in record] == ['GET', 'PATCH', 'GET']
+    assert all(c['directory'] == str(launch.state / 'gh-account' / 'matsukaze-minden') for c in calls)
+    assert 'コード' in (launch.state / 'fake-body').read_text()
+
+
+def test_repeated_account_replaces_files(launch):
+    result, _ = launch('matsukaze-minden')
+    assert result.returncode == 0
+    first = capture(launch)
+    directory = Path(first['shell_dir'])
+    # Stale same-account configuration must be refreshed on each launch.
+    inodes = {name: (directory / name).stat().st_ino for name in ('hosts.yml', 'config.yml')}
+    (directory / 'hosts.yml').write_text('stale invalid hosts')
+    (directory / 'config.yml').write_text('stale invalid config')
+    launch.shared.with_name('config.yml').write_text('version: 1\nprompt: disabled\neditor: refreshed\n')
+    launch.capture.unlink()
+    result, _ = launch('matsukaze-minden')
+    assert result.returncode == 0, result.stderr
+    second = capture(launch)
+    assert first['shell_dir'] == second['shell_dir']
+    assert second['login'] == 'matsukaze-minden'
+    assert all((directory / name).stat().st_ino != inode for name, inode in inodes.items())
+    assert (directory / 'config.yml').read_bytes() == launch.shared.with_name('config.yml').read_bytes()
+    assert {p.name for p in directory.iterdir()} == {'hosts.yml', 'config.yml'}

@@ -103,15 +103,8 @@ REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_IMPL_EFFORT-medium}")"
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
 
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
-if [[ -n "$CODEX_GITHUB_ACCOUNT" ]]; then
-  export CODEX_GITHUB_CONFIG_DIR
-  start_codex_with_github_account exec -C "$WORKDIR" -s workspace-write ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} "${CODEX_GITHUB_ARGS[@]}" -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1
-  # 以降の親の終了では消さない。監督役が Codex 終了後に削除する。
-  trap - EXIT HUP INT TERM
-else
-  nohup codex exec -C "$WORKDIR" -s workspace-write ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
-  CODEX_PID=$!
-fi
+nohup codex exec -C "$WORKDIR" -s workspace-write ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
+CODEX_PID=$!
 
 # 実効値（実際に起動された model / effort）はここでは解決しない・待たない。
 # state には要求値（requested_*）だけを即時に書き、run id を待たせず返す。

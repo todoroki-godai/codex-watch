@@ -146,7 +146,7 @@ extract_codex_log_header() {
   printf '%s\t%s\t%s\t%s\n' "$model" "$model_source" "$effort" "$effort_source"
 }
 
-# PJ が宣言した場合だけ gh の設定を run ごとに隔離する。共有設定・保管庫は変更しない。
+# PJ が宣言した場合だけ gh の設定を名義ごとに隔離する。共有設定・保管庫は変更しない。
 # 呼び出し元は STATE_DIR 作成直後に呼ぶ（review の gate/record にも同じ名義を使う）。
 prepare_codex_github_account() {
   CODEX_GITHUB_ACCOUNT=""
@@ -172,19 +172,31 @@ PYACCOUNT
     echo 'GitHub 名義の宣言が不正です（読取可能な英数字・ハイフンの1行、1〜39文字が必要）' >&2
     return 5
   fi
-  CODEX_GITHUB_CONFIG_DIR="$(mktemp -d "$STATE_DIR/gh-account.XXXXXX")"
+  CODEX_GITHUB_CONFIG_DIR="$STATE_DIR/gh-account/$CODEX_GITHUB_ACCOUNT"
+  (umask 077; mkdir -p "$CODEX_GITHUB_CONFIG_DIR")
+  chmod 700 "$CODEX_GITHUB_CONFIG_DIR"
   # STATE_DIR が相対パスでも、子シェルの cwd に依存しない絶対パスを渡す。
   CODEX_GITHUB_CONFIG_DIR="$(cd "$CODEX_GITHUB_CONFIG_DIR" && pwd)"
-  trap 'rm -rf -- "$CODEX_GITHUB_CONFIG_DIR"' EXIT
-  trap 'exit 129' HUP
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
-  printf 'github.com:\n    users:\n        %s:\n    user: %s\n' "$CODEX_GITHUB_ACCOUNT" "$CODEX_GITHUB_ACCOUNT" > "$CODEX_GITHUB_CONFIG_DIR/hosts.yml"
-  # config.yml が無い gh 2.89 は旧形式の移行を試す。共有 config.yml を読取りでコピー。
   local shared_config="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}/config.yml"
-  if [[ -f "$shared_config" ]]; then
-    cp "$shared_config" "$CODEX_GITHUB_CONFIG_DIR/config.yml"
-  fi
+  # 同じ名義の同時起動でも、読取側に途中のファイルを見せない。
+  python3 - "$CODEX_GITHUB_CONFIG_DIR" "$CODEX_GITHUB_ACCOUNT" "$shared_config" <<'PYCONFIG'
+import os, pathlib, sys, tempfile
+folder, account, shared = sys.argv[1:]
+config = pathlib.Path(shared)
+files = {
+    "hosts.yml": f"github.com:\n    users:\n        {account}:\n    user: {account}\n".encode(),
+    "config.yml": config.read_bytes() if config.is_file() else b"",
+}
+for name, data in files.items():
+    fd, temporary = tempfile.mkstemp(dir=folder, prefix="." + name + ".")
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(data)
+        os.replace(temporary, pathlib.Path(folder) / name)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+PYCONFIG
   export GH_CONFIG_DIR="$CODEX_GITHUB_CONFIG_DIR"
   # gh は環境の token を保管庫より優先する。値を読まず除去し、HTTP debug も抑止する。
   unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_DEBUG GH_HOST
@@ -209,35 +221,8 @@ print(value if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", va
   done
 }
 
-# state の追加は1項目だけ。宣言なしは空値、宣言ありは検証済み login。
+# 宣言ありの場合だけ、検証済み login を記録する。
 codex_github_account_state() {
-  printf 'github_account=%s\n' "$CODEX_GITHUB_ACCOUNT"
-}
-
-# 宣言ありの非同期 run の監督役。外側で nohup してこの関数を呼ぶ。
-# state の pid はこの監督役。Codex を待ち、終了コードを保ってから置き場を消す。
-# TERM/INT/HUP は子へ転送し、子が終了するまでは設定を残す。SIGKILL は trap 不可。
-run_codex_with_github_account() {
-  local child status
-  trap 'rm -rf -- "$CODEX_GITHUB_CONFIG_DIR"' EXIT
-  trap 'kill -HUP "$child" 2>/dev/null || :; wait "$child" || :; exit 129' HUP
-  trap 'kill -INT "$child" 2>/dev/null || :; wait "$child" || :; exit 130' INT
-  trap 'kill -TERM "$child" 2>/dev/null || :; wait "$child" || :; exit 143' TERM
-  # 非同期コマンドの stdin は明示しないと /dev/null に変わるため fd を保存する。
-  exec 3<&0
-  codex "$@" <&3 &
-  child=$!
-  if wait "$child"; then status=0; else status=$?; fi
-  exit "$status"
-}
-
-# nohup bash は共有関数を読み直すだけ。Codex 本体の PID と監督役を分離する。
-start_codex_with_github_account() {
-  exec 3<&0
-  nohup bash -c 'source "$1"; shift; run_codex_with_github_account "$@"' codex-github \
-    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh" "$@" <&3 &
-  # 呼び出し元が既存の state の pid 欄に書く。
-  # shellcheck disable=SC2034
-  CODEX_PID=$!
-  exec 3<&-
+  [[ -n "$CODEX_GITHUB_ACCOUNT" ]] && printf 'github_account=%s\n' "$CODEX_GITHUB_ACCOUNT"
+  return 0
 }
