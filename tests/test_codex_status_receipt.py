@@ -21,7 +21,7 @@ CODEX_STATUS = BIN_DIR / "codex-status"
 SHA = "a" * 40
 HASH = "1" * 64
 EMPTY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-EMPTY_HASH_NOTICE = "内容ハッシュ: 未コミット差分なし（発注時の作業ツリーはきれい・照合は commit の SHA で行われる）"
+EMPTY_HASH_NOTICE = "内容ハッシュ: 未コミット差分なし（空入力の sha256。計算失敗ではない＝失敗時は値が空になる）"
 
 # `kill -0 $PID` で「終了」と判定させるための到達不能 PID。
 # 終了済みの子プロセスの PID を使う実装は、並行実行時に OS が同じ PID を別プロセスへ

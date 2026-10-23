@@ -15,7 +15,7 @@
 | `codex-status <run id>` | 生存・経過・無音時間・判定行・ログ末尾を1画面で表示 |
 
 状態は `~/.codex-watch/<run id>.{log,report,state}` に残る。
-`content_hash` が空入力の SHA-256（`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`）なら、`codex-status` は「未コミット差分なし」と表示する（発注時の作業ツリーはきれい・照合は commit の SHA で行われる）。
+`content_hash` が空入力の SHA-256（`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`）なら、`codex-status` は「未コミット差分なし」と表示する（空入力の sha256。計算失敗ではない＝失敗時は値が空になる）。
 
 ## 設計の要点
 

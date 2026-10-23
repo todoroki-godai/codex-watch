@@ -78,8 +78,9 @@ show_one() {
   echo "判定行   : ${verdict_count}件（'tokens used' の完全一致）"
   echo "ログ     : $log (${size}B / ${lines}行)"
   echo "対象     : $workdir"
+  # 空入力の sha256（未コミット差分なし）
   if [[ "$content_hash" == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ]]; then
-    echo "内容ハッシュ: 未コミット差分なし（発注時の作業ツリーはきれい・照合は commit の SHA で行われる）"
+    echo "内容ハッシュ: 未コミット差分なし（空入力の sha256。計算失敗ではない＝失敗時は値が空になる）"
   fi
   # ログ先頭のヘッダーは「実際にこの run で使われた値」の証明ではない（文字列の形での
   # 抽出にすぎず、run/session の同一性は未検証・2026-09-08 レビュー巡3裁定）。
