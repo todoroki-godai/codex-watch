@@ -20,6 +20,8 @@ CODEX_STATUS = BIN_DIR / "codex-status"
 
 SHA = "a" * 40
 HASH = "1" * 64
+EMPTY_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+EMPTY_HASH_NOTICE = "内容ハッシュ: 未コミット差分なし（発注時の作業ツリーはきれい・照合は commit の SHA で行われる）"
 
 # `kill -0 $PID` で「終了」と判定させるための到達不能 PID。
 # 終了済みの子プロセスの PID を使う実装は、並行実行時に OS が同じ PID を別プロセスへ
@@ -69,6 +71,32 @@ def _run_status(state_dir: Path, run_id: str) -> subprocess.CompletedProcess:
         text=True,
         timeout=15,
     )
+
+
+@pytest.mark.parametrize("running", [False, True], ids=["finished", "running"])
+@pytest.mark.parametrize("content_hash", [
+    EMPTY_HASH, HASH, None, "", "x" + EMPTY_HASH, EMPTY_HASH + "x",
+    EMPTY_HASH[:-1] + "4",
+], ids=["empty-diff", "other", "legacy", "blank", "prefix", "suffix", "near-match"])
+def test_status_empty_content_hash_notice(tmp_path: Path, content_hash, running):
+    _write_finished_run(
+        tmp_path, "hash-notice", head_sha=SHA,
+        content_hash=content_hash or "",
+        # 本文に空ハッシュがあっても、表示の根拠は state の値だけ。
+        report_body=f"マージ可\nread_sha={SHA}\ncontent_hash={EMPTY_HASH}\n",
+    )
+    state = tmp_path / "hash-notice.state"
+    text = state.read_text()
+    if content_hash is None:
+        text = text.replace("content_hash=\n", "")
+    if running:
+        text = text.replace(f"pid={UNREACHABLE_PID}\n", f"pid={os.getpid()}\n")
+    state.write_text(text)
+
+    result = _run_status(tmp_path, "hash-notice")
+    assert result.returncode == 0, result.stdout + result.stderr
+    notice_lines = [line for line in result.stdout.splitlines() if line.startswith("内容ハッシュ")]
+    assert notice_lines == ([EMPTY_HASH_NOTICE] if content_hash == EMPTY_HASH else [])
 
 
 def test_status_shows_receipt_ok_line_on_matching_claim(tmp_path: Path):
