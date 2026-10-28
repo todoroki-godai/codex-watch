@@ -1,0 +1,224 @@
+........................................................................ [ 19%]
+....................................................ssss..s............. [ 38%]
+.................FFF.FFFF............................................... [ 57%]
+........................................................................ [ 77%]
+........................................................................ [ 96%]
+.............                                                            [100%]
+=================================== FAILURES ===================================
+_____________ test_cli_unset_model_and_effort_use_config_defaults ______________
+
+fake_bin = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_unset_model_and_effor0/fakebin')
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_unset_model_and_effor0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1091f69e0>
+
+    def test_cli_unset_model_and_effort_use_config_defaults(
+        fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("CODEX_REVIEW_MODEL", "inherited-model")
+        monkeypatch.setenv("CODEX_REVIEW_EFFORT", "high")
+        result = _run(
+            fake_bin, tmp_path, review_target="issue:example-org/example-repo#1",
+            review_goal_cut=VALID_GOAL_CUT, gate_check=False,
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
+E           足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
+E           取りうる値: 設計 / コード
+E           実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+E           選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
+E           実装コード（.ts/.py 等の差分）なら「コード」
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...r絶対パス> <promptfile> <label>\n  選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、\n  実装コード（.ts/.py 等の差分）なら「コード」\n').returncode
+
+tests/test_codex_review_cli.py:128: AssertionError
+______________________ test_cli_rejects_missing_goal_cut _______________________
+
+fake_bin = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_rejects_missing_goal_0/fakebin')
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_rejects_missing_goal_0')
+
+    def test_cli_rejects_missing_goal_cut(fake_bin: Path, tmp_path: Path):
+        result = _run(
+            fake_bin, tmp_path, review_target="issue:example-org/example-repo#1", review_goal_cut="", gate_check=True
+        )
+>       assert result.returncode == 4, result.stdout + result.stderr
+E       AssertionError: CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
+E           足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
+E           取りうる値: 設計 / コード
+E           実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+E           選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
+E           実装コード（.ts/.py 等の差分）なら「コード」
+E         
+E       assert 2 == 4
+E        +  where 2 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...r絶対パス> <promptfile> <label>\n  選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、\n  実装コード（.ts/.py 等の差分）なら「コード」\n').returncode
+
+tests/test_codex_review_cli.py:150: AssertionError
+_____________________ test_cli_passes_with_valid_goal_cut ______________________
+
+fake_bin = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_passes_with_valid_goa0/fakebin')
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_passes_with_valid_goa0')
+
+    def test_cli_passes_with_valid_goal_cut(fake_bin: Path, tmp_path: Path):
+        result = _run(
+            fake_bin,
+            tmp_path,
+            review_target="issue:example-org/example-repo#1",
+            review_goal_cut=VALID_GOAL_CUT,
+            gate_check=True,
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
+E           足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
+E           取りうる値: 設計 / コード
+E           実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+E           選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
+E           実装コード（.ts/.py 等の差分）なら「コード」
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...r絶対パス> <promptfile> <label>\n  選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、\n  実装コード（.ts/.py 等の差分）なら「コード」\n').returncode
+
+tests/test_codex_review_cli.py:167: AssertionError
+______________ test_cli_saved_goal_cut_state_line_is_single_line _______________
+
+fake_bin = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_saved_goal_cut_state_0/fakebin')
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_saved_goal_cut_state_0')
+
+    def test_cli_saved_goal_cut_state_line_is_single_line(fake_bin: Path, tmp_path: Path):
+        result = _run(
+            fake_bin,
+            tmp_path,
+            review_target="issue:example-org/example-repo#1",
+            review_goal_cut=VALID_GOAL_CUT,
+            gate_check=False,  # 実発注パス（fake codex/gh を使うので外部へは書き込まない）
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
+E           足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
+E           取りうる値: 設計 / コード
+E           実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+E           選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
+E           実装コード（.ts/.py 等の差分）なら「コード」
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...r絶対パス> <promptfile> <label>\n  選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、\n  実装コード（.ts/.py 等の差分）なら「コード」\n').returncode
+
+tests/test_codex_review_cli.py:200: AssertionError
+________ test_cli_dispatch_writes_content_hash_for_git_managed_workdir _________
+
+fake_bin = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_dispatch_writes_conte0/fakebin')
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_dispatch_writes_conte0')
+
+    def test_cli_dispatch_writes_content_hash_for_git_managed_workdir(fake_bin: Path, tmp_path: Path):
+        workdir = tmp_path / "workdir"
+        workdir.mkdir()
+        _init_git_repo(workdir)
+    
+        result = _run_in_git_workdir(
+            fake_bin,
+            tmp_path,
+            workdir,
+            review_target="issue:example-org/example-repo#1",
+            review_goal_cut=VALID_GOAL_CUT,
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
+E           足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
+E           取りうる値: 設計 / コード
+E           実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+E           選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
+E           実装コード（.ts/.py 等の差分）なら「コード」
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...r絶対パス> <promptfile> <label>\n  選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、\n  実装コード（.ts/.py 等の差分）なら「コード」\n').returncode
+
+tests/test_codex_review_cli.py:285: AssertionError
+_ test_cli_dispatch_content_hash_matches_recipe_extracted_from_generated_prompt _
+
+fake_bin = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_dispatch_content_hash0/fakebin')
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_dispatch_content_hash0')
+
+    def test_cli_dispatch_content_hash_matches_recipe_extracted_from_generated_prompt(
+        fake_bin: Path, tmp_path: Path
+    ):
+        """発注口が state へ書いた content_hash が、**実際に生成されたプロンプト（`effective_prompt`）
+        に埋め込まれたレシピ行**をそのまま bash で実行した値と一致することを、CRLFファイル・
+        ステージ済み変更・未追跡ファイルを含む fixture で確認する。
+    
+        レシピを人間がテストへ書き写すと二重管理になり同じ穴が空く（2026-09-21 レビュー2巡目
+        [Must]2）ため、プロンプト文字列から**正規表現で抜き出して**実行する（決め打ちの文字列を
+        テスト側に再入力しない）。この1本で M1（連結順 swap）/ M2（プロンプト側の `-uall` 脱落）/
+        M10（`git diff HEAD`→`git diff`）/ [Must]1（CRLF・非UTF-8）のいずれの変異も、
+        発注側と申告側どちらか片方だけが変わることで検出できる。
+        """
+        workdir = tmp_path / "workdir"
+        workdir.mkdir()
+        _init_git_repo(workdir)
+        # CRLF ファイル
+        (workdir / "crlf.txt").write_bytes(b"CRLF line\r\nsecond\r\n")
+        subprocess.run(["git", "add", "crlf.txt"], cwd=workdir, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "crlf"], cwd=workdir, check=True)
+        # ステージ済み変更
+        with (workdir / "crlf.txt").open("ab") as fh:
+            fh.write(b"staged change\r\n")
+        subprocess.run(["git", "add", "crlf.txt"], cwd=workdir, check=True)
+        # 未追跡ファイル
+        (workdir / "untracked.txt").write_text("untracked content\n")
+    
+        result = _run_in_git_workdir(
+            fake_bin,
+            tmp_path,
+            workdir,
+            review_target="issue:example-org/example-repo#1",
+            review_goal_cut=VALID_GOAL_CUT,
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
+E           足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
+E           取りうる値: 設計 / コード
+E           実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+E           選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
+E           実装コード（.ts/.py 等の差分）なら「コード」
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...r絶対パス> <promptfile> <label>\n  選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、\n  実装コード（.ts/.py 等の差分）なら「コード」\n').returncode
+
+tests/test_codex_review_cli.py:335: AssertionError
+_________ test_cli_dispatch_content_hash_changes_with_uncommitted_diff _________
+
+fake_bin = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_dispatch_content_hash1/fakebin')
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-589/test_cli_dispatch_content_hash1')
+
+    def test_cli_dispatch_content_hash_changes_with_uncommitted_diff(fake_bin: Path, tmp_path: Path):
+        """同一 HEAD でも未コミット差分があれば content_hash が変わることを、実発注口で確認する。"""
+        workdir = tmp_path / "workdir"
+        workdir.mkdir()
+        _init_git_repo(workdir)
+    
+        result_clean = _run_in_git_workdir(
+            fake_bin,
+            tmp_path,
+            workdir,
+            review_target="issue:example-org/example-repo#1",
+            review_goal_cut=VALID_GOAL_CUT,
+        )
+>       assert result_clean.returncode == 0, result_clean.stdout + result_clean.stderr
+E       AssertionError: CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
+E           足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
+E           取りうる値: 設計 / コード
+E           実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+E           選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
+E           実装コード（.ts/.py 等の差分）なら「コード」
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...r絶対パス> <promptfile> <label>\n  選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、\n  実装コード（.ts/.py 等の差分）なら「コード」\n').returncode
+
+tests/test_codex_review_cli.py:375: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_codex_review_cli.py::test_cli_unset_model_and_effort_use_config_defaults
+FAILED tests/test_codex_review_cli.py::test_cli_rejects_missing_goal_cut - As...
+FAILED tests/test_codex_review_cli.py::test_cli_passes_with_valid_goal_cut - ...
+FAILED tests/test_codex_review_cli.py::test_cli_saved_goal_cut_state_line_is_single_line
+FAILED tests/test_codex_review_cli.py::test_cli_dispatch_writes_content_hash_for_git_managed_workdir
+FAILED tests/test_codex_review_cli.py::test_cli_dispatch_content_hash_matches_recipe_extracted_from_generated_prompt
+FAILED tests/test_codex_review_cli.py::test_cli_dispatch_content_hash_changes_with_uncommitted_diff
+7 failed, 361 passed, 5 skipped in 46.33s

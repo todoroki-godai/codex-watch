@@ -1,0 +1,37 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________________ test_watch_rechecks_capacity_after_recovery __________________
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-599/test_watch_rechecks_capacity_a0')
+
+    def test_watch_rechecks_capacity_after_recovery(tmp_path):
+        # 2段階の模擬観測。sleep で次のログへ進め、kill -0 は生存→終了を返す。
+        # signal は一切送らず、CLI・ネットワークも呼ばない。
+        startup = tmp_path / "observe.sh"
+        startup.write_text('''
+    kill() { [[ ! -e "$CODEX_WATCH_DIR/advanced" ]]; }
+    sleep() {
+      printf 'codex\\nマージ可\\n回復しました\\ntokens used\\n42\\n' >> "$CODEX_WATCH_DIR/run.log"
+      touch "$CODEX_WATCH_DIR/advanced"
+    }
+    ''')
+        (tmp_path / "run.log").write_text(ERROR + "\n")
+        (tmp_path / "run.report").write_text("マージ可\n回復しました\n")
+        (tmp_path / "run.state").write_text(
+            f"run_id=run\npid={os.getpid()}\nlog={tmp_path / 'run.log'}\nstarted_at=0\n")
+        result = subprocess.run(
+            [str(ROOT / "bin/codex-watch"), "run", "9999999999", "60"],
+            env={**os.environ, "CODEX_WATCH_DIR": str(tmp_path), "BASH_ENV": str(startup)},
+            capture_output=True, text=True, timeout=15,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert (tmp_path / "advanced").exists()
+        assert result.stdout.count("CAPACITY:") == 1
+>       assert "VERDICT:" in result.stdout
+E       AssertionError: assert 'VERDICT:' in 'CAPACITY: run モデルの空き不足（容量不足・作業未完了）。別モデルでの再実行を検討してください\nEXIT: run モデルの空きがなくて停止（容量不足・作業未完了）。ログ: /private/var/folders/gg...-599/test_watch_rechecks_capacity_a0/run.log (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+E        +  where 'CAPACITY: run モデルの空き不足（容量不足・作業未完了）。別モデルでの再実行を検討してください\nEXIT: run モデルの空きがなくて停止（容量不足・作業未完了）。ログ: /private/var/folders/gg...-599/test_watch_rechecks_capacity_a0/run.log (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n' = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/mutation...tch_rechecks_capacity_a0/run.log (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n', stderr='').stdout
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:153: AssertionError
+=========================== short test summary info ============================
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_watch_rechecks_capacity_after_recovery
+1 failed, 76 deselected in 0.15s

@@ -1,0 +1,30 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____________ test_capacity_without_tokens_or_report[codex-watch] ______________
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-603/test_capacity_without_tokens_o0')
+cli = 'codex-watch'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    def test_capacity_without_tokens_or_report(tmp_path, cli):
+        output = run_cli(tmp_path, cli, ERROR + "\n", report="")
+>       assert "容量不足" in output
+E       assert '容量不足' in 'EXIT: run プロセス終了・報告ファイルが空（異常終了の疑い。tail -200 "/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsu...est_capacity_without_tokens_o0/run.log" を確認） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:93: AssertionError
+_____________ test_capacity_without_tokens_or_report[codex-status] _____________
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-603/test_capacity_without_tokens_o1')
+cli = 'codex-status'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    def test_capacity_without_tokens_or_report(tmp_path, cli):
+        output = run_cli(tmp_path, cli, ERROR + "\n", report="")
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 異常終了（判定行なし・ログを確認）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分1秒\n無音     : 0分0秒\n判定行   : ...sh が記録されていません）。判定不能のため受領不可とします。\n--- ログ末尾3行 ---\nERROR: Selected model is at capacity. Please try a different model.\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:93: AssertionError
+=========================== short test summary info ============================
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_capacity_without_tokens_or_report[codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_capacity_without_tokens_or_report[codex-status]
+2 failed, 75 deselected in 0.12s

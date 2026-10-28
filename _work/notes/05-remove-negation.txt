@@ -1,0 +1,136 @@
+............FFFF....                                                     [100%]
+=================================== FAILURES ===================================
+_ test_normal_or_noncapacity_is_not_capacity[ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-604/test_normal_or_noncapacity_is_12')
+cli = 'codex-watch'
+log = 'ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("log", [
+        "codex\nマージ可\n本文\ntokens used\n42\n",
+        "user\n" + ERROR + "\n依頼本文\ncodex\nマージ可\ntokens used\n42\n",
+        ERROR + "\n" + "x" * 200000 + "\ncodex\nマージ可\ntokens used\n42\n",
+        "codex\nモデルが at capacity となる例を説明しました\ntokens used\n42\n",
+        "ERROR: Permission denied\ntokens used\n42\n",
+        "ERROR: Request timed out\ntokens used\n42\n",
+        "ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n",
+        "ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n",
+        "user\n" + ERROR + "\n  quoted continuation\ncodex\nマージ可\ntokens used\n42\n",
+        "codex\nマージ可\ntokens used\n42\n引用: " + ERROR + "\n",
+    ])
+    def test_normal_or_noncapacity_is_not_capacity(tmp_path, cli, log):
+        output = run_cli(tmp_path, cli, log)
+>       assert "容量不足" not in output
+E       AssertionError: assert '容量不足' not in 'CAPACITY: r...nresolved)\n'
+E         
+E         '容量不足' is contained here:
+E           CAPACITY: run モデルの空き不足（容量不足・作業未完了）。別モデルでの再実行を検討してください
+E         ?                        ++++
+E           EXIT: run モデルの空きがなくて停止（容量不足・作業未完了）。ログ: /private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-604/test_normal_or_noncapacity_is_12/run.log (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:73: AssertionError
+_ test_normal_or_noncapacity_is_not_capacity[ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-604/test_normal_or_noncapacity_is_13')
+cli = 'codex-status'
+log = 'ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("log", [
+        "codex\nマージ可\n本文\ntokens used\n42\n",
+        "user\n" + ERROR + "\n依頼本文\ncodex\nマージ可\ntokens used\n42\n",
+        ERROR + "\n" + "x" * 200000 + "\ncodex\nマージ可\ntokens used\n42\n",
+        "codex\nモデルが at capacity となる例を説明しました\ntokens used\n42\n",
+        "ERROR: Permission denied\ntokens used\n42\n",
+        "ERROR: Request timed out\ntokens used\n42\n",
+        "ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n",
+        "ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n",
+        "user\n" + ERROR + "\n  quoted continuation\ncodex\nマージ可\ntokens used\n42\n",
+        "codex\nマージ可\ntokens used\n42\n引用: " + ERROR + "\n",
+    ])
+    def test_normal_or_noncapacity_is_not_capacity(tmp_path, cli, log):
+        output = run_cli(tmp_path, cli, log)
+>       assert "容量不足" not in output
+E       AssertionError: assert '容量不足' not in 'run_id   : ...s used\n42\n'
+E         
+E         '容量不足' is contained here:
+E           run_id   : run
+E           状態     : 異常終了（モデルの空きがなくて停止・容量不足・作業未完了）
+E         ?                            ++++
+E           プロセス : 終了 (pid=2147483647)
+E           経過     : 29886076分2秒...
+E         
+E         ...Full output truncated (10 lines hidden), use '-vv' to show
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:73: AssertionError
+_ test_normal_or_noncapacity_is_not_capacity[ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-604/test_normal_or_noncapacity_is_14')
+cli = 'codex-watch'
+log = 'ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("log", [
+        "codex\nマージ可\n本文\ntokens used\n42\n",
+        "user\n" + ERROR + "\n依頼本文\ncodex\nマージ可\ntokens used\n42\n",
+        ERROR + "\n" + "x" * 200000 + "\ncodex\nマージ可\ntokens used\n42\n",
+        "codex\nモデルが at capacity となる例を説明しました\ntokens used\n42\n",
+        "ERROR: Permission denied\ntokens used\n42\n",
+        "ERROR: Request timed out\ntokens used\n42\n",
+        "ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n",
+        "ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n",
+        "user\n" + ERROR + "\n  quoted continuation\ncodex\nマージ可\ntokens used\n42\n",
+        "codex\nマージ可\ntokens used\n42\n引用: " + ERROR + "\n",
+    ])
+    def test_normal_or_noncapacity_is_not_capacity(tmp_path, cli, log):
+        output = run_cli(tmp_path, cli, log)
+>       assert "容量不足" not in output
+E       AssertionError: assert '容量不足' not in 'CAPACITY: r...nresolved)\n'
+E         
+E         '容量不足' is contained here:
+E           CAPACITY: run モデルの空き不足（容量不足・作業未完了）。別モデルでの再実行を検討してください
+E         ?                        ++++
+E           EXIT: run モデルの空きがなくて停止（容量不足・作業未完了）。ログ: /private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-604/test_normal_or_noncapacity_is_14/run.log (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:73: AssertionError
+_ test_normal_or_noncapacity_is_not_capacity[ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-604/test_normal_or_noncapacity_is_15')
+cli = 'codex-status'
+log = 'ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("log", [
+        "codex\nマージ可\n本文\ntokens used\n42\n",
+        "user\n" + ERROR + "\n依頼本文\ncodex\nマージ可\ntokens used\n42\n",
+        ERROR + "\n" + "x" * 200000 + "\ncodex\nマージ可\ntokens used\n42\n",
+        "codex\nモデルが at capacity となる例を説明しました\ntokens used\n42\n",
+        "ERROR: Permission denied\ntokens used\n42\n",
+        "ERROR: Request timed out\ntokens used\n42\n",
+        "ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n",
+        "ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n",
+        "user\n" + ERROR + "\n  quoted continuation\ncodex\nマージ可\ntokens used\n42\n",
+        "codex\nマージ可\ntokens used\n42\n引用: " + ERROR + "\n",
+    ])
+    def test_normal_or_noncapacity_is_not_capacity(tmp_path, cli, log):
+        output = run_cli(tmp_path, cli, log)
+>       assert "容量不足" not in output
+E       AssertionError: assert '容量不足' not in 'run_id   : ...s used\n42\n'
+E         
+E         '容量不足' is contained here:
+E           run_id   : run
+E           状態     : 異常終了（モデルの空きがなくて停止・容量不足・作業未完了）
+E         ?                            ++++
+E           プロセス : 終了 (pid=2147483647)
+E           経過     : 29886076分2秒...
+E         
+E         ...Full output truncated (10 lines hidden), use '-vv' to show
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:73: AssertionError
+=========================== short test summary info ============================
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_normal_or_noncapacity_is_not_capacity[ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_normal_or_noncapacity_is_not_capacity[ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n-codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_normal_or_noncapacity_is_not_capacity[ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_normal_or_noncapacity_is_not_capacity[ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n-codex-status]
+4 failed, 16 passed, 57 deselected in 1.13s

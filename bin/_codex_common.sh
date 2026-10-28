@@ -224,3 +224,47 @@ codex_github_account_state() {
   [[ -n "$CODEX_GITHUB_ACCOUNT" ]] && printf 'github_account=%s\n' "$CODEX_GITHUB_ACCOUNT"
   return 0
 }
+
+# 末尾の CLI ERROR ブロックと容量の表現を組み合わせる（全文の単語検索ではない）。
+# プロンプト・ツール出力・途中で回復したエラーは、後続の本文で候補を解除する。
+# tokens used と数値は失敗時にも出るため、直前のエラー候補を保持する。
+# 容量文面の既知の表現に対応するが、任意の将来文面は保証しない。
+# 既存の report 抽出と同じ user/codex/hook 区間で本文の引用を外す。
+# ただし stdout/stderr は起動側で混在保存され、終了コードも記録されていない。
+# 平文マーカー自体を引用できるため迂回可能な advisory（既知の種別のみ検出）。
+# hook 区切りを含む引用の誤検出、本文区間内に割り込む実エラーの非検出は残る。
+# 出力元の真正性は保証しない。保証には起動側の構造化出力等への移行が必要。
+codex_log_has_capacity_error() {
+  [[ -r "$1" ]] || return 1
+  awk '
+    function capacity(text) {
+      # 否定された容量表現は、別原因のエラーを容量不足にしない。
+      if (text ~ /(not|no[[:space:]]+longer)[[:space:]]+(at[[:space:]]+capacity|overloaded)/) return 0
+      return (text ~ /at[[:space:]]+capacity/ ||
+        (text ~ /model/ && text ~ /capacity|overload|no[[:space:]]+(free[[:space:]]+)?slots/))
+    }
+    {
+      sub(/\r$/, "")
+      gsub(sprintf("%c", 27) "\\[[0-9;]*[[:alpha:]]", "")
+      if ($0 == "user" || $0 == "codex") {
+        body=1; result=0; pending=0; block=""; summary=0; next
+      }
+      if ($0 ~ /^hook: /) { body=0; result=0; pending=0; block=""; summary=0; next }
+      if (body) next
+      if ($0 ~ /^[[:space:]]*$/) next
+      if ($0 == "tokens used") { result=pending; pending=0; block=""; summary=1; next }
+      if (summary && $0 ~ /^[0-9,]+$/) { summary=0; next }
+      summary=0; result=0
+      line=tolower($0)
+      if (line ~ /^error:[[:space:]]*/) {
+        block=line
+        pending = pending || capacity(block)
+      } else if (block != "" && line ~ /^[[:space:]]+/) {
+        sub(/^[[:space:]]+/, "", line)
+        block=block " " line
+        pending = pending || capacity(block)
+      } else { pending=0; block="" }
+    }
+    END { exit !(result || pending) }
+  ' "$1"
+}

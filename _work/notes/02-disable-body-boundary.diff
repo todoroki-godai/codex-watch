@@ -1,0 +1,11 @@
+--- bin/_codex_common.sh
++++ bin/_codex_common.sh
+@@ -250,7 +250,7 @@
+         body=1; result=0; pending=0; block=""; summary=0; next
+       }
+       if ($0 ~ /^hook: /) { body=0; result=0; pending=0; block=""; summary=0; next }
+-      if (body) next
++      if (0) next
+       if ($0 ~ /^[[:space:]]*$/) next
+       if ($0 == "tokens used") { result=pending; pending=0; block=""; summary=1; next }
+       if (summary && $0 ~ /^[0-9,]+$/) { summary=0; next }

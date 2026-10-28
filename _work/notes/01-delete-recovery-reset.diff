@@ -1,0 +1,11 @@
+--- bin/codex-watch
++++ bin/codex-watch
+@@ -65,7 +65,7 @@
+     fi
+     capacity_reported=1
+   else
+-    capacity_reported=0
++    :
+   fi
+ 
+   # FILTERED は VERDICT より先に判定する。'tokens used' はフィルタ遮断時にも出力されるため

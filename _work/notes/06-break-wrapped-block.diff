@@ -1,0 +1,11 @@
+--- bin/_codex_common.sh
++++ bin/_codex_common.sh
+@@ -259,7 +259,7 @@
+       if (line ~ /^error:[[:space:]]*/) {
+         block=line
+         pending = pending || capacity(block)
+-      } else if (block != "" && line ~ /^[[:space:]]+/) {
++      } else if (block != "" && 0) {
+         sub(/^[[:space:]]+/, "", line)
+         block=block " " line
+         pending = pending || capacity(block)

@@ -1,0 +1,8 @@
+01-delete-recovery-reset 1 1 failed, 76 deselected in 0.15s
+02-disable-body-boundary 1 4 failed, 73 deselected in 0.33s
+03-hook-meaning-reversal 1 36 failed, 41 deselected in 2.47s
+04-always-negative-detector 1 2 failed, 75 deselected in 0.12s
+05-remove-negation 1 4 failed, 16 passed, 57 deselected in 1.13s
+06-break-wrapped-block 1 8 failed, 28 passed, 41 deselected in 1.37s
+07-swap-summary-state 1 32 failed, 4 passed, 41 deselected in 2.05s
+positive-control 0 77 passed in 3.16s
