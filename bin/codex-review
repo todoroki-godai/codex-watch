@@ -20,6 +20,52 @@ LABEL="${3:-review}"
 [[ "$WORKDIR" = /* ]] || { echo "対象ディレクトリは絶対パスで指定してください: $WORKDIR" >&2; exit 2; }
 [[ -d "$WORKDIR" ]] || { echo "対象ディレクトリがありません: $WORKDIR" >&2; exit 2; }
 [[ -f "$PROMPT_FILE" ]] || { echo "プロンプトファイルがありません: $PROMPT_FILE" >&2; exit 2; }
+
+# 巡の履歴の「種別」列（review.md / review-gate SKILL.md 正典）を必須化する。
+# なぜ要るか: 種別を渡す口が無いまま record_round() 側のデフォルト値（"コード"）へ常時
+# フォールバックしていたため、設計レビューを出しても履歴に「コード」と記録され続けていた
+# （2026-09-25 #890/#728 実測）。デフォルト値を残す設計そのものが温床だったので、
+# 未指定は exit 2 で止める（fail-closed）。既定値には戻さない。
+case "${CODEX_REVIEW_KIND_LABEL:-}" in
+  設計|コード) ;;
+  *)
+    cat >&2 <<'EOF'
+CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
+  足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
+  取りうる値: 設計 / コード
+  実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+  選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
+  実装コード（.ts/.py 等の差分）なら「コード」
+EOF
+    exit 2
+    ;;
+esac
+# 画像を渡す口（2026-10-28 本人決定: 見本と実画面の見比べを Codex に渡す）。
+# CODEX_REVIEW_IMAGES に画像パスを1行1件で渡すと `codex exec` に `-i <パス>` を1件ずつ足す。
+# 未設定・空（空行だけを含む）なら何も足さず、起動の行は従来と同一。
+# 検証は巡数ゲートの記録・状態ファイル作成より前に行い、外れたら exit 2 で止める。
+# 受理: 絶対パス（先頭が `/`。codex exec -C で作業先が変わるため相対は検査と読み先がずれる）で、実在する普通のファイル（リンク先を含む）で拡張子が png/jpg/jpeg/webp（大小文字不問）。
+# 拒否: パスの先頭が `-`（オプションと誤読される）、`,` を含む（codex の -i は `,` で値を分割する）。
+# 空白を含むパスは配列の1要素のまま渡るので拒否しない。
+IMAGE_ARGS=()
+if [[ -n "${CODEX_REVIEW_IMAGES:-}" ]]; then
+  while IFS= read -r _img || [[ -n "$_img" ]]; do
+    [[ -z "$_img" ]] && continue
+    _ext="$(printf '%s' "${_img##*.}" | tr '[:upper:]' '[:lower:]')"
+    case "$_ext" in
+      png|jpg|jpeg|webp) ;;
+      *) echo "CODEX_REVIEW_IMAGES: 拡張子が png/jpg/jpeg/webp ではありません: $_img" >&2; exit 2 ;;
+    esac
+    case "$_img" in
+      -*) echo "CODEX_REVIEW_IMAGES: パスの先頭が - です（オプションと誤読されます）: $_img" >&2; exit 2 ;;
+      *,*) echo "CODEX_REVIEW_IMAGES: パスに , を含められません（codex の -i が分割します）: $_img" >&2; exit 2 ;;
+      /*) ;;
+      *) echo "CODEX_REVIEW_IMAGES: 絶対パスで指定してください: $_img" >&2; exit 2 ;;
+    esac
+    [[ -f "$_img" ]] || { echo "CODEX_REVIEW_IMAGES: 実在する普通のファイルではありません: $_img" >&2; exit 2; }
+    IMAGE_ARGS+=(-i "$_img")
+  done <<< "$CODEX_REVIEW_IMAGES"
+fi
 # state は 1行1キーの行形式なので、改行相当の文字を含む値は偽の行を注入できる（実測: パスに
 # skills_suppressed=no を仕込むと state に2行出る／2026-09-03 codex レビュー Must1: `\n` だけの
 # 判定だと `\r` 等の別の行境界文字で同じ注入ができた）。`\n`/`\r` 等を個別に列挙すると回避手段が
@@ -43,6 +89,7 @@ done
 
 STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
 mkdir -p "$STATE_DIR"
+prepare_codex_github_account
 
 # 巡数ゲート（review-round-cap.md / design-gate-v3.md）。
 # なぜ要るか: レビューの発注は無制限に繰り返すと軍拡競争になる（rule 出所の #415/#537/#538）。
@@ -166,7 +213,8 @@ REQUESTED_MODEL="$(sanitize_single_line "${CODEX_REVIEW_MODEL:-}")"
 REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_REVIEW_EFFORT:-}")"
 [[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
-nohup codex exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
+[[ "${#IMAGE_ARGS[@]}" -gt 0 ]] && CODEX_CLI_ARGS+=("${IMAGE_ARGS[@]}")
+nohup codex exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
 # 実効値（実際に起動された model / effort）はここでは解決しない・待たない。
@@ -216,7 +264,7 @@ case "$GATE_TARGET" in
       CONTENT_HASH_ERR="$(mktemp "$STATE_DIR/$RUN_ID.content_hash_err.XXXXXX")"
       CONTENT_HASH="$(python3 "$GATE_PY" content-hash --workdir "$WORKDIR" 2>"$CONTENT_HASH_ERR" || true)"
       if [[ -z "$CONTENT_HASH" ]]; then
-        echo "警告: content_hash の計算に失敗しました（run_id=$RUN_ID）。このレビューは受領時に機械照合で拒否されます。理由:" >&2
+        echo "警告: content_hash の計算に失敗しました（run_id=${RUN_ID}）。このレビューは受領時に機械照合で拒否されます。理由:" >&2
         cat "$CONTENT_HASH_ERR" >&2
       fi
       rm -f "$CONTENT_HASH_ERR"
@@ -233,6 +281,7 @@ esac
   echo "prompt=$PROMPT_FILE"
   echo "effective_prompt=$EFFECTIVE_PROMPT"
   echo "skills_suppressed=$SKILLS_SUPPRESSED"
+  codex_github_account_state
   echo "requested_model=$REQUESTED_MODEL"
   echo "requested_effort=$REQUESTED_EFFORT"
   echo "prompt_bytes=$(wc -c < "$EFFECTIVE_PROMPT" | tr -d ' ')"
@@ -245,10 +294,11 @@ esac
   echo "goal_cut=$GATE_GOAL_CUT"
   echo "mandatory_gate=$GATE_MANDATORY_GATE"
   echo "reviewer=$LABEL"
+  echo "kind_label=$CODEX_REVIEW_KIND_LABEL"
 } > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
 
 # 巡行を本文へ追記する（none:/bypass は record 側が無害にスキップする）。失敗しても
 # 発注自体は既に開始済みなので dispatch を殺さない（stderr へ警告のみ）。
-python3 "$GATE_PY" record --state-file "$STATE_FILE" >&2 || echo "巡行の本文追記に失敗しました（run_id=$RUN_ID）。手動確認してください" >&2
+python3 "$GATE_PY" record --state-file "$STATE_FILE" >&2 || echo "巡行の本文追記に失敗しました（run_id=${RUN_ID}）。手動確認してください" >&2
 
 echo "$RUN_ID"

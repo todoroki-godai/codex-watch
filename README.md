@@ -26,6 +26,11 @@
 - **スキル定義の読み込みを抑止する。**`codex-review` は発注プロンプトの先頭に、
   グローバルなスキル定義を読まないよう指示する前置きを自動で足す（対象リポジトリ内のファイルは読んでよい）。
   外すときは `CODEX_REVIEW_ALLOW_SKILLS=1`。
+- **Codex にブラウザを使わせるときは `templates/browser-cdp.md` の定型を使う**（囲いを外さない。頭が先に Chromium を起こし、Codex は localhost の CDP に繋ぐだけ。2026-10-27 実測）。囲いを外す起動口は作らない。
+- **`codex-review` に画像を渡すには `CODEX_REVIEW_IMAGES` に画像の絶対パスを1行1件で書く**（絶対パスで渡す。相対パスは拒否される）（見本と実画面の見比べ用）。1件ずつ `codex exec -i <パス>` になり、与えた順に付く。
+  未設定・空なら起動の行は従来と同一。受理は実在する普通のファイルで拡張子が png/jpg/jpeg/webp のものだけ。
+  外れが1件でもあれば、巡数ゲートの記録・状態ファイルより前に理由を出して exit 2 で止める（先頭が `-` のパスと `,` を含むパスも拒否。空白を含むパスは可）。
+  モデルは既存の `CODEX_REVIEW_MODEL`（例: `gpt-6.1-terra`）で指定する。新しい口は無い。
 - **`codex-impl` は共有 checkout への書き込みを拒否する**（未レビューのコードがそのまま動く状態を作らないため）。
   例外口は `CODEX_IMPL_ALLOW_MAIN=1`。
 - **`codex-impl` の既定モデルは `gpt-6.1-sol`。** `CODEX_IMPL_MODEL` で上書きできる。
@@ -42,6 +47,27 @@
   ```
   例: `REVIEW_GOAL_CUT="30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26"`
   未記入・形式不一致・数値部が 0・取得日が不正な日付は、いずれも発注をブロックする。
+
+## PJ ごとの GitHub 名義
+
+対象作業場所の git 最上位に `.claude/codex-github-account` を置き、
+`matsukaze-minden` などの login を1行で宣言する（資格情報は書かない）。
+前後の空白は無視する。宣言がない場合は既存の起動経路を使う。
+
+宣言がある場合、状態ディレクトリ内の常設 `gh-account/<login>/` を使い、
+保管庫から得た `gh api user` の login が一致するまで起動しない。
+中身は宣言名義だけの hosts.yml（トークンなし）と固定値 `version: "1"\n` の config.yml。
+起動ごとに一時ファイルへ書き、rename で置き換える。終了後も残し、review の巡の記録に使う。
+`codex-review` の巡の記録（PR・課題の本文の GET・PATCH）も宣言した名義で行う。
+共有 `hosts.yml` は変更しない。環境の認証上書きも除去し、Codex の子シェルには
+`-c shell_environment_policy.set.GH_CONFIG_DIR=...` で同じ設定を渡す。
+状態ファイルに `github_account=` の行が無ければ宣言なし、値があれば宣言・検証済み。
+状態の PID は Codex プロセスを指す。
+
+宣言した名義が保管庫に無く、しかも現在の共有名義と同じ場合は、事前の照合では見分けられない（前回確認時の該当は0件）。
+宣言ファイルは git に commit しないと worktree に届かず、宣言なしに戻る。
+
+検証手順と実測は [tests/github-account-verification.md](tests/github-account-verification.md)。
 
 ## 必要なもの
 

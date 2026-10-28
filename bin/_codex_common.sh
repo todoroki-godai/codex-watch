@@ -145,3 +145,82 @@ extract_codex_log_header() {
   fi
   printf '%s\t%s\t%s\t%s\n' "$model" "$model_source" "$effort" "$effort_source"
 }
+
+# PJ が宣言した場合だけ gh の設定を名義ごとに隔離する。共有設定・保管庫は変更しない。
+# 呼び出し元は STATE_DIR 作成直後に呼ぶ（review の gate/record にも同じ名義を使う）。
+prepare_codex_github_account() {
+  CODEX_GITHUB_ACCOUNT=""
+  CODEX_GITHUB_CONFIG_DIR=""
+  CODEX_GITHUB_ARGS=()
+  local root declaration actual
+  root="$(git -C "$WORKDIR" rev-parse --show-toplevel 2>/dev/null || true)"
+  [[ -n "$root" ]] || return 0
+  declaration="$root/.claude/codex-github-account"
+  [[ -e "$declaration" || -L "$declaration" ]] || return 0
+  if ! CODEX_GITHUB_ACCOUNT="$(python3 - "$declaration" <<'PYACCOUNT'
+import pathlib, re, sys
+try:
+    account = pathlib.Path(sys.argv[1]).read_text().strip()
+except (OSError, UnicodeError):
+    sys.exit(1)
+# GitHub login は最大39文字。空値・内部空白・複数行・資格情報らしき値を拒否。
+if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", account):
+    sys.exit(1)
+print(account)
+PYACCOUNT
+)"; then
+    echo 'GitHub 名義の宣言が不正です（読取可能な英数字・ハイフンの1行、1〜39文字が必要）' >&2
+    return 5
+  fi
+  CODEX_GITHUB_CONFIG_DIR="$STATE_DIR/gh-account/$CODEX_GITHUB_ACCOUNT"
+  (umask 077; mkdir -p "$CODEX_GITHUB_CONFIG_DIR")
+  chmod 700 "$CODEX_GITHUB_CONFIG_DIR"
+  # STATE_DIR が相対パスでも、子シェルの cwd に依存しない絶対パスを渡す。
+  CODEX_GITHUB_CONFIG_DIR="$(cd "$CODEX_GITHUB_CONFIG_DIR" && pwd)"
+  # 同じ名義の同時起動でも、読取側に途中のファイルを見せない。
+  python3 - "$CODEX_GITHUB_CONFIG_DIR" "$CODEX_GITHUB_ACCOUNT" <<'PYCONFIG'
+import os, pathlib, sys, tempfile
+folder, account = sys.argv[1:]
+files = {
+    "hosts.yml": f"github.com:\n    users:\n        {account}:\n    user: {account}\n".encode(),
+    "config.yml": b'version: "1"\n',
+}
+for name, data in files.items():
+    fd, temporary = tempfile.mkstemp(dir=folder, prefix="." + name + ".")
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(data)
+        os.replace(temporary, pathlib.Path(folder) / name)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+PYCONFIG
+  export GH_CONFIG_DIR="$CODEX_GITHUB_CONFIG_DIR"
+  # gh は環境の token を保管庫より優先する。値を読まず除去し、HTTP debug も抑止する。
+  unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_DEBUG GH_HOST
+  if ! actual="$(gh api --hostname github.com user --jq .login 2>/dev/null | python3 -c '
+import re, sys
+value = sys.stdin.read().strip()
+print(value if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", value) else "(invalid-or-empty)")
+')"; then
+    printf 'GitHub 名義の検証失敗: requested=%s returned=%s (gh failed)\n' "$CODEX_GITHUB_ACCOUNT" "${actual:-(none)}" >&2
+    return 5
+  fi
+  if [[ "$actual" != "$CODEX_GITHUB_ACCOUNT" ]]; then
+    printf 'GitHub 名義の不一致: requested=%s returned=%s\n' "$CODEX_GITHUB_ACCOUNT" "$actual" >&2
+    return 5
+  fi
+  # inherit=core/none や include_only に左右されず、子のシェルにも固定値を渡す。
+  CODEX_GITHUB_ARGS=(-c "$(python3 -c 'import json,sys; print("shell_environment_policy.set.GH_CONFIG_DIR=" + json.dumps(sys.argv[1]))' "$GH_CONFIG_DIR")")
+  # config.toml の set 経由で資格情報が再注入されることも防ぐ（空文字は gh が無視する）。
+  local name
+  for name in GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_DEBUG GH_HOST; do
+    CODEX_GITHUB_ARGS+=(-c "shell_environment_policy.set.$name=\"\"")
+  done
+}
+
+# 宣言ありの場合だけ、検証済み login を記録する。
+codex_github_account_state() {
+  [[ -n "$CODEX_GITHUB_ACCOUNT" ]] && printf 'github_account=%s\n' "$CODEX_GITHUB_ACCOUNT"
+  return 0
+}
