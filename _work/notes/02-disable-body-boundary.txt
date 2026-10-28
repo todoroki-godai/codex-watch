@@ -1,0 +1,96 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ test_advisory_bypassable_role_section_error_quote_is_not_capacity[codex-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-600/test_advisory_bypassable_role_0')
+cli = 'codex-watch', role = 'codex'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("role", ["codex", "user"])
+    def test_advisory_bypassable_role_section_error_quote_is_not_capacity(tmp_path, cli, role):
+        # 平文区間の推定は迂回可能。通常の role 内の引用を CLI 障害にしない。
+        output = run_cli(tmp_path, cli,
+            role + "\nマージ可\n引用例:\nERROR: Selected model is at capacity.\ntokens used\n42\n")
+>       assert "容量不足" not in output
+E       AssertionError: assert '容量不足' not in 'CAPACITY: r...nresolved)\n'
+E         
+E         '容量不足' is contained here:
+E           CAPACITY: run モデルの空き不足（容量不足・作業未完了）。別モデルでの再実行を検討してください
+E         ?                        ++++
+E           EXIT: run モデルの空きがなくて停止（容量不足・作業未完了）。ログ: /private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-600/test_advisory_bypassable_role_0/run.log (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:120: AssertionError
+_ test_advisory_bypassable_role_section_error_quote_is_not_capacity[codex-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-600/test_advisory_bypassable_role_1')
+cli = 'codex-status', role = 'codex'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("role", ["codex", "user"])
+    def test_advisory_bypassable_role_section_error_quote_is_not_capacity(tmp_path, cli, role):
+        # 平文区間の推定は迂回可能。通常の role 内の引用を CLI 障害にしない。
+        output = run_cli(tmp_path, cli,
+            role + "\nマージ可\n引用例:\nERROR: Selected model is at capacity.\ntokens used\n42\n")
+>       assert "容量不足" not in output
+E       AssertionError: assert '容量不足' not in 'run_id   : ...s used\n42\n'
+E         
+E         '容量不足' is contained here:
+E           run_id   : run
+E           状態     : 異常終了（モデルの空きがなくて停止・容量不足・作業未完了）
+E         ?                            ++++
+E           プロセス : 終了 (pid=2147483647)
+E           経過     : 29886075分58秒...
+E         
+E         ...Full output truncated (12 lines hidden), use '-vv' to show
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:120: AssertionError
+_ test_advisory_bypassable_role_section_error_quote_is_not_capacity[user-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-600/test_advisory_bypassable_role_2')
+cli = 'codex-watch', role = 'user'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("role", ["codex", "user"])
+    def test_advisory_bypassable_role_section_error_quote_is_not_capacity(tmp_path, cli, role):
+        # 平文区間の推定は迂回可能。通常の role 内の引用を CLI 障害にしない。
+        output = run_cli(tmp_path, cli,
+            role + "\nマージ可\n引用例:\nERROR: Selected model is at capacity.\ntokens used\n42\n")
+>       assert "容量不足" not in output
+E       AssertionError: assert '容量不足' not in 'CAPACITY: r...nresolved)\n'
+E         
+E         '容量不足' is contained here:
+E           CAPACITY: run モデルの空き不足（容量不足・作業未完了）。別モデルでの再実行を検討してください
+E         ?                        ++++
+E           EXIT: run モデルの空きがなくて停止（容量不足・作業未完了）。ログ: /private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-600/test_advisory_bypassable_role_2/run.log (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:120: AssertionError
+_ test_advisory_bypassable_role_section_error_quote_is_not_capacity[user-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-600/test_advisory_bypassable_role_3')
+cli = 'codex-status', role = 'user'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("role", ["codex", "user"])
+    def test_advisory_bypassable_role_section_error_quote_is_not_capacity(tmp_path, cli, role):
+        # 平文区間の推定は迂回可能。通常の role 内の引用を CLI 障害にしない。
+        output = run_cli(tmp_path, cli,
+            role + "\nマージ可\n引用例:\nERROR: Selected model is at capacity.\ntokens used\n42\n")
+>       assert "容量不足" not in output
+E       AssertionError: assert '容量不足' not in 'run_id   : ...s used\n42\n'
+E         
+E         '容量不足' is contained here:
+E           run_id   : run
+E           状態     : 異常終了（モデルの空きがなくて停止・容量不足・作業未完了）
+E         ?                            ++++
+E           プロセス : 終了 (pid=2147483647)
+E           経過     : 29886075分58秒...
+E         
+E         ...Full output truncated (12 lines hidden), use '-vv' to show
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:120: AssertionError
+=========================== short test summary info ============================
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_advisory_bypassable_role_section_error_quote_is_not_capacity[codex-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_advisory_bypassable_role_section_error_quote_is_not_capacity[codex-codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_advisory_bypassable_role_section_error_quote_is_not_capacity[user-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_advisory_bypassable_role_section_error_quote_is_not_capacity[user-codex-status]
+4 failed, 73 deselected in 0.33s

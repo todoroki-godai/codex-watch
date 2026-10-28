@@ -1,0 +1,10 @@
+--- bin/_codex_common.sh
++++ bin/_codex_common.sh
+@@ -265,6 +265,6 @@
+         pending = pending || capacity(block)
+       } else { pending=0; block="" }
+     }
+-    END { exit !(result || pending) }
++    END { exit 1 }
+   ' "$1"
+ }

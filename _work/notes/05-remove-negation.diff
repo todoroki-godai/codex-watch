@@ -1,0 +1,11 @@
+--- bin/_codex_common.sh
++++ bin/_codex_common.sh
+@@ -239,7 +239,7 @@
+   awk '
+     function capacity(text) {
+       # 否定された容量表現は、別原因のエラーを容量不足にしない。
+-      if (text ~ /(not|no[[:space:]]+longer)[[:space:]]+(at[[:space:]]+capacity|overloaded)/) return 0
++      if (0) return 0
+       return (text ~ /at[[:space:]]+capacity/ ||
+         (text ~ /model/ && text ~ /capacity|overload|no[[:space:]]+(free[[:space:]]+)?slots/))
+     }

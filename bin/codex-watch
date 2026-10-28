@@ -58,10 +58,14 @@ while :; do
   now=$(date +%s)
 
   # 容量不足も tokens used / 部分 report より優先する。
-  if [[ "$capacity_reported" -eq 0 ]] && codex_log_has_capacity_error "$LOG"; then
-    echo "CAPACITY: $RUN_ID モデルの空き不足（容量不足・作業未完了）。別モデルでの再実行を検討してください"
+  # 過去の通知を最終診断に固定しない。回復時は共有判定に従って解除する。
+  if codex_log_has_capacity_error "$LOG"; then
+    if [[ "$capacity_reported" -eq 0 ]]; then
+      echo "CAPACITY: $RUN_ID モデルの空き不足（容量不足・作業未完了）。別モデルでの再実行を検討してください"
+    fi
     capacity_reported=1
-    verdict_reported=1
+  else
+    capacity_reported=0
   fi
 
   # FILTERED は VERDICT より先に判定する。'tokens used' はフィルタ遮断時にも出力されるため
@@ -74,7 +78,7 @@ while :; do
     fi
   fi
 
-  if [[ -f "$LOG" ]] && [[ "$verdict_reported" -eq 0 ]]; then
+  if [[ -f "$LOG" && "$capacity_reported" -eq 0 && "$verdict_reported" -eq 0 ]]; then
     if [[ "$(grep -c '^tokens used$' "$LOG" || true)" -gt 0 ]]; then
       echo "VERDICT: $RUN_ID 判定行が出ました（codex-status $RUN_ID で本文を確認）"
       verdict_reported=1

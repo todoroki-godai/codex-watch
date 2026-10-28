@@ -1,0 +1,836 @@
+FFFFFFFF....FFFFFFFFFFFFFFFFFFFFFFFF                                     [100%]
+=================================== FAILURES ===================================
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n--codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi0')
+cli = 'codex-watch', report = ''
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（0 行 / 判定: 判定行を特定できず（先頭行: 途中経過）） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n--codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi1')
+cli = 'codex-status', report = ''
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分4秒\n無音     : 0分0秒\n判定行   : 1件（'toke...state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: 判定行を特定できず（先頭行: 途中経過） / report (0 行) ---\n途中経過"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi2')
+cli = 'codex-watch', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（2 行 / 判定: マージ可） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi3')
+cli = 'codex-status', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分5秒\n無音     : 0分1秒\n判定行   : 1件（'toke...可: 旧形式の state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: マージ可 / report (2 行) ---\nマージ可\n途中結果\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n--codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi4')
+cli = 'codex-watch', report = ''
+ending = 'ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（0 行 / 判定: 判定行を特定できず（先頭行: 途中経過）） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n--codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi5')
+cli = 'codex-status', report = ''
+ending = 'ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分5秒\n無音     : 0分0秒\n判定行   : 1件（'toke...state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: 判定行を特定できず（先頭行: 途中経過） / report (0 行) ---\n途中経過"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi6')
+cli = 'codex-watch', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（2 行 / 判定: マージ可） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi7')
+cli = 'codex-status', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分5秒\n無音     : 0分0秒\n判定行   : 1件（'toke...可: 旧形式の state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: マージ可 / report (2 行) ---\nマージ可\n途中結果\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Service at capacity.\ntokens used\n42\n--codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi12')
+cli = 'codex-watch', report = ''
+ending = 'ERROR: Service at capacity.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（0 行 / 判定: 判定行を特定できず（先頭行: 途中経過）） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Service at capacity.\ntokens used\n42\n--codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi13')
+cli = 'codex-status', report = ''
+ending = 'ERROR: Service at capacity.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分5秒\n無音     : 0分0秒\n判定行   : 1件（'toke...state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: 判定行を特定できず（先頭行: 途中経過） / report (0 行) ---\n途中経過"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Service at capacity.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi14')
+cli = 'codex-watch', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Service at capacity.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（2 行 / 判定: マージ可） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Service at capacity.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi15')
+cli = 'codex-status', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Service at capacity.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分5秒\n無音     : 0分0秒\n判定行   : 1件（'toke...可: 旧形式の state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: マージ可 / report (2 行) ---\nマージ可\n途中結果\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n--codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi16')
+cli = 'codex-watch', report = ''
+ending = 'ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（0 行 / 判定: 判定行を特定できず（先頭行: 途中経過）） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n--codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi17')
+cli = 'codex-status', report = ''
+ending = 'ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分5秒\n無音     : 0分0秒\n判定行   : 1件（'toke...state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: 判定行を特定できず（先頭行: 途中経過） / report (0 行) ---\n途中経過"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi18')
+cli = 'codex-watch', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（2 行 / 判定: マージ可） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi19')
+cli = 'codex-status', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分5秒\n無音     : 0分0秒\n判定行   : 1件（'toke...可: 旧形式の state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: マージ可 / report (2 行) ---\nマージ可\n途中結果\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: No free\n  slots for this model.\ntokens used\n42\n--codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi20')
+cli = 'codex-watch', report = ''
+ending = 'ERROR: No free\n  slots for this model.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（0 行 / 判定: 判定行を特定できず（先頭行: 途中経過）） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: No free\n  slots for this model.\ntokens used\n42\n--codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi21')
+cli = 'codex-status', report = ''
+ending = 'ERROR: No free\n  slots for this model.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分6秒\n無音     : 0分1秒\n判定行   : 1件（'toke...state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: 判定行を特定できず（先頭行: 途中経過） / report (0 行) ---\n途中経過"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: No free\n  slots for this model.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi22')
+cli = 'codex-watch', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: No free\n  slots for this model.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（2 行 / 判定: マージ可） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: No free\n  slots for this model.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi23')
+cli = 'codex-status', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: No free\n  slots for this model.\ntokens used\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分6秒\n無音     : 0分0秒\n判定行   : 1件（'toke...可: 旧形式の state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: マージ可 / report (2 行) ---\nマージ可\n途中結果\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n--codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi24')
+cli = 'codex-watch', report = ''
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（0 行 / 判定: 判定行を特定できず（先頭行: 途中経過）） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n--codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi25')
+cli = 'codex-status', report = ''
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分6秒\n無音     : 0分0秒\n判定行   : 1件（'toke...state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: 判定行を特定できず（先頭行: 途中経過） / report (0 行) ---\n途中経過"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi26')
+cli = 'codex-watch', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（2 行 / 判定: マージ可） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi27')
+cli = 'codex-status', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分6秒\n無音     : 0分0秒\n判定行   : 1件（'toke...可: 旧形式の state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: マージ可 / report (2 行) ---\nマージ可\n途中結果\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n--codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi28')
+cli = 'codex-watch', report = ''
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（0 行 / 判定: 判定行を特定できず（先頭行: 途中経過）） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n--codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi29')
+cli = 'codex-status', report = ''
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分6秒\n無音     : 0分0秒\n判定行   : 1件（'toke...state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: 判定行を特定できず（先頭行: 途中経過） / report (0 行) ---\n途中経過"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi30')
+cli = 'codex-watch', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'VERDICT: run 判定行が出ました（codex-status run で本文を確認）\nEXIT: run プロセス終了・報告あり（2 行 / 判定: マージ可） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi31')
+cli = 'codex-status', report = 'マージ可\n途中結果\n'
+ending = 'ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 完了（判定行あり）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分6秒\n無音     : 0分0秒\n判定行   : 1件（'toke...可: 旧形式の state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- 判定: マージ可 / report (2 行) ---\nマージ可\n途中結果\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n--codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi32')
+cli = 'codex-watch', report = ''
+ending = '\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'EXIT: run プロセス終了・報告あり（0 行 / 判定: 判定行を特定できず（先頭行: 途中経過）） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n--codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi33')
+cli = 'codex-status', report = ''
+ending = '\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 異常終了（判定行なし・ログを確認）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分6秒\n無音     : 0分0秒\n判定行   : ...     : 受領不可: 旧形式の state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- ログ末尾3行 ---\n\ntokens used\n42\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi34')
+cli = 'codex-watch', report = 'マージ可\n途中結果\n'
+ending = '\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       AssertionError: assert '容量不足' in 'EXIT: run プロセス終了・報告あり（2 行 / 判定: マージ可） (ログ先頭ヘッダー参考値: model=unresolved/unresolved effort=unresolved/unresolved)\n'
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+_ test_terminal_capacity_is_unfinished[\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status] _
+
+tmp_path = PosixPath('/private/var/folders/gg/99rz9q4s3nl_xjljhx217g_80000gn/T/pytest-of-matsukaze-takashi/pytest-606/test_terminal_capacity_is_unfi35')
+cli = 'codex-status', report = 'マージ可\n途中結果\n'
+ending = '\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n'
+
+    @pytest.mark.parametrize("cli", ["codex-watch", "codex-status"])
+    @pytest.mark.parametrize("report", ["", "マージ可\n途中結果\n"])
+    @pytest.mark.parametrize("ending", [
+        ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
+        "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
+        "ERROR: No free slots for this model.\n",
+        "ERROR: Service at capacity.\ntokens used\n42\n",
+        "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+        "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+        ERROR + "\ntokens used\n",
+        ERROR + "\n\n\ntokens used\n\n42\n",
+        "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
+    ])
+    def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
+        output = run_cli(tmp_path, cli, "codex\n途中経過\nhook: done\n" + ending, report)
+>       assert "容量不足" in output
+E       assert '容量不足' in "run_id   : run\n状態     : 異常終了（判定行なし・ログを確認）\nプロセス : 終了 (pid=2147483647)\n経過     : 29886076分6秒\n無音     : 0分0秒\n判定行   : ...     : 受領不可: 旧形式の state です（head_sha または content_hash が記録されていません）。判定不能のため受領不可とします。\n--- ログ末尾3行 ---\n\ntokens used\n42\n"
+
+_work/mutation-vv5bgbz7/tests/test_codex_capacity.py:45: AssertionError
+=========================== short test summary info ============================
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n--codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n--codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\nERROR: Selected model is at capacity. Please try a different model.\ntokens used\n46,333\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n--codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n--codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Service at capacity.\ntokens used\n42\n--codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Service at capacity.\ntokens used\n42\n--codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Service at capacity.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Service at capacity.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n--codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n--codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: No free\n  slots for this model.\ntokens used\n42\n--codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: No free\n  slots for this model.\ntokens used\n42\n--codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: No free\n  slots for this model.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: No free\n  slots for this model.\ntokens used\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n--codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n--codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\ntokens used\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n--codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n--codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[ERROR: Selected model is at capacity. Please try a different model.\n\n\ntokens used\n\n42\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n--codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n--codex-status]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-watch]
+FAILED _work/mutation-vv5bgbz7/tests/test_codex_capacity.py::test_terminal_capacity_is_unfinished[\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n-\u30de\u30fc\u30b8\u53ef\n\u9014\u4e2d\u7d50\u679c\n-codex-status]
+32 failed, 4 passed, 41 deselected in 2.05s

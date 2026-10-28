@@ -1,0 +1,133 @@
+[
+  {
+    "name": "01-delete-recovery-reset",
+    "kind": "①要素削除: 回復時の状態解除",
+    "file": "bin/codex-watch",
+    "line": 67,
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/mutation-vv5bgbz7/tests/test_codex_capacity.py",
+      "-k",
+      "rechecks_capacity"
+    ],
+    "returncode": 1,
+    "summary": "1 failed, 76 deselected in 0.15s"
+  },
+  {
+    "name": "02-disable-body-boundary",
+    "kind": "④無効化: role区間を無視",
+    "file": "bin/_codex_common.sh",
+    "line": 253,
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/mutation-vv5bgbz7/tests/test_codex_capacity.py",
+      "-k",
+      "role_section_error_quote"
+    ],
+    "returncode": 1,
+    "summary": "4 failed, 73 deselected in 0.33s"
+  },
+  {
+    "name": "03-hook-meaning-reversal",
+    "kind": "②意味破壊: CLI区間を本文と誤認",
+    "file": "bin/_codex_common.sh",
+    "line": 252,
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/mutation-vv5bgbz7/tests/test_codex_capacity.py",
+      "-k",
+      "terminal_capacity"
+    ],
+    "returncode": 1,
+    "summary": "36 failed, 41 deselected in 2.47s"
+  },
+  {
+    "name": "04-always-negative-detector",
+    "kind": "④判定を常に陰性にする",
+    "file": "bin/_codex_common.sh",
+    "line": 268,
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/mutation-vv5bgbz7/tests/test_codex_capacity.py",
+      "-k",
+      "capacity_without_tokens"
+    ],
+    "returncode": 1,
+    "summary": "2 failed, 75 deselected in 0.12s"
+  },
+  {
+    "name": "05-remove-negation",
+    "kind": "独自変異A: 否定文の意味を失う",
+    "file": "bin/_codex_common.sh",
+    "line": 242,
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/mutation-vv5bgbz7/tests/test_codex_capacity.py",
+      "-k",
+      "normal_or_noncapacity"
+    ],
+    "returncode": 1,
+    "summary": "4 failed, 16 passed, 57 deselected in 1.13s"
+  },
+  {
+    "name": "06-break-wrapped-block",
+    "kind": "独自変異B: 複数行への分散を読まない",
+    "file": "bin/_codex_common.sh",
+    "line": 262,
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/mutation-vv5bgbz7/tests/test_codex_capacity.py",
+      "-k",
+      "terminal_capacity"
+    ],
+    "returncode": 1,
+    "summary": "8 failed, 28 passed, 41 deselected in 1.37s"
+  },
+  {
+    "name": "07-swap-summary-state",
+    "kind": "③入替: tokens usedで候補を消失",
+    "file": "bin/_codex_common.sh",
+    "line": 255,
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/mutation-vv5bgbz7/tests/test_codex_capacity.py",
+      "-k",
+      "terminal_capacity"
+    ],
+    "returncode": 1,
+    "summary": "32 failed, 4 passed, 41 deselected in 2.05s"
+  },
+  {
+    "name": "positive-control",
+    "command": [
+      "python3",
+      "-m",
+      "pytest",
+      "-q",
+      "/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/mutation-vv5bgbz7/tests/test_codex_capacity.py"
+    ],
+    "returncode": 0,
+    "summary": "77 passed in 3.16s"
+  }
+]

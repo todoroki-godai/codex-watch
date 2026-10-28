@@ -1,0 +1,225 @@
+........................................................................ [ 19%]
+.....................................................ssss..s............ [ 38%]
+..................FFF.F........FFFFFFF.......F.......................... [ 57%]
+........................................................................ [ 77%]
+........................................................................ [ 96%]
+..............                                                           [100%]
+=================================== FAILURES ===================================
+_____________ test_cli_unset_model_and_effort_use_config_defaults ______________
+
+fake_bin = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_cli_unset_model_and_effor0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_cli_unset_model_and_effor0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10943a8b0>
+
+    def test_cli_unset_model_and_effort_use_config_defaults(
+        fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setenv("CODEX_REVIEW_MODEL", "inherited-model")
+        monkeypatch.setenv("CODEX_REVIEW_EFFORT", "high")
+        result = _run(
+            fake_bin, tmp_path, review_target="issue:example-org/example-repo#1",
+            review_goal_cut=VALID_GOAL_CUT, gate_check=False,
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_cli.py:128: AssertionError
+______________________ test_cli_rejects_missing_goal_cut _______________________
+
+fake_bin = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_cli_rejects_missing_goal_0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_cli_rejects_missing_goal_0')
+
+    def test_cli_rejects_missing_goal_cut(fake_bin: Path, tmp_path: Path):
+        result = _run(
+            fake_bin, tmp_path, review_target="issue:example-org/example-repo#1", review_goal_cut="", gate_check=True
+        )
+        assert result.returncode == 4, result.stdout + result.stderr
+>       assert "goal_cut_status\": \"blocked\"" in result.stdout
+E       assert 'goal_cut_status": "blocked"' in '{"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（to...codex-watch）が一致しません", "record_target": "", "goal_cut": "", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n'
+E        +  where '{"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（to...codex-watch）が一致しません", "record_target": "", "goal_cut": "", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n' = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...が一致しません", "record_target": "", "goal_cut": "", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n', stderr='').stdout
+
+tests/test_codex_review_cli.py:151: AssertionError
+_____________________ test_cli_passes_with_valid_goal_cut ______________________
+
+fake_bin = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_cli_passes_with_valid_goa0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_cli_passes_with_valid_goa0')
+
+    def test_cli_passes_with_valid_goal_cut(fake_bin: Path, tmp_path: Path):
+        result = _run(
+            fake_bin,
+            tmp_path,
+            review_target="issue:example-org/example-repo#1",
+            review_goal_cut=VALID_GOAL_CUT,
+            gate_check=True,
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n', stderr='').returncode
+
+tests/test_codex_review_cli.py:167: AssertionError
+______________ test_cli_saved_goal_cut_state_line_is_single_line _______________
+
+fake_bin = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_cli_saved_goal_cut_state_0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_cli_saved_goal_cut_state_0')
+
+    def test_cli_saved_goal_cut_state_line_is_single_line(fake_bin: Path, tmp_path: Path):
+        result = _run(
+            fake_bin,
+            tmp_path,
+            review_target="issue:example-org/example-repo#1",
+            review_goal_cut=VALID_GOAL_CUT,
+            gate_check=False,  # 実発注パス（fake codex/gh を使うので外部へは書き込まない）
+        )
+>       assert result.returncode == 0, result.stdout + result.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_cli.py:200: AssertionError
+____________ test_no_env_has_no_image_flag_and_same_argv_as_before _____________
+
+env_dir = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_no_env_has_no_image_flag_0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_no_env_has_no_image_flag_0')
+
+    def test_no_env_has_no_image_flag_and_same_argv_as_before(env_dir, tmp_path):
+        r = _run(env_dir, tmp_path, None)
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_images.py:131: AssertionError
+______________________ test_empty_env_same_argv_as_unset _______________________
+
+env_dir = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_empty_env_same_argv_as_un0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_empty_env_same_argv_as_un0')
+
+    def test_empty_env_same_argv_as_unset(env_dir, tmp_path):
+        r = _run(env_dir, tmp_path, "")
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_images.py:142: AssertionError
+______________________ test_blank_lines_only_adds_nothing ______________________
+
+env_dir = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_blank_lines_only_adds_not0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_blank_lines_only_adds_not0')
+
+    def test_blank_lines_only_adds_nothing(env_dir, tmp_path):
+        r = _run(env_dir, tmp_path, "\n\n")
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_images.py:148: AssertionError
+____________________ test_two_pngs_give_two_dash_i_in_order ____________________
+
+env_dir = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_two_pngs_give_two_dash_i_0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_two_pngs_give_two_dash_i_0')
+
+    def test_two_pngs_give_two_dash_i_in_order(env_dir, tmp_path):
+        b = _png(tmp_path, "b.png")
+        a = _png(tmp_path, "a.png")
+        r = _run(env_dir, tmp_path, f"{b}\n{a}")
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_images.py:156: AssertionError
+_________________ test_other_allowed_extensions_and_uppercase __________________
+
+env_dir = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_other_allowed_extensions_0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_other_allowed_extensions_0')
+
+    def test_other_allowed_extensions_and_uppercase(env_dir, tmp_path):
+        files = []
+        for n in ("x.jpg", "y.jpeg", "z.webp", "W.PNG"):
+            p = tmp_path / n
+            p.write_bytes(b"x")
+            files.append(str(p))
+        r = _run(env_dir, tmp_path, "\n".join(files))
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_images.py:169: AssertionError
+_________________ test_images_combine_with_existing_model_port _________________
+
+env_dir = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_images_combine_with_exist0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_images_combine_with_exist0')
+
+    def test_images_combine_with_existing_model_port(env_dir, tmp_path):
+        a = _png(tmp_path, "a.png")
+        r = _run(env_dir, tmp_path, str(a), model="gpt-6.1-terra")
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_images.py:176: AssertionError
+_____________________ test_path_with_spaces_is_one_dash_i ______________________
+
+env_dir = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_path_with_spaces_is_one_d0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_path_with_spaces_is_one_d0')
+
+    def test_path_with_spaces_is_one_dash_i(env_dir, tmp_path):
+        d = tmp_path / "dir with space"
+        d.mkdir()
+        p = d / "my shot.png"
+        p.write_bytes(b"x")
+        r = _run(env_dir, tmp_path, str(p))
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_images.py:189: AssertionError
+___________ test_absolute_symlink_to_regular_file_accepted_as_given ____________
+
+env_dir = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_absolute_symlink_to_regul0/fakebin')
+tmp_path = PosixPath('/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/_work/pytest-full-final/test_absolute_symlink_to_regul0')
+
+    def test_absolute_symlink_to_regular_file_accepted_as_given(env_dir, tmp_path):
+        real = _png(tmp_path, "real.png")
+        link = tmp_path / "link.png"
+        link.symlink_to(real)
+        r = _run(env_dir, tmp_path, str(link))
+>       assert r.returncode == 0, r.stdout + r.stderr
+E       AssertionError: 巡数ゲートで拒否されました: {"status": "blocked", "exit_code": 4, "message": "REVIEW_TARGET の repo（example-org/example-repo）と workdir の origin（todoroki-godai/codex-watch）が一致しません", "record_target": "", "goal_cut": "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}
+E         
+E       assert 4 == 0
+E        +  where 4 = CompletedProcess(args=['/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/watch-capacity/bin/codex-revi...l #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26", "goal_cut_status": "not_evaluated", "mandatory_gate": ""}\n').returncode
+
+tests/test_codex_review_images.py:247: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_codex_review_cli.py::test_cli_unset_model_and_effort_use_config_defaults
+FAILED tests/test_codex_review_cli.py::test_cli_rejects_missing_goal_cut - as...
+FAILED tests/test_codex_review_cli.py::test_cli_passes_with_valid_goal_cut - ...
+FAILED tests/test_codex_review_cli.py::test_cli_saved_goal_cut_state_line_is_single_line
+FAILED tests/test_codex_review_images.py::test_no_env_has_no_image_flag_and_same_argv_as_before
+FAILED tests/test_codex_review_images.py::test_empty_env_same_argv_as_unset
+FAILED tests/test_codex_review_images.py::test_blank_lines_only_adds_nothing
+FAILED tests/test_codex_review_images.py::test_two_pngs_give_two_dash_i_in_order
+FAILED tests/test_codex_review_images.py::test_other_allowed_extensions_and_uppercase
+FAILED tests/test_codex_review_images.py::test_images_combine_with_existing_model_port
+FAILED tests/test_codex_review_images.py::test_path_with_spaces_is_one_dash_i
+FAILED tests/test_codex_review_images.py::test_absolute_symlink_to_regular_file_accepted_as_given
+12 failed, 357 passed, 5 skipped in 51.75s
