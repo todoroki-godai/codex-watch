@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # codex-review で起動した実行の状況を1画面で表示する。
 #
-# 判定は3点のみ（codex exec が観測させてくれるのはこれだけ・2026-08-25 実測）:
+# 容量不足を優先し、それ以外は次の3点で判定する:
 #   ①プロセスが生きているか ②ログが何秒無音か ③判定行が出たか
 # ②が閾値を超えていたら「はまり」を疑う。①だけを見ると、生きているのに何も進んでいない
 # 状態を「実行中」と誤読する（#418 のレビューを22分放置した実測がある）。
@@ -58,8 +58,13 @@ show_one() {
     silent=-1; size=0; lines=0; verdict_count=0
   fi
 
-  local diagnosis
-  if [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
+  local diagnosis capacity_error=0
+  if codex_log_has_capacity_error "$log"; then capacity_error=1; fi
+  if [[ "$capacity_error" -eq 1 && "$alive" == "終了" ]]; then
+    diagnosis="異常終了（モデルの空きがなくて停止・容量不足・作業未完了）"
+  elif [[ "$capacity_error" -eq 1 ]]; then
+    diagnosis="モデルの空き不足（容量不足・プロセスは生存・作業未完了）"
+  elif [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
     diagnosis="完了（判定行あり）"
   elif [[ "$alive" == "終了" && "$verdict_count" -eq 0 ]]; then
     diagnosis="異常終了（判定行なし・ログを確認）"
@@ -84,7 +89,7 @@ show_one() {
   IFS=$'\t' read -r hdr_model hdr_model_source hdr_effort hdr_effort_source <<<"$(extract_codex_log_header "$log")"
   echo "要求値               : model=${requested_model:-(config既定)} effort=${requested_effort:-(config既定)}"
   echo "ログ先頭のヘッダー（参考・run同一性は未検証）: model=$hdr_model($hdr_model_source) effort=$hdr_effort($hdr_effort_source)"
-  if [[ "$alive" == "終了" ]]; then
+  if [[ "$alive" == "終了" && "$capacity_error" -eq 0 ]]; then
     local report
     report="${log%.log}.report"
     rebuild_report_if_needed "$log" "$report" || true
@@ -97,7 +102,10 @@ show_one() {
     receipt_msg="$(python3 "$GATE_PY" receipt --state-file "$state_file" --report "$report" 2>&1 || true)"
     echo "受領     : $receipt_msg"
   fi
-  if [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
+  if [[ "$capacity_error" -eq 1 ]]; then
+    echo "--- 容量不足のため作業未完了（途中のreportは結果として扱いません）---"
+    tail -5 "$log" 2>/dev/null || true
+  elif [[ "$alive" == "終了" && "$verdict_count" -gt 0 ]]; then
     # 終了後は report を組み立て直してから表示する（逐次出力運用では log の
     # 'tokens used' 以降＝最終セクションだけの複製で、report と同じ欠落を持つ。
     # 2026-08-26 rev435r2 実測: どちらも最終節のみで判定行を失っていた）。

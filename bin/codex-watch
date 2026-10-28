@@ -2,10 +2,11 @@
 # codex-review で起動した実行を見張り、状態が変わった時だけ1行を stdout へ出す。
 # Claude Code の Monitor ツールへそのまま渡す想定（stdout の1行＝1通知）。
 #
-# 出す事象は4つ。沈黙を成功と読み違えないため、失敗側も必ず出す:
+# 出す事象。沈黙を成功と読み違えないため、失敗側も必ず出す:
 #   STALL    : 無音が閾値を超えた（はまり疑い）。以降 STALL は繰り返さない
 #   VERDICT  : 判定行（'tokens used' の完全一致）が出た
 #   FILTERED : OpenAI側のセキュリティフィルタで遮断された（対策3・2026-08-26追加）
+#   CAPACITY : モデルの空き不足（通常の判定通知を抑止）
 #   EXIT     : プロセスが終了した（判定行の有無も添える）
 #
 # FILTERED を要れた理由: 'tokens used' はフィルタ遮断時にも出力される（実測:
@@ -50,10 +51,18 @@ extract_partial_cmd() {
 stall_reported=0
 verdict_reported=0
 filtered_reported=0
+capacity_reported=0
 started=$(date +%s)
 
 while :; do
   now=$(date +%s)
+
+  # 容量不足も tokens used / 部分 report より優先する。
+  if [[ "$capacity_reported" -eq 0 ]] && codex_log_has_capacity_error "$LOG"; then
+    echo "CAPACITY: $RUN_ID モデルの空き不足（容量不足・作業未完了）。別モデルでの再実行を検討してください"
+    capacity_reported=1
+    verdict_reported=1
+  fi
 
   # FILTERED は VERDICT より先に判定する。'tokens used' はフィルタ遮断時にも出力されるため
   # （実測: 上記ログ）、先に検出して verdict_reported を立て、偽陽性の VERDICT を抑止する。
@@ -89,7 +98,9 @@ while :; do
     # FILTERED を先に分岐する: rebuild で部分的な reasoning セクションが report に復元
     # されることがあるが（フィルタ遮断ログにも 'codex' role の途中経過は残るため）、
     # それは「完了した分析」ではないので、通常の「報告あり」より遮断済みである旨を優先して出す。
-    if [[ "$filtered_reported" -eq 1 ]]; then
+    if [[ "$capacity_reported" -eq 1 ]]; then
+      echo "EXIT: $RUN_ID モデルの空きがなくて停止（容量不足・作業未完了）。ログ: $LOG${MODEL_SUFFIX}"
+    elif [[ "$filtered_reported" -eq 1 ]]; then
       if [[ -s "$REPORT" ]]; then
         echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（部分結果をreportへ復元: $(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）。全文は $(extract_partial_cmd "$LOG")${MODEL_SUFFIX}"
       else

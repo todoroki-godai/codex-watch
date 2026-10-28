@@ -11,7 +11,7 @@
 |---|---|
 | `codex-review <対象dir> <promptfile> [ラベル]` | レビュー発注（`-s read-only`）。detach して run id を返す |
 | `codex-impl <worktree> <promptfile> [ラベル]` | 実装発注（`-s workspace-write`）。linked worktree でなければ拒否 |
-| `codex-watch <run id>` | STALL / VERDICT / EXIT / TIMEOUT の4事象を報告する見張り |
+| `codex-watch <run id>` | STALL / VERDICT / FILTERED / CAPACITY / EXIT / TIMEOUT の各事象を報告する見張り |
 | `codex-status <run id>` | 生存・経過・無音時間・判定行・ログ末尾を1画面で表示 |
 
 状態は `~/.codex-watch/<run id>.{log,report,state}` に残る。
@@ -74,3 +74,16 @@
 - `codex` CLI
 - bash 3.2 以上（macOS 既定で動く）
 - python3（レビュー巡数ゲートを使う場合）
+
+### モデルの容量不足
+
+ログ末尾の CLI `ERROR:` ブロックがモデル容量不足を示す場合、見張りは
+`CAPACITY` と「作業未完了」を通知し、通常の `VERDICT`・「報告あり」を抑止します。
+状態表示も「モデルの空きがなくて停止」と表示し、途中の report を受領・判定表示しません。
+`tokens used` とその数値は失敗時にも出るため、完了の根拠として優先しません。
+
+判定は固定文面の完全一致ではなく、末尾エラーの位置と `at capacity`、モデルの
+`capacity` / `overloaded` / `no free slots` 等を組み合わせます。途中で回復したエラーや
+通常本文の言及は対象外です。ログ形式に基づく推定なので、未知のサービス文面や
+CLI の末尾エラーと同じ形の引用を完全に識別する保証はありません。
+時間切れ・権限エラー等の判定はこの変更に含めていません。
