@@ -233,18 +233,28 @@ codex_github_account_state() {
 codex_log_has_capacity_error() {
   [[ -r "$1" ]] || return 1
   awk '
+    function capacity(text) {
+      # 否定された容量表現は、別原因のエラーを容量不足にしない。
+      if (text ~ /(not|no[[:space:]]+longer)[[:space:]]+(at[[:space:]]+capacity|overloaded)/) return 0
+      return (text ~ /at[[:space:]]+capacity/ ||
+        (text ~ /model/ && text ~ /capacity|overload|no[[:space:]]+(free[[:space:]]+)?slots/))
+    }
     {
       sub(/\r$/, "")
       gsub(sprintf("%c", 27) "\\[[0-9;]*[[:alpha:]]", "")
       if ($0 ~ /^[[:space:]]*$/) next
-      if ($0 == "tokens used") { result=pending; pending=0; summary=1; next }
+      if ($0 == "tokens used") { result=pending; pending=0; block=""; summary=1; next }
       if (summary && $0 ~ /^[0-9,]+$/) { summary=0; next }
       summary=0; result=0
       line=tolower($0)
       if (line ~ /^error:[[:space:]]*/) {
-        pending = pending || (line ~ /at[[:space:]]+capacity/ ||
-          (line ~ /model/ && line ~ /capacity|overload|no[[:space:]]+(free[[:space:]]+)?slots/))
-      } else { pending=0 }
+        block=line
+        pending = pending || capacity(block)
+      } else if (block != "" && line ~ /^[[:space:]]+/) {
+        sub(/^[[:space:]]+/, "", line)
+        block=block " " line
+        pending = pending || capacity(block)
+      } else { pending=0; block="" }
     }
     END { exit !(result || pending) }
   ' "$1"

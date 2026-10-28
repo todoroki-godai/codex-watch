@@ -33,6 +33,11 @@ def run_cli(folder, cli, log, report="マージ可\n途中結果\n", alive=False
     ERROR + "\n" + ERROR + "\ntokens used\n46,333\n",
     "ERROR: The selected MODEL is overloaded; retry later.\ntokens used\n1\n",
     "ERROR: No free slots for this model.\n",
+    "ERROR: Service at capacity.\ntokens used\n42\n",
+    "ERROR: Selected model is at\n  capacity. Please retry.\ntokens used\n42\n",
+    "ERROR: No free\n  slots for this model.\ntokens used\n42\n",
+    ERROR + "\ntokens used\n",
+    ERROR + "\n\n\ntokens used\n\n42\n",
     "\x1b[31mERROR: Model AT\tCAPACITY\x1b[0m\r\n\r\ntokens used\r\n42\r\n",
 ])
 def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
@@ -58,6 +63,9 @@ def test_terminal_capacity_is_unfinished(tmp_path, cli, report, ending):
     "codex\nモデルが at capacity となる例を説明しました\ntokens used\n42\n",
     "ERROR: Permission denied\ntokens used\n42\n",
     "ERROR: Request timed out\ntokens used\n42\n",
+    "ERROR: Model is not at capacity; authentication failed.\ntokens used\n42\n",
+    "ERROR: Model is no longer overloaded; permission denied.\ntokens used\n42\n",
+    "user\n" + ERROR + "\n  quoted continuation\ncodex\nマージ可\ntokens used\n42\n",
     "codex\nマージ可\ntokens used\n42\n引用: " + ERROR + "\n",
 ])
 def test_normal_or_noncapacity_is_not_capacity(tmp_path, cli, log):
