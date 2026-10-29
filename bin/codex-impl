@@ -73,6 +73,9 @@ if [[ "${CODEX_IMPL_ALLOW_MISSING_NODE_MODULES:-0}" != "1" ]]; then
   fi
 fi
 
+# Fail closed before credential preparation or Codex launch; output never includes values.
+python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_impl_aws.py" --check-config "$WORKDIR"
+
 STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
 mkdir -p "$STATE_DIR"
 prepare_codex_github_account

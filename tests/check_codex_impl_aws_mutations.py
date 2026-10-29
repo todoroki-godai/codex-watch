@@ -8,11 +8,16 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / '.tmp/awsdev2-mutations'
+OUT = ROOT / '.tmp/awsdev4-mutations'
 OUT.mkdir(parents=True, exist_ok=True)
 cases = [
+    ('remove-config-check', 'lib/codex_impl_aws.py', '        check_codex_config(sys.argv[2])', '        pass', 'config_rejected_before_launch or existing_set_cannot_reinject_prod'),
+    ('weaken-aws-prefix', 'lib/codex_impl_aws.py', "key.startswith('AWS_')", "key.startswith('AWS_ACCESS_')", 'config_rejected_before_launch'),
+    ('enumerate-known-aws-keys', 'lib/codex_impl_aws.py', "key.startswith('AWS_')", "key in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'AWS_ENDPOINT_URL')", 'config_rejected_before_launch'),
+    ('skip-profiles', 'lib/codex_impl_aws.py', '(data, *profiles.values())', '(data,)', 'config_rejected_before_launch'),
+    ('ignore-invalid-config', 'lib/codex_impl_aws.py', "sys.exit('拒否: Codex 設定を読み取り・解析できず判定不能です')", 'pass', 'config_rejected_before_launch or unreadable_config_rejected'),
     ('wrong-account', 'lib/codex_impl_aws.py', "== '669126230735'", "!= '669126230735'", 'failure_has_no_credentials and wrong'),
-    ('remove-deny', 'bin/codex-impl', '"~/.aws"="deny"', '', 'positive_permissions'),
+    ('remove-deny', 'bin/codex-impl', "print('permissions.codex-impl-dev.filesystem={\"~/.aws\"=\"deny\"' +\n      ''.join(', ' + json.dumps(p, ensure_ascii=False) + '=\"write\"' for p in paths) + '}')", "print('permissions.codex-impl-dev.filesystem={' + ', '.join(json.dumps(p, ensure_ascii=False) + '=\"write\"' for p in paths) + '}')", 'positive_permissions'),
     ('remove-gitdir', 'bin/codex-impl', 'sys.argv[1:] if p', 'sys.argv[1:2] if p', 'positive_permissions'),
     ('leak-stdout', 'bin/codex-impl', 'unset AWS_ENV_UPDATES', 'echo "$AWS_ENV_UPDATES"\nunset AWS_ENV_UPDATES', 'positive_permissions'),
     ('restore-sandbox', 'bin/codex-impl', 'nohup codex exec -C', 'nohup codex exec -s workspace-write -C', 'positive_permissions'),
@@ -34,7 +39,7 @@ for name, filename, old, new, select in cases:
     for sub in ('bin', 'lib', 'templates'):
         shutil.copytree(ROOT / sub, folder / sub, ignore=shutil.ignore_patterns('__pycache__'))
     original = (folder / filename).read_text()
-    assert original.count(old) == 1, (name, old)
+    assert original.count(old) == (2 if name == 'accept-expired' else 1), (name, old)
     (folder / filename).write_text(original.replace(old, new))
     command = [sys.executable, '-m', 'pytest', str(ROOT / 'tests/test_codex_impl_aws.py'),
                '-q', '--tb=short', '-k', select, '--basetemp', str(folder / 'tmp')]
@@ -43,12 +48,11 @@ for name, filename, old, new, select in cases:
     (folder / 'pytest.log').write_text(result.stdout + result.stderr)
     expected = 0 if name.startswith('positive-') else 1
     # Require assertion failure, not a setup/import/collection failure.
-    ok = result.returncode == expected and ('FAILED ' in result.stdout if expected else '1 passed' in result.stdout)
+    ok = result.returncode == expected and ((('AssertionError' in result.stdout or 'E   assert' in result.stdout) and 'TOMLDecodeError' not in result.stdout and 'ERROR ' not in result.stdout) if expected else '1 passed' in result.stdout)
     record = dict(name=name, command=command, exit=result.returncode, ok=ok,
                   transformation={'file':filename,'old':old,'new':new},
                   summary=result.stdout.strip().splitlines()[-1])
     results.append(record)
     print(json.dumps(record, ensure_ascii=False), flush=True)
     (OUT / 'results.json').write_text(json.dumps(results, ensure_ascii=False, indent=2))
-    if not ok:
-        sys.exit(1)
+sys.exit(0 if all(record['ok'] for record in results) else 1)
