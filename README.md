@@ -10,7 +10,7 @@
 | コマンド | 用途 |
 |---|---|
 | `codex-review <対象dir> <promptfile> [ラベル]` | レビュー発注（`-s read-only`）。detach して run id を返す |
-| `codex-impl <worktree> <promptfile> [ラベル]` | 実装発注（`-s workspace-write`）。linked worktree でなければ拒否 |
+| `codex-impl <worktree> <promptfile> [ラベル]` | 実装発注（専用権限プロファイル）。linked worktree でなければ拒否 |
 | `codex-watch <run id>` | STALL / VERDICT / EXIT / TIMEOUT の4事象を報告する見張り |
 | `codex-status <run id>` | 生存・経過・無音時間・判定行・ログ末尾を1画面で表示 |
 
@@ -33,6 +33,9 @@
   モデルは既存の `CODEX_REVIEW_MODEL`（例: `gpt-6.1-terra`）で指定する。新しい口は無い。
 - **`codex-impl` は共有 checkout への書き込みを拒否する**（未レビューのコードがそのまま動く状態を作らないため）。
   例外口は `CODEX_IMPL_ALLOW_MAIN=1`。
+- AWS は stg プロファイルで口座 `669126230735` を照合した場合だけ一時鍵を環境へ渡し、失敗時は `aws=none`。
+  `~/.aws` を拒否し、秘密なしの `codex-dev` 設定と空の credentials を指定するため、共有設定の prod プロファイルへ届かない。
+  鍵は更新せず、`aws_expiration` の期限で長い作業は途中から AWS を使えなくなる。
 - **`codex-impl` の既定モデルは `gpt-6.1-sol`。** `CODEX_IMPL_MODEL` で上書きできる。
   `CODEX_IMPL_MODEL=` と空文字を明示すると `-m` を付けず、config.toml の既定に従う。
 - `gpt-6.1-sol` は codex-cli 0.159.1 の `codex debug models` に掲載（visibility=list）を確認済み（2026-09-30）。前任の `gpt-6-sol` は 0.156.1 で受理・0.154.0 では 400 で即終了した。古い CLI では codex-watch が「報告ファイルが空」と表示する。対処は CLI の更新か `CODEX_IMPL_MODEL=`。

@@ -229,7 +229,7 @@ def test_undeclared_preserves_launch(launch, non_git):
     assert result.returncode == 0, result.stderr
     child = capture(launch)
     assert child['parent_dir'] is None and child['shell_dir'] is None
-    assert not any('shell_environment_policy' in a for a in child['argv'])
+    assert not any('shell_environment_policy.set.GH' in a for a in child['argv'])
     assert 'github_account' not in fields
     assert not (launch.state / 'gh-account').exists()
 
@@ -240,7 +240,7 @@ def test_undeclared_preserves_inherited_gh_config(launch):
     assert result.returncode == 0
     child = capture(launch)
     assert child['parent_dir'] == directory
-    assert not any('shell_environment_policy' in a for a in child['argv'])
+    assert not any('shell_environment_policy.set.GH' in a for a in child['argv'])
 
 
 @pytest.mark.parametrize('value', ['no-such-user-xyz', '', 'one two', 'one\ntwo', 'a'*80,
