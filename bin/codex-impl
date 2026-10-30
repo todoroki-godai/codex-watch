@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# codex exec を「書き込み可（workspace-write）」で起動し、codex-review と同じ状態ファイルを残す。
+# codex exec を「書き込み可（専用権限プロファイル）」で起動し、codex-review と同じ状態ファイルを残す。
 #
 # なぜ要るか: 工程ルール（~/.claude/rules/pipeline-routing.md）は実装の主力を Codex と定めて
 # いるが、起動役は codex-review しか無く `-s read-only` が焼き込まれていたため、実装では毎回
 # CC ワーカーへ戻っていた（2026-08-25 ユーザー指摘）。本コマンドはその欠けを埋める。
 #
 # 契約（pipeline-routing.md「Codex を実装で起動する契約」）:
-#   - サンドボックス = workspace-write
+#   - サンドボックス = codex-impl-dev（:workspace 継承）
 #   - 作業先 = 頭が用意した worktree の絶対パスを -C で渡す
 #   - Codex は commit まで。push / PR / マージは頭（人間）が行う
 #   - 完了判定はプロセス終了と報告の終端マーカーの両方。log の中身だけで判定しない
@@ -20,6 +20,7 @@
 #   codex-impl <worktree絶対パス> <プロンプトファイル> [ラベル]
 # 出力:
 #   run id を1行で返す。以降 codex-status <run id> / codex-watch <run id> で観測する。
+set +x  # Credentials must never enter shell trace, including bash -x invocations.
 set -euo pipefail
 
 WORKDIR="${1:?worktree の絶対パスを指定してください}"
@@ -72,6 +73,9 @@ if [[ "${CODEX_IMPL_ALLOW_MISSING_NODE_MODULES:-0}" != "1" ]]; then
   fi
 fi
 
+# Fail closed before credential preparation or Codex launch; output never includes values.
+python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_impl_aws.py" --check-config "$WORKDIR"
+
 STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
 mkdir -p "$STATE_DIR"
 prepare_codex_github_account
@@ -82,14 +86,27 @@ STATE_FILE="$STATE_DIR/$RUN_ID.state"
 # 最終メッセージだけを別ファイルへ落とす（log 全文を読まずに結論だけ取るため）。
 REPORT_FILE="$STATE_DIR/$RUN_ID.report"
 
-# linked worktree では .git が「共有 checkout 側の共通 git dir」を指すため、既定の workspace-write
-# （cwd 配下のみ書込可）では index.lock も作れず git add / commit が必ず失敗する。
-# 共通 git dir だけを writable_roots に足す。共有 checkout の working tree は書込不可のまま
-# （未レビューコードがユーザー実行環境で動く経路は塞いだまま）。
-SANDBOX_ARGS=()
-if [[ -n "$GIT_COMMON_ABS" && "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ]]; then
-  SANDBOX_ARGS+=(-c "sandbox_workspace_write.writable_roots=[\"$GIT_COMMON_ABS\"]")
-fi
+# Dedicated permission profile: serialize paths as TOML strings, including quotes/backslashes.
+SANDBOX_ARGS=(-c 'default_permissions="codex-impl-dev"'
+  -c 'permissions.codex-impl-dev.extends=":workspace"'
+  -c 'permissions.codex-impl-dev.network.enabled=true'
+  -c 'shell_environment_policy.inherit="all"'
+  -c 'shell_environment_policy.ignore_default_excludes=true'
+  -c 'shell_environment_policy.set.AWS_PROFILE="codex-dev"')
+FILESYSTEM="$(python3 - "$GIT_COMMON_ABS" "$GIT_DIR_ABS" <<'PYFS'
+import json, sys
+paths = dict.fromkeys(p for p in sys.argv[1:] if p)
+if any(not p.startswith('/') for p in paths):
+    sys.exit('git directory must be absolute')
+print('permissions.codex-impl-dev.filesystem={"~/.aws"="deny"' +
+      ''.join(', ' + json.dumps(p, ensure_ascii=False) + '="write"' for p in paths) + '}')
+PYFS
+)"
+SANDBOX_ARGS+=(-c "$FILESYSTEM")
+# Capture only in process memory. Failure to run the helper stops launch, never inherits keys.
+AWS_ENV_UPDATES="$(python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_impl_aws.py")"
+eval "$AWS_ENV_UPDATES"
+unset AWS_ENV_UPDATES
 
 # 発注ごとに model / reasoning effort を変えられるようにする（codex-review と同じ形。
 # モデル未指定なら gpt-6.1-sol、effort 未指定なら medium。
@@ -103,7 +120,7 @@ REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_IMPL_EFFORT-medium}")"
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
 
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
-nohup codex exec -C "$WORKDIR" -s workspace-write ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
+nohup codex exec -C "$WORKDIR" ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
 # 実効値（実際に起動された model / effort）はここでは解決しない・待たない。
@@ -120,6 +137,8 @@ CODEX_PID=$!
   echo "prompt=$PROMPT_FILE"
   echo "mode=workspace-write"
   echo "writable_git_common=${GIT_COMMON_ABS:-}"
+  echo "aws=$CODEX_IMPL_AWS_STATE"
+  echo "aws_expiration=$CODEX_IMPL_AWS_EXPIRATION"
   codex_github_account_state
   echo "requested_model=$REQUESTED_MODEL"
   echo "requested_effort=$REQUESTED_EFFORT"
