@@ -61,14 +61,15 @@ def strict_state(path):
         require(bool(sep) and key not in result, '状態ファイルの破損・重複キー: ' + path.name)
         result[key] = value
     require(all(result.get(k) for k in ('run_id', 'workdir', 'started_at')), '状態ファイルの識別情報不足: ' + path.name)
-    # Implementation runs share this directory; only review entries have review_target.
     return result
 
 
 def report_families(d):
     text = Path(d['report']).read_text()
-    receipt = check_receipt(d.get('head_sha', ''), d.get('content_hash', ''), text)
-    require(receipt.status == 'ok', '前巡の受領照合が不成立')
+    # Only pr:/issue: dispatches persist receipt hashes in codex-review.
+    if d['review_target'].startswith(('pr:', 'issue:')):
+        receipt = check_receipt(d['head_sha'], d['content_hash'], text)
+        require(receipt.status == 'ok', '前巡の受領照合が不成立')
     lines = [line[len('review_findings='):] for line in text.splitlines() if line.startswith('review_findings=')]
     require(len(lines) == 1, '前巡の指摘一覧が欠落・重複')
     def unique(pairs):
@@ -117,9 +118,16 @@ def check(prompt, workdir, state_dir, target_raw, predecessor_raw='', fetch_body
             if path.suffix != '.state':
                 continue
             d = strict_state(path)
-            if 'review_target' not in d:
+            review_keys = {'review_target', 'round', 'repair_families', 'head_sha', 'content_hash'}
+            if d.get('mode') == 'workspace-write' and not review_keys.intersection(d):
                 continue
-            if d['review_target'] in keys or normalize_workdir(d['workdir']) == normalize_workdir(workdir):
+            require(review_keys | {'pid', 'report'} <= d.keys() and bool(d['review_target']),
+                    'レビュー記録の必須キー不足: ' + path.name)
+            same_workdir = normalize_workdir(d['workdir']) == normalize_workdir(workdir)
+            # Explicit issue/PR identities separate independent work. Untracked requests
+            # share the workdir history so renaming a reason cannot reset the series.
+            if d['review_target'] in keys or (same_workdir and
+                    (not target_raw.startswith(('pr:', 'issue:')) or not d['review_target'].startswith(('pr:', 'issue:')))):
                 stamp = int(d['started_at'])
                 entries.append((stamp, d['run_id'], d))
         require(len({stamp for stamp, _, _ in entries}) == len(entries), '前巡の開始時刻が同秒で順序を特定できません')
