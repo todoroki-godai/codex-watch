@@ -47,7 +47,6 @@ model/effort 配線を試験する。
 """
 from __future__ import annotations
 
-from conftest import VALID_REVIEW_PROMPT
 import os
 import shutil
 import stat
@@ -175,7 +174,7 @@ def _run_impl(
     elif modules_dir.exists():
         shutil.rmtree(modules_dir)
     prompt = tmp_path / "prompt.txt"
-    prompt.write_text("dummy prompt\n" + VALID_REVIEW_PROMPT)
+    prompt.write_text("dummy prompt\n")
     state_dir = tmp_path / "state"
     state_dir.mkdir(exist_ok=True)
 

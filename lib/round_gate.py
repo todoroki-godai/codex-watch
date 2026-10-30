@@ -1020,7 +1020,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=os.environ.get("REVIEW_MANDATORY_GATE", ""),
         help="goal-cut が0でも発注を認める必須ゲート名（review.md が名指しするものに限る）",
     )
-    gate.add_argument("--prompt")
     gate.add_argument("--json", action="store_true")
 
     record = sub.add_parser("record", help="gate 通過後、巡行を本文へ追記する")
@@ -1333,10 +1332,6 @@ def main(argv: list[str] | None = None) -> int:
                 goal_cut=args.goal_cut,
                 mandatory_gate=args.mandatory_gate,
             )
-            if args.prompt and result['exit_code'] == EXIT_PASS:
-                from review_admission import check
-                result['repair_families'] = check(args.prompt, args.workdir, state_dir,
-                                                 args.target, args.predecessor)
             # どの分岐で返っても state に残せるよう、通過側の dict にも必ず載せる。
             result.setdefault("mandatory_gate", check_mandatory_gate(args.mandatory_gate)[0])
         except Indeterminate as e:
@@ -1401,5 +1396,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.modules["round_gate"] = sys.modules[__name__]
     sys.exit(main())

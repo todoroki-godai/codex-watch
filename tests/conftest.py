@@ -11,6 +11,3 @@ def offline_aws(tmp_path, monkeypatch):
     aws.write_text('#!/bin/sh\nexit 1\n')
     aws.chmod(0o755)
     monkeypatch.setenv('PATH', str(folder) + os.pathsep + os.environ['PATH'])
-
-from pathlib import Path
-VALID_REVIEW_PROMPT = (Path(__file__).resolve().parents[1] / "templates/review-request.md").read_text()

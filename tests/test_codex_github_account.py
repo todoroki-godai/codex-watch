@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from conftest import VALID_REVIEW_PROMPT
 import os
 from pathlib import Path
 import re
@@ -42,7 +41,7 @@ def launch(tmp_path, request):
     (work / '.claude').mkdir(parents=True)
     (work / 'subdir').mkdir()
     prompt = tmp_path / 'prompt'
-    prompt.write_text('prompt must reach codex\n' + VALID_REVIEW_PROMPT)
+    prompt.write_text('prompt must reach codex\n')
     state = tmp_path / 'state'
     state.mkdir()
     home = tmp_path / 'home'
@@ -318,10 +317,7 @@ def test_concurrent_runs_keep_separate_accounts(launch):
     assert first_result.returncode == 0
     first = capture(launch)
     launch.capture.unlink()
-    # Independent workdirs keep concurrent authentication coverage without reopening a live review.
-    independent = launch.work / 'independent'
-    independent.mkdir()
-    second_result, _ = launch('todoroki-godai', cwd=independent)
+    second_result, _ = launch('todoroki-godai')
     assert second_result.returncode == 0
     second = capture(launch)
     assert first['login'] == 'matsukaze-minden'
@@ -385,9 +381,7 @@ def test_repeated_account_replaces_files(launch, stale_config):
     (directory / 'config.yml').write_text(stale_config)
     launch.shared.with_name('config.yml').write_text('version: 1\nprompt: disabled\neditor: refreshed\n')
     launch.capture.unlink()
-    independent = launch.work / 'independent'
-    independent.mkdir()
-    result, _ = launch('matsukaze-minden', cwd=independent)
+    result, _ = launch('matsukaze-minden')
     assert result.returncode == 0, result.stderr
     second = capture(launch)
     assert first['shell_dir'] == second['shell_dir']

@@ -12,7 +12,6 @@
 """
 from __future__ import annotations
 
-from conftest import VALID_REVIEW_PROMPT
 import os
 import stat
 import subprocess
@@ -74,7 +73,7 @@ def _run(env_dir: Path, tmp_path: Path, images: str | None, model: str | None = 
     workdir = tmp_path / "workdir"
     workdir.mkdir(exist_ok=True)
     prompt = tmp_path / "prompt.txt"
-    prompt.write_text("dummy prompt\n" + VALID_REVIEW_PROMPT)
+    prompt.write_text("dummy prompt\n")
     state_dir = tmp_path / "state"
     state_dir.mkdir(exist_ok=True)
     env = dict(os.environ)

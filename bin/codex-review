@@ -98,7 +98,7 @@ prepare_codex_github_account
 # set -e 下では `VAR=$(cmd)` の cmd が非0を返した瞬間にシェルが即終了し、直後の `$?` 取得へ
 # 到達できない（blocked=4 / indeterminate=5 / usage=2 を握りつぶして死ぬ）。ここだけ一時的に無効化する。
 set +e
-GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --goal-cut "${REVIEW_GOAL_CUT:-}" --mandatory-gate "${REVIEW_MANDATORY_GATE:-}" --prompt "$PROMPT_FILE" --json)"
+GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --goal-cut "${REVIEW_GOAL_CUT:-}" --mandatory-gate "${REVIEW_MANDATORY_GATE:-}" --json)"
 GATE_EXIT=$?
 set -e
 if [[ -n "${CODEX_REVIEW_GATE_CHECK:-}" ]]; then
@@ -203,8 +203,6 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
   echo 'この2行が欠けている、または実際にコマンドを実行した値でない場合、このレビューは機械照合で受領不可（取り直し）になる。'
   echo
   cat "$PROMPT_FILE"
-  echo
-  python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from review_admission import RESULT_INSTRUCTION; print(RESULT_INSTRUCTION)' "$(dirname "$GATE_PY")"
 } > "$EFFECTIVE_PROMPT"
 
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
@@ -289,7 +287,6 @@ esac
   echo "prompt_bytes=$(wc -c < "$EFFECTIVE_PROMPT" | tr -d ' ')"
   echo "started_at=$(date +%s)"
   echo "started_at_human=$(date '+%Y-%m-%d %H:%M:%S')"
-  echo "repair_families=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["repair_families"])' "$GATE_JSON")"
   echo "review_target=$GATE_TARGET"
   echo "round=$GATE_ROUND"
   echo "head_sha=$GATE_HEAD"

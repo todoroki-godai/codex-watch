@@ -12,7 +12,6 @@
 """
 from __future__ import annotations
 
-from conftest import VALID_REVIEW_PROMPT
 import os
 import re
 import stat
@@ -90,11 +89,11 @@ def _run(
     workdir = tmp_path / "workdir"
     workdir.mkdir(exist_ok=True)
     prompt = tmp_path / "prompt.txt"
-    prompt.write_text("dummy prompt\n" + VALID_REVIEW_PROMPT)
+    prompt.write_text("dummy prompt\n")
     state_dir = tmp_path / "state"
     state_dir.mkdir(exist_ok=True)
 
-    env = dict(os.environ, CODEX_REVIEW_KIND_LABEL="コード")
+    env = dict(os.environ)
     for key in ("CODEX_REVIEW_MODEL", "CODEX_REVIEW_EFFORT", "CODEX_REVIEW_NO_GATE", "CODEX_REVIEW_ACK_PHRASING"):
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
@@ -246,14 +245,13 @@ def _run_in_git_workdir(
     *,
     review_target: str,
     review_goal_cut: str,
-    addition: str = "なし",
 ) -> subprocess.CompletedProcess:
     prompt = tmp_path / "prompt.txt"
-    prompt.write_text("dummy prompt\n" + VALID_REVIEW_PROMPT.replace("## 追加変更\nなし", "## 追加変更\n" + addition))
+    prompt.write_text("dummy prompt\n")
     state_dir = tmp_path / "state"
     state_dir.mkdir(exist_ok=True)
 
-    env = dict(os.environ, CODEX_REVIEW_KIND_LABEL="コード")
+    env = dict(os.environ)
     for key in ("CODEX_REVIEW_MODEL", "CODEX_REVIEW_EFFORT", "CODEX_REVIEW_NO_GATE", "CODEX_REVIEW_ACK_PHRASING"):
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
@@ -377,20 +375,6 @@ def test_cli_dispatch_content_hash_changes_with_uncommitted_diff(fake_bin: Path,
     assert result_clean.returncode == 0, result_clean.stdout + result_clean.stderr
     run_id_clean = result_clean.stdout.strip().splitlines()[-1]
 
-    # Supply a completed fake review; admission must not treat a missing result as zero.
-    import time
-    state = dict(line.split('=', 1) for line in
-                 (tmp_path / 'state' / f'{run_id_clean}.state').read_text().splitlines())
-    deadline = time.monotonic() + 3
-    while True:
-        try:
-            os.kill(int(state['pid']), 0)
-        except ProcessLookupError:
-            break
-        assert time.monotonic() < deadline, 'fake Codex did not exit'
-        time.sleep(.01)
-    Path(state['report']).write_text('マージ可\nread_sha=' + state['head_sha'] +
-                                   '\ncontent_hash=' + state['content_hash'] + '\nreview_findings=[]\n')
     (workdir / "a.txt").write_text("hello world\n")
 
     result_dirty = _run_in_git_workdir(
@@ -399,7 +383,6 @@ def test_cli_dispatch_content_hash_changes_with_uncommitted_diff(fake_bin: Path,
         workdir,
         review_target="issue:example-org/example-repo#1",
         review_goal_cut=VALID_GOAL_CUT,
-        addition="あり: 未コミット差分を追加したため再検査",
     )
     assert result_dirty.returncode == 0, result_dirty.stdout + result_dirty.stderr
     run_id_dirty = result_dirty.stdout.strip().splitlines()[-1]
