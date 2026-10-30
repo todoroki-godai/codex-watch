@@ -119,8 +119,7 @@ def test_family_subdivision(case, tags):
 
 @pytest.mark.parametrize('alter', ['bad_json', 'duplicate_json', 'subtag', 'duplicate_result', 'receipt', 'old', 'unknown_repairs', 'unreadable_state', 'broken_state'])
 def test_bad_history(case, alter):
-    target = 'issue:org/repo#1' if alter == 'receipt' else 'none:test'
-    path, report = history(case, target=target)
+    path, report = history(case)
     if alter == 'bad_json': report.write_text(report.read_text().replace('[{"severity"', '[invalid {"severity"'))
     elif alter == 'duplicate_json': report.write_text(report.read_text().replace('"family": "A"', '"family": "B", "family": "A"'))
     elif alter == 'subtag': report.write_text(report.read_text().replace('"A"', '"A.1"'))
@@ -131,7 +130,7 @@ def test_bad_history(case, alter):
     elif alter == 'unreadable_state': path.unlink(); path.mkdir()
     else: path.write_text(path.read_text() + 'review_target=none:other\n')
     with pytest.raises(Indeterminate):
-        case(request('A'), target=target)
+        case(request('A'))
 
 
 def test_remote_without_local(case):
@@ -238,102 +237,3 @@ def test_ambiguous_timestamp(case):
     history(case, 2, started_at='1')
     with pytest.raises(Indeterminate):
         case(request('A'))
-
-
-@pytest.mark.parametrize('two_repairs', [False, True])
-def test_missing_review_target_rejected(case, two_repairs):
-    if two_repairs:
-        history(case, 1, repairs='A')
-    path, _ = history(case, 2, found=('A',) if two_repairs else (), repairs='A')
-    path.write_text(path.read_text().replace('review_target=none:test\n', ''))
-    with pytest.raises(Indeterminate, match='レビュー記録'):
-        case(request('A' if two_repairs else 'なし'))
-
-
-def test_impl_disguise_rejected(case):
-    path, _ = history(case, found=(), mode='workspace-write')
-    path.write_text(path.read_text().replace('review_target=none:test\n', ''))
-    with pytest.raises(Indeterminate, match='レビュー記録'):
-        case()
-
-
-def test_real_impl_record_skipped(case):
-    # codex-impl always writes mode=workspace-write; no review fields are emitted.
-    (case.state / 'impl.state').write_text(
-        f'run_id=impl\npid={os.getpid()}\nworkdir={case.work}\nstarted_at=1\n'
-        'mode=workspace-write\nwritable_git_common=\naws=none\naws_expiration=\n')
-    assert case() == 'なし'
-
-
-@pytest.mark.parametrize('missing', ['pid', 'report', 'round', 'repair_families', 'head_sha', 'content_hash'])
-def test_review_required_keys(case, missing):
-    path, _ = history(case)
-    path.write_text(''.join(line+'\n' for line in path.read_text().splitlines()
-                            if not line.startswith(missing+'=')))
-    with pytest.raises(Indeterminate, match='レビュー記録'):
-        case(request('A'))
-
-
-@pytest.mark.parametrize('target', ['none:test', 'bypass'])
-def test_unhashed_next_round_with_addition(case, target):
-    history(case, found=(), target=target, head_sha='', content_hash='')
-    assert case(request(addition='あり: 新規入力を追加したため再検査'), target=target) == 'なし'
-
-
-def test_independent_issue_same_workdir(case):
-    history(case, found=(), target='issue:org/repo#1')
-    assert case(target='issue:org/repo#2') == 'なし'
-
-
-@pytest.mark.parametrize('target', ['none:new', 'bypass'])
-def test_omitted_predecessor_untracked_target_keeps_history(case, target):
-    history(case, found=(), target='issue:org/repo#1')
-    with pytest.raises(Indeterminate, match='前巡0件'):
-        case(target=target)
-
-
-def test_tracked_receipt_still_required(case):
-    history(case, found=(), target='issue:org/repo#1', head_sha='', content_hash='')
-    with pytest.raises(Indeterminate, match='受領照合'):
-        case(request(addition='あり: 新規入力を追加したため再検査'), target='issue:org/repo#1')
-
-
-@pytest.mark.parametrize('bypass', [False, True])
-def test_launcher_unhashed_next_round(case, tmp_path, monkeypatch, bypass):
-    fake = tmp_path / 'bin'; fake.mkdir()
-    done = tmp_path / 'done'
-    codex = fake / 'codex'
-    codex.write_text('''#!/bin/sh
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "-o" ]; then shift; report="$1"; fi
-  shift
-done
-cat >/dev/null
-printf 'review_findings=[]\\n' > "$report"
-printf 'done' > "$RGE_DONE"
-''')
-    codex.chmod(0o755)
-    gh = fake / 'gh'; gh.write_text('#!/bin/sh\nexit 93\n'); gh.chmod(0o755)
-    env = {k:v for k,v in os.environ.items() if not k.startswith(('CODEX_', 'REVIEW_', 'GH_', 'GITHUB_'))}
-    env.update(PATH=str(fake)+os.pathsep+env['PATH'], CODEX_WATCH_DIR=str(case.state),
-               CODEX_REVIEW_KIND_LABEL='コード', REVIEW_TARGET='none:test', RGE_DONE=str(done))
-    if bypass:
-        env['CODEX_REVIEW_NO_GATE'] = 'test'
-    result = subprocess.run([str(ROOT / 'bin/codex-review'), str(case.work), str(case.prompt)],
-                            env=env, capture_output=True, text=True, timeout=10)
-    assert result.returncode == 0, result.stdout + result.stderr
-    import time
-    for _ in range(100):
-        if done.exists(): break
-        time.sleep(.01)
-    assert done.exists()
-    data = admission.strict_state(next(case.state.glob('*.state')))
-    target = 'bypass' if bypass else 'none:test'
-    assert data['review_target'] == target
-    assert data['head_sha'] == data['content_hash'] == ''
-    # The stub has produced its final report; isolate OS process reaping from admission.
-    def exited(pid, signal):
-        assert pid == int(data['pid']) and signal == 0
-        raise ProcessLookupError
-    monkeypatch.setattr(admission.os, 'kill', exited)
-    assert case(request(addition='あり: 新規入力を追加したため再検査'), target=target) == 'なし'

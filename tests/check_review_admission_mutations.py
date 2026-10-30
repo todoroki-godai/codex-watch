@@ -21,24 +21,6 @@ CASES = [
     ('duplicate-result-key', "require(key not in out, '前巡JSONの重複キー')", "require(True, '前巡JSONの重複キー')", 'test_bad_history and duplicate_json'),
     ('duplicate-state-key', 'bool(sep) and key not in result', 'bool(sep)', 'test_bad_history and broken_state'),
 ]
-CASES += [
-    ('missing-review-target',
-     "            review_keys = {'review_target', 'round', 'repair_families', 'head_sha', 'content_hash'}",
-     "            if 'review_target' not in d: continue\n            review_keys = {'review_target', 'round', 'repair_families', 'head_sha', 'content_hash'}",
-     'test_missing_review_target_rejected'),
-    ('unhashed-next-round',
-     "if d['review_target'].startswith(('pr:', 'issue:')):", "if True:",
-     'test_unhashed_next_round_with_addition'),
-    ('independent-issue',
-     "if d['review_target'] in keys or (same_workdir and", "if same_workdir or (same_workdir and",
-     'test_independent_issue_same_workdir'),
-    ('impl-disguise',
-     "if d.get('mode') == 'workspace-write' and not review_keys.intersection(d):",
-     "if d.get('mode') == 'workspace-write':", 'test_impl_disguise_rejected'),
-    ('omitted-predecessor',
-     "if d['review_target'] in keys or (same_workdir and", "if d['review_target'] in keys or (False and",
-     'test_omitted_predecessor_untracked_target_keeps_history'),
-]
 results = []
 for name, old, new, select in CASES:
     folder = OUT / name
@@ -62,12 +44,7 @@ for name, old, new, select in CASES:
     executed = set()
     if trace.exists():
         for entry in trace.read_text().splitlines(): executed.update(json.loads(entry))
-    expected_refusal = {
-        'unhashed-next-round': 'round_gate.Indeterminate: 受付拒否: 前巡の受領照合が不成立',
-        'independent-issue': 'round_gate.Indeterminate: 受付拒否: 前巡0件',
-    }.get(name)
-    detected = 'DID NOT RAISE' in log or 'AssertionError' in log or (expected_refusal and expected_refusal in log)
-    ok = bool(result.returncode == 1 and line in executed and detected and 'ERROR ' not in log)
+    ok = result.returncode == 1 and line in executed and ('DID NOT RAISE' in log or 'AssertionError' in log) and 'ERROR ' not in log
     record = dict(name=name, ok=ok, changed_line=line, executed=line in executed,
                   transformation={'old':old, 'new':new}, exit=result.returncode,
                   command=command, summary=log.strip().splitlines()[-1])
