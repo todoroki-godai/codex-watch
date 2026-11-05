@@ -77,9 +77,14 @@ fi
 # この起動口は dev（669126230735）の一時鍵を環境変数で渡し、AWS_CONFIG_FILE も専用のものへ
 # 差し替える（~/.aws は deny）。依頼文側で AWS_PROFILE や --profile を指定させると、専用 config に
 # 無いプロファイル名を探して "The config profile (...) could not be found" で必ず失敗する。
-AWS_PROFILE_IN_PROMPT_RE='AWS_PROFILE[[:space:]]*=|--profile[[:space:]]'
-if [[ -z "${CODEX_IMPL_ALLOW_AWS_PROFILE_IN_PROMPT:-}" ]] &&
-   grep -qE "$AWS_PROFILE_IN_PROMPT_RE" "$PROMPT_FILE"; then
+# 検査は行単位（複数行にまたがる書き方は検出しない＝既知の非検出範囲）。
+# --profile は aws / cdk を含む行だけを見る（「--profile と書かないこと」のような説明文で誤って
+# 止めないため）。それでも、説明文に aws のコマンド例を書くと止まる＝過剰検出側に倒している。
+AWS_PROFILE_IN_PROMPT_RE='(AWS_PROFILE|AWS_DEFAULT_PROFILE)[[:space:]]*=|(aws|cdk)[^#]*--profile([[:space:]]|=)'
+if [[ "${CODEX_IMPL_ALLOW_AWS_PROFILE_IN_PROMPT:-}" == "1" ]]; then
+    echo "注意: 依頼文の AWS 接続先の検査を飛ばしました（CODEX_IMPL_ALLOW_AWS_PROFILE_IN_PROMPT=1）。" >&2
+    echo "  この起動かぎりの指定にしてください（export して常用すると、以後の全起動で検査が効きません）。" >&2
+elif grep -qE "$AWS_PROFILE_IN_PROMPT_RE" "$PROMPT_FILE"; then
     echo "拒否: 依頼文が AWS の接続先を指定しています: $PROMPT_FILE" >&2
     grep -nE "$AWS_PROFILE_IN_PROMPT_RE" "$PROMPT_FILE" >&2
     echo "  この起動口は dev（669126230735）の一時鍵を環境変数で渡し、AWS_CONFIG_FILE も専用のものへ差し替えます（~/.aws は読めません）。" >&2
@@ -87,7 +92,7 @@ if [[ -z "${CODEX_IMPL_ALLOW_AWS_PROFILE_IN_PROMPT:-}" ]] &&
     echo "  直し方: 依頼文から接続先の指定を消し、口座の照合は素の" >&2
     echo "    aws sts get-caller-identity --query Account --output text" >&2
     echo "  が 669126230735 を返すことで行わせてください。" >&2
-    echo "  意図的に通す場合のみ CODEX_IMPL_ALLOW_AWS_PROFILE_IN_PROMPT=1 を付けて再実行してください。" >&2
+    echo "  意図的に通す場合のみ、この起動かぎりで CODEX_IMPL_ALLOW_AWS_PROFILE_IN_PROMPT=1 codex-impl ... と前置きしてください（値は 1 だけが有効）。" >&2
     exit 5
 fi
 
