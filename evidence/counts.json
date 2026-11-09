@@ -1,0 +1,59 @@
+{
+  "requested": {
+    "A": 20,
+    "B": 39,
+    "ambiguous": [
+      18
+    ],
+    "false_positive_ids": [
+      3,
+      15,
+      20,
+      22,
+      44,
+      49,
+      53,
+      56,
+      59
+    ],
+    "false_positive_percent": 23.076923076923077,
+    "false_negative_ids": [
+      21
+    ]
+  },
+  "without_must": {
+    "A": 20,
+    "B": 39,
+    "ambiguous": [
+      18
+    ],
+    "false_positive_ids": [],
+    "false_positive_percent": 0.0,
+    "false_negative_ids": [
+      21,
+      31,
+      38,
+      41,
+      43
+    ]
+  },
+  "review_and_fix": {
+    "A": 20,
+    "B": 39,
+    "ambiguous": [
+      18
+    ],
+    "false_positive_ids": [
+      3,
+      44,
+      53
+    ],
+    "false_positive_percent": 7.6923076923076925,
+    "false_negative_ids": [
+      0,
+      38,
+      40,
+      55
+    ]
+  }
+}

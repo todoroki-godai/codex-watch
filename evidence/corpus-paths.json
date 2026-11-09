@@ -1,0 +1,422 @@
+[
+  {
+    "id": 0,
+    "state": "receipt-gate-revert-hook-20261109-100826-68478",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-receipt-gate-revert-hook.md",
+    "sha256": "b52f668306a857cb7224c56a6c937ca6c213a4270b6df1cd59dec74964e5e1be",
+    "class": "A"
+  },
+  {
+    "id": 1,
+    "state": "receipt-gate-launcher-20261109-100824-68361",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-receipt-gate-launcher.md",
+    "sha256": "c765156472b09078869b30060392afc869200697381a0bd36d9bb6a2bb00922a",
+    "class": "A"
+  },
+  {
+    "id": 2,
+    "state": "batch-rules-fix-r4c-20261109-095044-18895",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-batch-rules-fix-r4.md",
+    "sha256": "38b67fd30f11f63689ccd4560b360263c5b821e28519b65d9028ba0786f2a8dd",
+    "class": "A"
+  },
+  {
+    "id": 3,
+    "state": "receipt-gate-hook-20261109-094544-95268",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-receipt-gate-hook.md",
+    "sha256": "073336ceb14d0fc11d1b4aab6ec918da8a17403a84c9b66fb7d4c958a75a58f3",
+    "class": "B"
+  },
+  {
+    "id": 4,
+    "state": "takeover-score-adoption-20261109-093234-50355",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-takeover-score-adoption.md",
+    "sha256": "69a49ee6a5491e5936932dcb733547bbce0996e2f8efc4cf1be86feff00816bf",
+    "class": "A"
+  },
+  {
+    "id": 5,
+    "state": "batch-check-rules-20261109-092645-31286",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-batch-rules.md",
+    "sha256": "3cc9184a7dd83a26a548cac7d51abbfb9c3b63711a9dca5dfdf13e344e8b75f8",
+    "class": "B"
+  },
+  {
+    "id": 6,
+    "state": "score-batch-fix1-20261109-084906-62805",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-score-batch-fix1.md",
+    "sha256": "196ad01e9491167df99a88e918102e043ed2336baac6eeba97e053872cbe3a26",
+    "class": "A"
+  },
+  {
+    "id": 7,
+    "state": "score-batch-check-20261109-084011-44060",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-score-batch.md",
+    "sha256": "37cd1ee5d2cbc2842c1de5dda2b7e1938163d614e201100f815e45955b38f15f",
+    "class": "B"
+  },
+  {
+    "id": 8,
+    "state": "report-review-fix1-20261109-082226-5982",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-report-review-fix1.md",
+    "sha256": "af7ff33fcd72f283c491e2e4e440c1edd65dc9f944b8bb2447badd6154f5a9ba",
+    "class": "A"
+  },
+  {
+    "id": 9,
+    "state": "report-review-test-20261109-081251-76379",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/f169e359-cec0-4750-b5fb-1c939eda8384/scratchpad/codex-report-review-test.md",
+    "sha256": "0d403ce63232d4d754d63b4be11c790726fe5bf0b89a5ab2f65f44b20e0e25f9",
+    "class": "B"
+  },
+  {
+    "id": 10,
+    "state": "q1294-fix6-20261107-000447-64538",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/refactor-prompt-q1294-fix6.md",
+    "sha256": "a038a77012a50d24817600e403ad2e9bf19b7bb8280e8206146c039a69ece70b",
+    "class": "B"
+  },
+  {
+    "id": 11,
+    "state": "q1294-fix5-20261106-225409-93416",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/refactor-prompt-q1294-fix5.md",
+    "sha256": "122f3ab42bc047d9e1ae1db933cc775ce8a36163fe4acb5d08b0adaea50d3bcf",
+    "class": "B"
+  },
+  {
+    "id": 12,
+    "state": "q1294-fix4-20261106-221531-96339",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/refactor-prompt-q1294-fix4.md",
+    "sha256": "de155a64d3eed8ddb60b7b832d0b83596f0887168577946a5b339916f0946e26",
+    "class": "B"
+  },
+  {
+    "id": 13,
+    "state": "q1294-fix3-20261106-195930-36945",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/refactor-prompt-q1294-fix3.md",
+    "sha256": "00fa039b4d86b52b2fbb97b46b5ec397fb59bfd98c04792c4dec27772e8da55d",
+    "class": "B"
+  },
+  {
+    "id": 14,
+    "state": "p6-input-contract-20261106-194624-99079",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/deploy-p6input.md",
+    "sha256": "63807e536db0656e3e1830ee84e8f5ab2469bf3828ea91d3f01ad776ac339b35",
+    "class": "B"
+  },
+  {
+    "id": 15,
+    "state": "starfix-red1-20261106-194244-72657",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/starfix-red1.md",
+    "sha256": "fab0c4e1c7f20fa00e3aa03ac800db38e7737b48c92441d46a8f087285f65d1c",
+    "class": "B"
+  },
+  {
+    "id": 16,
+    "state": "q1294-fix2-20261106-194027-58380",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/refactor-prompt-q1294-fix2.md",
+    "sha256": "8eef04fcb9489ba974d20d57e214d19bd76eea7519d13abb2f243d9a08173dd0",
+    "class": "B"
+  },
+  {
+    "id": 17,
+    "state": "p6-raw-large-20261106-193653-33630",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/deploy-p6large.md",
+    "sha256": "7bda16a46af2def96a774b87b4713e71d4cc12c203f885d7a53a644bab0fdaa5",
+    "class": "B"
+  },
+  {
+    "id": 18,
+    "state": "eic-fix2-20261106-192800-11756",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/deploy-eic-fix2.md",
+    "sha256": "48ba1947b30cabef558b4750685b86b4db0beeff46902b933319d9c662dda034",
+    "class": "?"
+  },
+  {
+    "id": 19,
+    "state": "p6-raw-impl-20261106-192443-82420",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/deploy-p6raw.md",
+    "sha256": "dc43ba0478ca59f80c268962f98299565840ffd034790b02160ef63122c1f2fa",
+    "class": "B"
+  },
+  {
+    "id": 20,
+    "state": "starfix-prep2-20261106-192327-65429",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/starfix-prep2.md",
+    "sha256": "29df07623a9f498a9fc07a524a39bcc1f0e3c4c061940e1da5e2de40dd3080f3",
+    "class": "B"
+  },
+  {
+    "id": 21,
+    "state": "should1-20261106-191752-91740",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/rev8-woker-night/_work/codex-queue/prompt-should1.md",
+    "sha256": "81571470dfd8668980a835df4eeb9e6bdf7b6a5d0383b9ceac0272e8c4b7e0bd",
+    "class": "A"
+  },
+  {
+    "id": 22,
+    "state": "starfix-prep-20261106-191517-62205",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/starfix-prep.md",
+    "sha256": "73a2177cf4f7971e0ace5c668f5549d9e0eaf58d50d5b909320583645de7a615",
+    "class": "B"
+  },
+  {
+    "id": 23,
+    "state": "disclosure-fix2-20261106-191344-37594",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/disclosure-fix2.md",
+    "sha256": "60cb1e98c7de0927620557ef89613559ecf072995f0ba10b55b4078dc2cdc6c0",
+    "class": "A"
+  },
+  {
+    "id": 24,
+    "state": "p6-readiness-20261106-191222-17316",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/deploy-p6.md",
+    "sha256": "9e69cbd9ead2200a2baeaa3856ddd9e1512e1861d7199cdb42b372f4b6d8c761",
+    "class": "B"
+  },
+  {
+    "id": 25,
+    "state": "logout-fix-20261106-190305-99439",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/logout-fix.md",
+    "sha256": "8f6008b637e19bed8119dd359b383d5a94c9846f7773ab9416ed0601318a6fbf",
+    "class": "A"
+  },
+  {
+    "id": 26,
+    "state": "disclosure-fix-20261106-190243-94199",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/disclosure-fix.md",
+    "sha256": "e63c88c9b86d23548cf2c0117335de12fbd0920f9257133a3e9d2fca4cf2af63",
+    "class": "A"
+  },
+  {
+    "id": 27,
+    "state": "bsplit-20261106-190242-93916",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/rev8-woker-sample/_work/codex-queue/prompt-bsplit.md",
+    "sha256": "b1113ee09fa7302e0a19a2ff10719e36d3d8344e392345feb7fea483482fe38e",
+    "class": "B"
+  },
+  {
+    "id": 28,
+    "state": "q1294-final-20261106-190202-86011",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/refactor-prompt-q1294-final.md",
+    "sha256": "78e9c42e4b712b8f76cb9678ae093ebf58cb40017be1ac4fc8675997fb4e6327",
+    "class": "B"
+  },
+  {
+    "id": 29,
+    "state": "night2-20261106-190144-83067",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/rev8-woker-night/_work/codex-queue/prompt-night2.md",
+    "sha256": "09502b76a21a2df6bdccf0be3b3eeedb9d898b05888f417a188d0500069169a0",
+    "class": "B"
+  },
+  {
+    "id": 30,
+    "state": "p48-20261106-185906-60741",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/deploy-p48.md",
+    "sha256": "4c40d2415df5d71f8cdf014f57e97ae155c1263fafb56966aff0816ca825377b",
+    "class": "B"
+  },
+  {
+    "id": 31,
+    "state": "starfix-night-20261106-185558-27584",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/starfix-night.md",
+    "sha256": "db8e67bbbe887d5c5f6de089e7a2ad856a2220cc06aa4d11b5dc466e406bdaca",
+    "class": "A"
+  },
+  {
+    "id": 32,
+    "state": "night-1106-20261106-185518-24282",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/rev8-woker-night/_work/night-1106/PROMPT.md",
+    "sha256": "ed01363056c1e3ccbab280f9a080dbd7af2c43c0c14a53d3e85910e44387c00a",
+    "class": "B"
+  },
+  {
+    "id": 33,
+    "state": "logout-run-20261106-185047-82267",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/logout-run.md",
+    "sha256": "c8d1690aa4f9ad8a2acc5f942f519246290226613df1b89252e0fe6f7ffe2587",
+    "class": "B"
+  },
+  {
+    "id": 34,
+    "state": "a3-verify-20261106-184947-76607",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/a3-verify.md",
+    "sha256": "66eaef97ae61fb74191d7a879bfc671b28488fe2c5975fb9017595ba0fb8f7d7",
+    "class": "B"
+  },
+  {
+    "id": 35,
+    "state": "all-wt-judge-20261106-184723-53549",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/rev8-woker-sample/_work/rev8-sample-gap/PROMPT-all-wt.md",
+    "sha256": "691cf1b8a426e1a68ee4e2556392ad2c85a12ea7ad71b5daa1c0f14635ca012e",
+    "class": "B"
+  },
+  {
+    "id": 36,
+    "state": "parallel-fix-20261106-184015-94381",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/parallel-fix.md",
+    "sha256": "10f357912c2620de2aff306044ded4ed190bcacfd868d522a47f1e48dc88f82a",
+    "class": "A"
+  },
+  {
+    "id": 37,
+    "state": "verify7-triage-20261106-183813-76358",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/refactor-20261106-prompts/speed/verify7-triage.md",
+    "sha256": "72b28703cd3bf43c1d9ec2aea4a806133f2f9ccef8f8a408e2cd31aa9a6cd7fc",
+    "class": "B"
+  },
+  {
+    "id": 38,
+    "state": "speed-cut-4screens-20261106-183633-64146",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/refactor-20261106-prompts/speed/impl-cut-4screens.md",
+    "sha256": "450bfa49399259c469fd4edc4d18f50ad8693478d2de3b0ea37836b19f692ce7",
+    "class": "A"
+  },
+  {
+    "id": 39,
+    "state": "old-wt-judge-20261106-183314-41540",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/rev8-woker-sample/_work/rev8-sample-gap/PROMPT-old-wt.md",
+    "sha256": "3eeba6d782397c6cc98454766486cde011366633ecf374faac62a5c628e1da53",
+    "class": "B"
+  },
+  {
+    "id": 40,
+    "state": "codexmode-fix-20261106-183114-85235",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/codexmode-fix.md",
+    "sha256": "14522e90f9a0127258023a41b0c74cb3686ba001eb542a88425471ff7eebd8c6",
+    "class": "A"
+  },
+  {
+    "id": 41,
+    "state": "prd-eic-fix1-20261106-182720-54348",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/deploy-20261030/prd-eic-fix1-prompt.md",
+    "sha256": "1dd253d0b89d0e6c907ab16fed4d143082e434473b863112451ec80a4eaa6dae",
+    "class": "A"
+  },
+  {
+    "id": 42,
+    "state": "cleanup-list-20261106-182058-99964",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/rev8-woker-sample/_work/rev8-sample-gap/PROMPT-cleanup.md",
+    "sha256": "421f2793a1c340a7273bd3d9ecfc68f4b61f0cacb2784429f8d4248524a90c55",
+    "class": "B"
+  },
+  {
+    "id": 43,
+    "state": "stg-nobackup-fix1-20261106-181928-84596",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/deploy-20261030/stg-nobackup-fix1-prompt.md",
+    "sha256": "7a6593b9353ecfddca05e2c482d05c1189ebf200102a2195fa742c04012b4d68",
+    "class": "A"
+  },
+  {
+    "id": 44,
+    "state": "codex-mode-20261106-181854-78858",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/codexmode-prompt.md",
+    "sha256": "fb739024b92aacc5f825266ded37a439d547e77fc1d6e3057b0143b943fcba09",
+    "class": "B"
+  },
+  {
+    "id": 45,
+    "state": "queue-merge-pending-20261106-181336-80662",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/refactor-20261106-prompts/speed/impl-queue-merge-pending.md",
+    "sha256": "8db153cf9d64a1ff9a22eb06781135c425c5fdf09bf731ab342c7cf5bccc0261",
+    "class": "B"
+  },
+  {
+    "id": 46,
+    "state": "civ-rows2-20261106-180855-27084",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/refactor-20261106-prompts/civ-rows.md",
+    "sha256": "cb4974992b4419b051fdd01818d2e0ac5697ae7b7fb292eabfe6e22ae2719c05",
+    "class": "B"
+  },
+  {
+    "id": 47,
+    "state": "prd-eic-20261106-180738-13345",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/deploy-20261030/prd-eic-prompt.md",
+    "sha256": "b18033f08a0d467057d6b5d714f1e404816ac8571ed11c0973caf63bae0b15b4",
+    "class": "B"
+  },
+  {
+    "id": 48,
+    "state": "spec-rev-plan-fix-r1-20261106-180529-87197",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/refactor-20261106-prompts/spec-rev-plan-fix-r1.md",
+    "sha256": "8393b6f0aa00675924210619ccead71c29d01f21b32a0b3830005500317e7488",
+    "class": "A"
+  },
+  {
+    "id": 49,
+    "state": "rev8-sample-gap-20261106-180459-81079",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/rev8-woker-sample/_work/rev8-sample-gap/PROMPT.md",
+    "sha256": "fdb11f3c4c8e9a2cf9e19ecff5edff77910fbc6c35369c3fe2119d3fc25dbd83",
+    "class": "B"
+  },
+  {
+    "id": 50,
+    "state": "stg-nobackup-20261106-180427-78246",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/deploy-20261030/stg-nobackup-prompt.md",
+    "sha256": "a9700bc296822003bfe66c9cd6f80597f6f4bb996d13068db0f05d90a60cc499",
+    "class": "B"
+  },
+  {
+    "id": 51,
+    "state": "logout-recheck-20261106-180348-68923",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/logout-recheck.md",
+    "sha256": "427b2c783bb71a66b726c19c6ab271a2f1ddd45883029320be8b1fca3024ce25",
+    "class": "B"
+  },
+  {
+    "id": 52,
+    "state": "parallel-steps-r2-20261106-180052-41639",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/parallel-steps-r2.md",
+    "sha256": "f9d0aeb9fa6346aa530d318136383d6f7502a74634984f3563276391dc2dd775",
+    "class": "B"
+  },
+  {
+    "id": 53,
+    "state": "parallel-steps-20261106-175640-14025",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/parallel-steps.md",
+    "sha256": "7bf51a9062c16862925dea43b3534c199e82fa203009fa81bf3d799394cc4ef5",
+    "class": "B"
+  },
+  {
+    "id": 54,
+    "state": "speed-m1-fix-20261106-175103-60687",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/refactor-20261106-prompts/speed/impl-m1-fix.md",
+    "sha256": "f8addbff8eb80b48f4a8b71a5578e315c6ab348f68169ca7e97c2a8b7964779c",
+    "class": "A"
+  },
+  {
+    "id": 55,
+    "state": "newaddr-fix-r3-20261106-175021-51524",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/newaddr-fix-r3.md",
+    "sha256": "57c4ca252d729da3260ca57944e36e5e6014d9899f15578dc76515bd3d24955d",
+    "class": "A"
+  },
+  {
+    "id": 56,
+    "state": "spec-rev-plan-8rules-20261106-175008-48169",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_work/notes/refactor-20261106-prompts/spec-rev-plan-8rules.md",
+    "sha256": "117c865c001d1d841340519f8d9aa18d97dc9a582db1430b3ba3e065bc9518cd",
+    "class": "B"
+  },
+  {
+    "id": 57,
+    "state": "pending-fix-console-20261106-174830-32748",
+    "prompt": "/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/rev8-woker-pending/_work/web-pending-ui/PROMPT-fix-console.md",
+    "sha256": "f85a2b1d74f62e01944e71a5aa4aedef878e03d1e0bb0af493922f5f4d62f784",
+    "class": "B"
+  },
+  {
+    "id": 58,
+    "state": "newaddr-fix-r2-20261106-174034-62009",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/newaddr-fix-r2.md",
+    "sha256": "21001c402a84b8211c98ddd7a56c5708b78d804a937469ce6bda703af8b26ac6",
+    "class": "A"
+  },
+  {
+    "id": 59,
+    "state": "disclosure-member-20261106-173717-30741",
+    "prompt": "/private/tmp/claude-501/-Users-matsukaze-takashi-updater-updater-index/1c332dfe-5127-4975-8c60-8cac8609ad37/scratchpad/disclosure-member.md",
+    "sha256": "0af5bb23e32f6730c4fc4bafb2dab0dff4410f2da59bb4add3042b95078721fe",
+    "class": "B"
+  }
+]
