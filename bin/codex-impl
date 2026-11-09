@@ -35,6 +35,9 @@ LABEL="${3:-impl}"
 # Inspect the file itself, before config/credentials/launch; never parse the caller's Bash.
 python3 - "$PROMPT_FILE" <<'PYRECEIPT'
 import sys
+import re
+import json
+from datetime import datetime
 from pathlib import Path
 
 try:
@@ -51,11 +54,23 @@ try:
         reason = '直しの出所: は行頭に、空でない値つきで1行だけ必要です。'
     elif not source[0].startswith(('なし', 'レビュー')):
         reason = '直しの出所は「なし」か「レビュー」で始めてください。'
+    elif source[0].startswith('なし'):
+        source_line = next(i for i, line in enumerate(body.splitlines())
+                           if line.startswith('直しの出所:'))
+        match = re.search(r'巡[0-9]|指摘を反映', '\n'.join(body.splitlines()[source_line + 1:]))
+        if match:
+            reason = '出所を「レビュー…」に直し、受領の3行を書く必要があります。語で見ているだけ・言い換えは通る。'
+            log = Path.home() / '.codex-watch' / 'receipt-gate-stops.log'
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with log.open('a', encoding='utf-8') as stream:
+                stream.write(json.dumps({'time': datetime.now().astimezone().isoformat(),
+                                         'prompt': str(Path(sys.argv[1]).resolve()),
+                                         'match': match.group()}, ensure_ascii=False) + '\n')
     elif source[0].startswith('レビュー'):
         if any(len(fields[key]) != 1 or not fields[key][0] for key in fields if key != '直しの出所'):
             reason = 'レビューの直しには、空でない受領の3行がそれぞれ1行必要です。'
 except (OSError, UnicodeError, ValueError):
-    reason = '依頼文をUTF-8のテキストとして読めません（NULも不可）。'
+    reason = '依頼文の読取または停止ログの記録に失敗しました（UTF-8必須・NUL不可）。'
 if reason:
     print('拒否: ' + reason + """
 ~/.claude/rules/review-receipt.md の3手順を、直しの依頼前に済ませてください:
@@ -67,7 +82,7 @@ if reason:
 受領③7段: M1は㋑、既存の起動口を再利用
 レビュー由来でなければ「直しの出所: なし（新規実装）」を1行。
 既知の書き方だけを見る・自己申告なので迂回できる（捕まえるのは書き忘れ）。
-本文の語による「なし」の拒否は、誤検知が5%を超えたため行いません。""", file=sys.stderr)
+「なし」の本文は 巡[0-9]|指摘を反映 で検査します。語で見ているだけ・言い換えは通る。""", file=sys.stderr)
     sys.exit(2)
 PYRECEIPT
 

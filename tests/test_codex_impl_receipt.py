@@ -1,5 +1,6 @@
 """Exercise the actual launcher's preflight; stop at the next stage, never launch a CLI."""
 import os
+import json
 from pathlib import Path
 import subprocess
 
@@ -20,6 +21,8 @@ def check(tmp_path):
     prompt = tmp_path / 'prompt with spaces.md'
     fake = tmp_path / 'bin'
     fake.mkdir()
+    home = tmp_path / 'home'
+    home.mkdir()
     for name in ('codex', 'aws', 'git', 'gh', 'nohup'):
         p = fake / name
         p.write_text('#!/bin/sh\necho UNEXPECTED_CLI >&2\nexit 99\n')
@@ -35,7 +38,7 @@ def check(tmp_path):
         launcher.write_text(text)
         prompt.write_bytes(body.encode() if isinstance(body, str) else body)
         result = subprocess.run(['bash', str(launcher), str(tmp_path), str(prompt)],
-                                env={**os.environ, 'PATH': f'{fake}:{os.environ["PATH"]}'},
+                                env={**os.environ, 'HOME': str(home), 'PATH': f'{fake}:{os.environ["PATH"]}'},
                                 text=True, capture_output=True, timeout=5)
         assert 'UNEXPECTED_CLI' not in result.stderr
         return result
@@ -77,10 +80,37 @@ def test_real_B_positive(check, fixture_id):
     assert r.returncode == 71 and r.stderr.strip() == 'NEXT_STAGE'
 
 
-def test_accident_shape_is_known_limit_without_rule_2(check):
+def test_accident_shape_is_rejected(check):
     r = check('直しの出所: なし（新規実装）\n新しい仕組みを足す\n'
               '## C. レビュー巡3の指摘を直す\n指摘を反映する。\n')
-    assert r.returncode == 71  # Deliberate scope decision, not a negative-case success.
+    assert r.returncode == 2 and 'NEXT_STAGE' not in r.stderr
+
+
+@pytest.mark.parametrize('tail,word', [
+    ('## C. レビュー巡3の指摘を直す', '巡3'),
+    ('指摘を反映', '指摘を反映'),
+    ('\n' * 100 + '巡9', '巡9'),
+])
+def test_word_negative_and_private_log(check, tail, word, tmp_path):
+    r = check('直しの出所: なし\n本文を記録しない目印\n' + tail)
+    assert r.returncode == 2 and 'NEXT_STAGE' not in r.stderr
+    assert '出所を「レビュー…」に直し、受領の3行を書く' in r.stderr
+    assert '語で見ているだけ・言い換えは通る' in r.stderr
+    log = tmp_path / 'home/.codex-watch/receipt-gate-stops.log'
+    rows = log.read_text().splitlines()
+    assert len(rows) == 1 and '本文を記録しない目印' not in rows[0]
+    row = json.loads(rows[0])
+    assert set(row) == {'time', 'prompt', 'match'}
+    assert row['time'] and row['match'] == word
+    assert row['prompt'] == str(tmp_path / 'prompt with spaces.md')
+    check('直しの出所: なし\n' + tail)
+    assert len(log.read_text().splitlines()) == 2
+
+
+def test_only_body_after_source_is_scanned(check, tmp_path):
+    r = check('巡3 指摘を反映\n直しの出所: なし（巡3）\n新規実装 [Must]\n')
+    assert r.returncode == 71
+    assert not (tmp_path / 'home/.codex-watch/receipt-gate-stops.log').exists()
 
 
 # Independent input attacks: conflicting duplicates, Unicode blank values, NUL.
@@ -101,6 +131,9 @@ def test_independent_input_attacks(check, body):
 # Killed mutants: a unique marker is executed inside the changed branch.
 # Exit 71 proves the original exit-2 oracle would fail, rather than a syntax crash.
 @pytest.mark.parametrize('body,old,new', [
+    ('直しの出所: なし\n## C. レビュー巡3の指摘を直す\n',
+     "reason = '出所を「レビュー…」に直し、受領の3行を書く必要があります。語で見ているだけ・言い換えは通る。'",
+     "print('MUTANT_M2', file=sys.stderr); reason = ''"),
     ('直しの出所: 巡3の指摘\n',
      "reason = '直しの出所は「なし」か「レビュー」で始めてください。'",
      "print('MUTANT_M1', file=sys.stderr); reason = ''"),
@@ -120,3 +153,28 @@ def test_mutations_hit_and_killed(check, body, old, new):
     assert mutant.returncode == 71
     assert 'MUTANT_' in mutant.stderr and 'NEXT_STAGE' in mutant.stderr
     assert mutant.returncode != baseline.returncode
+
+
+@pytest.mark.parametrize('body', [
+    '直しの出所: なし\r\n直しの出所: レビュー巡3\r\n',
+    '直しの出所: なし\u2028## C. レビュー巡3の指摘を直す',
+])
+def test_independent_line_boundary_attacks(check, body):
+    r = check(body)
+    assert r.returncode == 2 and 'NEXT_STAGE' not in r.stderr
+
+
+def test_log_failure_stops_launch(check, tmp_path):
+    (tmp_path / 'home/.codex-watch').write_text('not a directory')
+    r = check('直しの出所: なし\n指摘を反映')
+    assert r.returncode == 2 and 'NEXT_STAGE' not in r.stderr
+
+
+@pytest.mark.parametrize('program', ['#!/bin/sh\nexit 127\n',
+                                    '#!/bin/sh\necho unexpected-exception >&2\nexit 1\n'])
+def test_python_failure_stops_launch(check, tmp_path, program):
+    python = tmp_path / 'bin/python3'
+    python.write_text(program)
+    python.chmod(0o755)
+    r = check('直しの出所: なし\n')
+    assert r.returncode != 0 and 'NEXT_STAGE' not in r.stderr
