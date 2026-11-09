@@ -24,7 +24,7 @@ def launch(tmp_path):
     work = tmp_path / 'work'
     work.mkdir()
     prompt = tmp_path / 'prompt'
-    prompt.write_text('offline test')
+    prompt.write_text('直しの出所: なし\noffline test')
     common = str(tmp_path / 'shared "repo" \\ dir/.git')
     gitdir = common + '/worktrees/test'
     executable(fake / 'git', '''import os,sys

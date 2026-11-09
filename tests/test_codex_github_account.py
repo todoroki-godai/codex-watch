@@ -41,7 +41,7 @@ def launch(tmp_path, request):
     (work / '.claude').mkdir(parents=True)
     (work / 'subdir').mkdir()
     prompt = tmp_path / 'prompt'
-    prompt.write_text('prompt must reach codex\n')
+    prompt.write_text('直しの出所: なし\nprompt must reach codex\n')
     state = tmp_path / 'state'
     state.mkdir()
     home = tmp_path / 'home'

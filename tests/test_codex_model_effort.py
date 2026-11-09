@@ -174,7 +174,7 @@ def _run_impl(
     elif modules_dir.exists():
         shutil.rmtree(modules_dir)
     prompt = tmp_path / "prompt.txt"
-    prompt.write_text("dummy prompt\n")
+    prompt.write_text("直しの出所: なし\ndummy prompt\n")
     state_dir = tmp_path / "state"
     state_dir.mkdir(exist_ok=True)
 

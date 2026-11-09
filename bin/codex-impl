@@ -31,6 +31,44 @@ LABEL="${3:-impl}"
 [[ -d "$WORKDIR" ]] || { echo "作業先がありません: $WORKDIR" >&2; exit 2; }
 [[ -f "$PROMPT_FILE" ]] || { echo "プロンプトファイルがありません: $PROMPT_FILE" >&2; exit 2; }
 
+
+# Inspect the file itself, before config/credentials/launch; never parse the caller's Bash.
+python3 - "$PROMPT_FILE" <<'PYRECEIPT'
+import sys
+from pathlib import Path
+
+try:
+    body = Path(sys.argv[1]).read_text(encoding='utf-8')
+    if '\0' in body:
+        raise ValueError
+    fields = {}
+    for key in ('直しの出所', '受領①累計', '受領②件数', '受領③7段'):
+        fields[key] = [line[len(key) + 1:].strip() for line in body.splitlines()
+                       if line.startswith(key + ':')]
+    source = fields['直しの出所']
+    reason = ''
+    if len(source) != 1 or not source[0]:
+        reason = '直しの出所: は行頭に、空でない値つきで1行だけ必要です。'
+    elif source[0].startswith('レビュー'):
+        if any(len(fields[key]) != 1 or not fields[key][0] for key in fields if key != '直しの出所'):
+            reason = 'レビューの直しには、空でない受領の3行がそれぞれ1行必要です。'
+except (OSError, UnicodeError, ValueError):
+    reason = '依頼文をUTF-8のテキストとして読めません（NULも不可）。'
+if reason:
+    print('拒否: ' + reason + """
+~/.claude/rules/review-receipt.md の3手順を、直しの依頼前に済ませてください:
+①起点からの累計と未追跡 ②各[Must]の危険の件数・母集団・取得日 ③足す前に7段。
+行頭・字下げなし・半角コロンで書く例:
+直しの出所: レビュー巡1（対象版・出所）
+受領①累計: 起点abc123から1 commit・2ファイル・+10/-2、未追跡0件
+受領②件数: M1=対象10件中2件（YYYY-MM-DD取得）
+受領③7段: M1は㋑、既存の起動口を再利用
+レビュー由来でなければ「直しの出所: なし（新規実装）」を1行。
+既知の書き方だけを見る・自己申告なので迂回できる（捕まえるのは書き忘れ）。
+本文の語による「なし」の拒否は、誤検知が5%を超えたため行いません。""", file=sys.stderr)
+    sys.exit(2)
+PYRECEIPT
+
 # shellcheck source=SCRIPTDIR/_codex_common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
 
