@@ -37,11 +37,14 @@ python3 - "$PROMPT_FILE" <<'PYRECEIPT'
 import sys
 import re
 import json
+import hashlib
+import os
 from datetime import datetime
 from pathlib import Path
 
 try:
-    body = Path(sys.argv[1]).read_text(encoding='utf-8')
+    prompt_bytes = Path(sys.argv[1]).read_bytes()
+    body = prompt_bytes.decode('utf-8')
     if '\0' in body:
         raise ValueError
     fields = {}
@@ -61,16 +64,23 @@ try:
         if match:
             reason = '出所を「レビュー…」に直し、受領の3行を書く必要があります。語で見ているだけ・言い換えは通る。'
             log = Path.home() / '.codex-watch' / 'receipt-gate-stops.log'
-            log.parent.mkdir(parents=True, exist_ok=True)
+            stops = log.parent / 'receipt-gate-stops'
+            stops.mkdir(parents=True, exist_ok=True, mode=0o700)
+            stopped_at = datetime.now().astimezone()
+            sha256 = hashlib.sha256(prompt_bytes).hexdigest()
+            snapshot = stops / f'{stopped_at.strftime("%Y%m%dT%H%M%S.%f%z")}-{sha256[:12]}.md'
+            with os.fdopen(os.open(snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as stream:
+                stream.write(prompt_bytes)
             with log.open('a', encoding='utf-8') as stream:
-                stream.write(json.dumps({'time': datetime.now().astimezone().isoformat(),
+                stream.write(json.dumps({'time': stopped_at.isoformat(),
                                          'prompt': str(Path(sys.argv[1]).resolve()),
-                                         'match': match.group()}, ensure_ascii=False) + '\n')
+                                         'match': match.group(),
+                                         'snapshot': str(snapshot), 'sha256': sha256}, ensure_ascii=False) + '\n')
     elif source[0].startswith('レビュー'):
         if any(len(fields[key]) != 1 or not fields[key][0] for key in fields if key != '直しの出所'):
             reason = 'レビューの直しには、空でない受領の3行がそれぞれ1行必要です。'
 except (OSError, UnicodeError, ValueError):
-    reason = '依頼文の読取または停止ログの記録に失敗しました（UTF-8必須・NUL不可）。'
+    reason = '依頼文の読取・写しの保存または停止ログの記録に失敗しました（UTF-8必須・NUL不可）。'
 if reason:
     print('拒否: ' + reason + """
 ~/.claude/rules/review-receipt.md の3手順を、直しの依頼前に済ませてください:

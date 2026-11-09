@@ -1,6 +1,7 @@
 """Exercise the actual launcher's preflight; stop at the next stage, never launch a CLI."""
 import os
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 
@@ -45,6 +46,19 @@ def check(tmp_path):
     return run
 
 
+def assert_stop_snapshot(tmp_path, body, row, stderr=''):
+    raw = body.encode() if isinstance(body, str) else body
+    digest = hashlib.sha256(raw).hexdigest()
+    snapshot = Path(row['snapshot'])
+    assert snapshot.is_file(), stderr
+    assert snapshot.read_bytes() == raw
+    assert row['sha256'] == digest
+    assert snapshot.parent == tmp_path / 'home/.codex-watch/receipt-gate-stops'
+    assert snapshot.name.endswith(f'-{digest[:12]}.md')
+    assert snapshot.name.startswith(row['time'][:10].replace('-', '') + 'T')
+    assert snapshot.stat().st_mode & 0o777 == 0o600
+
+
 # Negative cases: source and receipt contract.
 @pytest.mark.parametrize('body', [
     'new implementation',
@@ -68,22 +82,27 @@ def test_negative(check, body):
 
 @pytest.mark.parametrize('body', ['直しの出所: なし\n', REVIEW,
                                   REVIEW.replace('\n', '\r\n')])
-def test_positive(check, body):
+def test_positive(check, body, tmp_path):
     r = check(body)
     assert r.returncode == 71 and r.stderr.strip() == 'NEXT_STAGE'
+    assert not (tmp_path / 'home/.codex-watch').exists()
 
 
 @pytest.mark.parametrize('fixture_id', [5, 7, 9])
-def test_real_B_positive(check, fixture_id):
+def test_real_B_positive(check, fixture_id, tmp_path):
     body = (ROOT / f'tests/fixtures/receipt/B-{fixture_id}.md').read_text()
     r = check('直しの出所: なし\n' + body)
     assert r.returncode == 71 and r.stderr.strip() == 'NEXT_STAGE'
+    assert not (tmp_path / 'home/.codex-watch').exists()
 
 
-def test_accident_shape_is_rejected(check):
-    r = check('直しの出所: なし（新規実装）\n新しい仕組みを足す\n'
-              '## C. レビュー巡3の指摘を直す\n指摘を反映する。\n')
+def test_accident_shape_is_rejected(check, tmp_path):
+    body = ('直しの出所: なし（新規実装）\n新しい仕組みを足す\n'
+            '## C. レビュー巡3の指摘を直す\n指摘を反映する。\n')
+    r = check(body)
     assert r.returncode == 2 and 'NEXT_STAGE' not in r.stderr
+    row = json.loads((tmp_path / 'home/.codex-watch/receipt-gate-stops.log').read_text())
+    assert_stop_snapshot(tmp_path, body, row, r.stderr)
 
 
 @pytest.mark.parametrize('tail,word', [
@@ -92,19 +111,26 @@ def test_accident_shape_is_rejected(check):
     ('\n' * 100 + '巡9', '巡9'),
 ])
 def test_word_negative_and_private_log(check, tail, word, tmp_path):
-    r = check('直しの出所: なし\n本文を記録しない目印\n' + tail)
+    body = '直しの出所: なし\n本文の写しの目印\n' + tail
+    r = check(body)
     assert r.returncode == 2 and 'NEXT_STAGE' not in r.stderr
     assert '出所を「レビュー…」に直し、受領の3行を書く' in r.stderr
     assert '語で見ているだけ・言い換えは通る' in r.stderr
     log = tmp_path / 'home/.codex-watch/receipt-gate-stops.log'
     rows = log.read_text().splitlines()
-    assert len(rows) == 1 and '本文を記録しない目印' not in rows[0]
+    assert len(rows) == 1 and '本文の写しの目印' not in rows[0]
     row = json.loads(rows[0])
-    assert set(row) == {'time', 'prompt', 'match'}
+    assert set(row) == {'time', 'prompt', 'match', 'snapshot', 'sha256'}
     assert row['time'] and row['match'] == word
     assert row['prompt'] == str(tmp_path / 'prompt with spaces.md')
+    assert_stop_snapshot(tmp_path, body, row, r.stderr)
+    # Reusing and correcting the same source path must preserve the stopped body.
+    check('直しの出所: なし\n修正済み')
+    assert Path(row['snapshot']).read_bytes() == body.encode()
     check('直しの出所: なし\n' + tail)
-    assert len(log.read_text().splitlines()) == 2
+    rows = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len(rows) == 2 and rows[0]['snapshot'] != rows[1]['snapshot']
+    assert_stop_snapshot(tmp_path, '直しの出所: なし\n' + tail, rows[1])
 
 
 def test_only_body_after_source_is_scanned(check, tmp_path):
@@ -178,3 +204,39 @@ def test_python_failure_stops_launch(check, tmp_path, program):
     python.chmod(0o755)
     r = check('直しの出所: なし\n')
     assert r.returncode != 0 and 'NEXT_STAGE' not in r.stderr
+
+
+@pytest.mark.parametrize('body', ['直しの出所: なし\r\n指摘を反映\r\n',
+                                  '直しの出所: なし\n指摘を反映\n'])
+def test_snapshot_preserves_bytes(check, tmp_path, body):
+    r = check(body)
+    assert r.returncode == 2 and 'NEXT_STAGE' not in r.stderr
+    row = json.loads((tmp_path / 'home/.codex-watch/receipt-gate-stops.log').read_text())
+    assert_stop_snapshot(tmp_path, body, row, r.stderr)
+
+
+@pytest.mark.parametrize('failure', ['directory', 'write'])
+def test_snapshot_failure_stops_launch(check, tmp_path, failure):
+    folder = tmp_path / 'home/.codex-watch'
+    folder.mkdir()
+    if failure == 'directory':
+        (folder / 'receipt-gate-stops').write_text('not a directory')
+        r = check('直しの出所: なし\n指摘を反映')
+    else:
+        # Deterministic write failure, including when tests run as root.
+        r = check('直しの出所: なし\n指摘を反映', mutation=(
+            'stream.write(prompt_bytes)', "raise OSError('injected snapshot write failure')"))
+    assert r.returncode == 2 and 'NEXT_STAGE' not in r.stderr
+    assert '写しの保存' in r.stderr
+    assert not (folder / 'receipt-gate-stops.log').exists()
+
+
+def test_snapshot_mutation_hit_and_killed(check, tmp_path):
+    body = '直しの出所: なし\n指摘を反映'
+    old = """with os.fdopen(os.open(snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as stream:
+                stream.write(prompt_bytes)"""
+    mutant = check(body, mutation=(old, "print('MUTANT_NO_SNAPSHOT', file=sys.stderr)"))
+    assert mutant.returncode == 2 and 'MUTANT_NO_SNAPSHOT' in mutant.stderr
+    row = json.loads((tmp_path / 'home/.codex-watch/receipt-gate-stops.log').read_text())
+    with pytest.raises(AssertionError, match='MUTANT_NO_SNAPSHOT'):
+        assert_stop_snapshot(tmp_path, body, row, mutant.stderr)
