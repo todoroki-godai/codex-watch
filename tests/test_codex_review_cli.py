@@ -98,6 +98,7 @@ def _run(
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
+    env["CODEX_REVIEW_KIND_LABEL"] = "コード"
     env["REVIEW_TARGET"] = review_target
     env["REVIEW_GOAL_CUT"] = review_goal_cut
     env["FAKE_GH_BODY"] = str(tmp_path / "fake_gh_body.txt")
@@ -256,6 +257,7 @@ def _run_in_git_workdir(
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
+    env["CODEX_REVIEW_KIND_LABEL"] = "コード"
     env["REVIEW_TARGET"] = review_target
     env["REVIEW_GOAL_CUT"] = review_goal_cut
     env["FAKE_GH_BODY"] = str(tmp_path / "fake_gh_body.txt")

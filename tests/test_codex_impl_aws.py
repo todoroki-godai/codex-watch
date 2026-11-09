@@ -182,7 +182,18 @@ def test_positive_permissions_environment(launch):
     assert 'AWS_CONTAINER_CREDENTIALS_FULL_URI' not in env
     assert 'AWS_ENDPOINT_URL_STS' not in env
     assert env['AWS_SHARED_CREDENTIALS_FILE'] == '/dev/null'
-    assert Path(env['AWS_CONFIG_FILE']).read_text() == '[profile codex-dev]\nregion = ap-northeast-1\n'
+    # Since 059a897, dev/stg names are aliases backed by the same environment.
+    from configparser import ConfigParser
+    config = ConfigParser(interpolation=None)
+    config.read(env['AWS_CONFIG_FILE'])
+    assert set(config.sections()) == {'profile codex-dev', 'profile aws-updater-index-stg',
+                                      'profile aws-updater-bc-dev'}
+    assert all(config[section]['region'] == 'ap-northeast-1' for section in config.sections())
+    assert 'credential_process' not in config['profile codex-dev']
+    for alias in ('aws-updater-index-stg', 'aws-updater-bc-dev'):
+        process = config['profile ' + alias]['credential_process']
+        assert all(key in process for key in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'))
+        assert '--profile' not in process
     assert env['AWS_REGION'] == 'ap-northeast-1'
     assert env['AWS_EC2_METADATA_DISABLED'] == 'true'
     assert argv[argv.index('-m')+1] == 'gpt-6.1-sol'
