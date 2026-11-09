@@ -42,9 +42,10 @@ def check(tmp_path):
     return run
 
 
-# Negative cases: required contract only. (2) was rejected by the measurement.
+# Negative cases: source and receipt contract.
 @pytest.mark.parametrize('body', [
     'new implementation',
+    '直しの出所: 巡3の指摘\n',
     ' 直しの出所: なし\n',
     '直しの出所：なし\n',
     '直しの出所: \t\n',
@@ -100,6 +101,9 @@ def test_independent_input_attacks(check, body):
 # Killed mutants: a unique marker is executed inside the changed branch.
 # Exit 71 proves the original exit-2 oracle would fail, rather than a syntax crash.
 @pytest.mark.parametrize('body,old,new', [
+    ('直しの出所: 巡3の指摘\n',
+     "reason = '直しの出所は「なし」か「レビュー」で始めてください。'",
+     "print('MUTANT_M1', file=sys.stderr); reason = ''"),
     ('no header', "reason = '直しの出所: は行頭に、空でない値つきで1行だけ必要です。'",
      "print('MUTANT_SOURCE', file=sys.stderr); reason = ''"),
     ('直しの出所: レビュー巡1\n',

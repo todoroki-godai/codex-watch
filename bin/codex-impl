@@ -49,6 +49,8 @@ try:
     reason = ''
     if len(source) != 1 or not source[0]:
         reason = '直しの出所: は行頭に、空でない値つきで1行だけ必要です。'
+    elif not source[0].startswith(('なし', 'レビュー')):
+        reason = '直しの出所は「なし」か「レビュー」で始めてください。'
     elif source[0].startswith('レビュー'):
         if any(len(fields[key]) != 1 or not fields[key][0] for key in fields if key != '直しの出所'):
             reason = 'レビューの直しには、空でない受領の3行がそれぞれ1行必要です。'
