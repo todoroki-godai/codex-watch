@@ -212,6 +212,7 @@ CODEX_PID=$!
   echo "aws=$CODEX_IMPL_AWS_STATE"
   echo "aws_expiration=$CODEX_IMPL_AWS_EXPIRATION"
   codex_github_account_state
+  codex_summary_state
   echo "requested_model=$REQUESTED_MODEL"
   echo "requested_effort=$REQUESTED_EFFORT"
   echo "started_at=$(date +%s)"
