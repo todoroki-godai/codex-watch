@@ -480,6 +480,29 @@ def ledger_own_round(
     return len(distinct) + 1
 
 
+def missing_preview_checks(prompt: str, round_no: int) -> list[str]:
+    """節と項目の有無だけを検査する。自己申告・迂回可能で、内容の正しさは見ない。"""
+    required = ["突き合わせ", "出所の付記"]
+    if round_no >= 2:
+        required.append("直し残しの検索")
+    sections: list[set[str]] = []
+    current: set[str] | None = None
+    for line in prompt.splitlines():
+        if line.startswith("点検:") or re.fullmatch(r"## 点検\s*", line):
+            current = set()
+            sections.append(current)
+        elif re.match(r"#{1,6}\s", line):
+            current = None
+        elif current is not None:
+            for item in required:
+                prefix = f"- {item}:"
+                if line.startswith(prefix) and line[len(prefix):].strip():
+                    current.add(item)
+    # 別々の節の断片は合算しない。完全な節が1つあれば受理する。
+    best = max(sections, key=lambda section: len(section), default=set())
+    return [item for item in required if item not in best]
+
+
 def same_head_dispatch_count(state_dir: Path, target_key: str, head_sha: str) -> int:
     """同一 target × 同一 HEAD（＝同一巡）に対する既存の発注本数（state ファイル数）。
 

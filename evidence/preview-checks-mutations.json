@@ -1,0 +1,203 @@
+[
+  {
+    "name": "M1-no-section",
+    "file": "lib/round_gate.py",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "5bd23a4321907770823b95e4214a75c83ce63dc1992aa40c1a514c8627478228",
+    "after_sha256": "b04ab43dca0119be59368d68cb8c52a31d3dd001e3f3ec4e7c2e6ab0977fd7fb",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -485,8 +485,8 @@\n     required = [\"突き合わせ\", \"出所の付記\"]\n     if round_no >= 2:\n         required.append(\"直し残しの検索\")\n-    sections: list[set[str]] = []\n-    current: set[str] | None = None\n+    sections: list[set[str]] = [set()]\n+    current: set[str] | None = sections[0]\n     for line in prompt.splitlines():\n         if line.startswith(\"点検:\") or re.fullmatch(r\"## 点検\\s*\", line):\n             current = set()\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M1-no-section/base",
+      "tests/test_preview_checks.py",
+      "-k",
+      "negative"
+    ],
+    "selector": "negative",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M1-no-section/lib/round_gate.py\", \"line\": 489, \"source\": \"current: set[str] | None = sections[0]\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M1-no-section/lib/round_gate.py\", \"line\": 489, \"source\": \"current: set[str] | None = sections[0]\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M1-no-section/lib/round_gate.py\", \"line\": 489, \"source\": \"current: set[str] | None = sections[0]\"}"
+    ],
+    "execution_hit_count": 7,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u4f9d\\u983c\\u672c\\u6587\\u3060\\u3051\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: x\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: y\\n-None-\\u7a81\\u304d\\u5408\\u308f\\u305b]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u78ba\\u8a8d:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-None-\\u51fa\\u6240\\u306e\\u4ed8\\u8a18]\n2 failed, 5 passed, 23 deselected in 5.65s\n"
+  },
+  {
+    "name": "M2-empty-value",
+    "file": "lib/round_gate.py",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "5bd23a4321907770823b95e4214a75c83ce63dc1992aa40c1a514c8627478228",
+    "after_sha256": "f21c3653ca90f9c466825814e73be033a571e57a0406d8a6c59d657404810084",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -496,7 +496,7 @@\n         elif current is not None:\n             for item in required:\n                 prefix = f\"- {item}:\"\n-                if line.startswith(prefix) and line[len(prefix):].strip():\n+                if line.startswith(prefix):\n                     current.add(item)\n     # 別々の節の断片は合算しない。完全な節が1つあれば受理する。\n     best = max(sections, key=lambda section: len(section), default=set())\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M2-empty-value/base",
+      "tests/test_preview_checks.py",
+      "-k",
+      "negative"
+    ],
+    "selector": "negative",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M2-empty-value/lib/round_gate.py\", \"line\": 499, \"source\": \"if line.startswith(prefix):\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M2-empty-value/lib/round_gate.py\", \"line\": 499, \"source\": \"if line.startswith(prefix):\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M2-empty-value/lib/round_gate.py\", \"line\": 499, \"source\": \"if line.startswith(prefix):\"}"
+    ],
+    "execution_hit_count": 18,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b:  \\t\\u3000\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-None-\\u7a81\\u304d\\u5408\\u308f\\u305b]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\xa0\\n-None-\\u51fa\\u6240\\u306e\\u4ed8\\u8a18]\n2 failed, 5 passed, 23 deselected in 5.69s\n"
+  },
+  {
+    "name": "M3-no-followup-item",
+    "file": "lib/round_gate.py",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "5bd23a4321907770823b95e4214a75c83ce63dc1992aa40c1a514c8627478228",
+    "after_sha256": "2b01fd0aff19e8b90b5e57c0d8d56eb4d7fa30ed0578be8548dcd573619cb563",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -483,7 +483,7 @@\n def missing_preview_checks(prompt: str, round_no: int) -> list[str]:\n     \"\"\"節と項目の有無だけを検査する。自己申告・迂回可能で、内容の正しさは見ない。\"\"\"\n     required = [\"突き合わせ\", \"出所の付記\"]\n-    if round_no >= 2:\n+    if False:\n         required.append(\"直し残しの検索\")\n     sections: list[set[str]] = []\n     current: set[str] | None = None\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M3-no-followup-item/base",
+      "tests/test_preview_checks.py",
+      "-k",
+      "negative"
+    ],
+    "selector": "negative",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M3-no-followup-item/lib/round_gate.py\", \"line\": 486, \"source\": \"if False:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M3-no-followup-item/lib/round_gate.py\", \"line\": 486, \"source\": \"if False:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M3-no-followup-item/lib/round_gate.py\", \"line\": 486, \"source\": \"if False:\"}"
+    ],
+    "execution_hit_count": 7,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-\\u30b3\\u30fc\\u30c9-\\u76f4\\u3057\\u6b8b\\u3057\\u306e\\u691c\\u7d22]\n1 failed, 6 passed, 23 deselected in 5.16s\n"
+  },
+  {
+    "name": "M4-record-on-stop",
+    "file": "bin/codex-review",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "a8fc9735373e24ce5f749189bc467c9ddaffe1917b40cc1700a84d6cd4bf92eb",
+    "after_sha256": "d7f1241f8c5474012e77a42f088d275e8161152fc5ebe3907b580bc00345da0a",
+    "diff": "--- bin/codex-review\n+++ bin/codex-review\n@@ -132,6 +132,7 @@\n     print(f\"依頼文の点検を確認できません: {error}\", file=sys.stderr)\n     sys.exit(2)\n if missing:\n+    Path(__import__(\"os\").environ[\"CODEX_WATCH_DIR\"], \"stopped.state\").write_text(\"review_target=issue:example-org/example-repo#1\\nround=1\\n\")\n     print(\"依頼文に『点検:』の節が無い／項目が足りない（足りない項目: \"\n           + \"、\".join(missing) + \"）。書き手が出す前に点検して、結果を節に書く。\"\n           \"決まりは review-gate スキルの『出す前の点検』\", file=sys.stderr)\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M4-record-on-stop/base",
+      "tests/test_preview_checks.py",
+      "-k",
+      "negative"
+    ],
+    "selector": "negative",
+    "executed_evidence": [
+      "base/test_cli_section_and_items_onl6/state/stopped.state:review_target=issue:example-org/example-repo#1\nround=1\n",
+      "base/test_cli_section_and_items_onl1/state/stopped.state:review_target=issue:example-org/example-repo#1\nround=1\n",
+      "base/test_cli_section_and_items_onl0/state/stopped.state:review_target=issue:example-org/example-repo#1\nround=1\n"
+    ],
+    "execution_hit_count": 7,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u4f9d\\u983c\\u672c\\u6587\\u3060\\u3051\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: x\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: y\\n-None-\\u7a81\\u304d\\u5408\\u308f\\u305b]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b:  \\t\\u3000\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-None-\\u7a81\\u304d\\u5408\\u308f\\u305b]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-\\u30b3\\u30fc\\u30c9-\\u76f4\\u3057\\u6b8b\\u3057\\u306e\\u691c\\u7d22]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u78ba\\u8a8d:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-None-\\u51fa\\u6240\\u306e\\u4ed8\\u8a18]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n## \\u95a2\\u9023\\u8cc7\\u6599\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-None-\\u7a81\\u304d\\u5408\\u308f\\u305b]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b\\u6e08: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-None-\\u7a81\\u304d\\u5408\\u308f\\u305b]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\xa0\\n-None-\\u51fa\\u6240\\u306e\\u4ed8\\u8a18]\n7 failed, 23 deselected in 6.73s\n"
+  },
+  {
+    "name": "M5-section-leak",
+    "file": "lib/round_gate.py",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "5bd23a4321907770823b95e4214a75c83ce63dc1992aa40c1a514c8627478228",
+    "after_sha256": "bba359d7ccc92ea490005778b5e6b563357fabbfd7ee9977d0592f8a1d342f16",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -491,7 +491,7 @@\n         if line.startswith(\"点検:\") or re.fullmatch(r\"## 点検\\s*\", line):\n             current = set()\n             sections.append(current)\n-        elif re.match(r\"#{1,6}\\s\", line):\n+        elif False:\n             current = None\n         elif current is not None:\n             for item in required:\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M5-section-leak/base",
+      "tests/test_preview_checks.py",
+      "-k",
+      "negative"
+    ],
+    "selector": "negative",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M5-section-leak/lib/round_gate.py\", \"line\": 494, \"source\": \"elif False:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M5-section-leak/lib/round_gate.py\", \"line\": 494, \"source\": \"elif False:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M5-section-leak/lib/round_gate.py\", \"line\": 494, \"source\": \"elif False:\"}"
+    ],
+    "execution_hit_count": 17,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n## \\u95a2\\u9023\\u8cc7\\u6599\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-None-\\u7a81\\u304d\\u5408\\u308f\\u305b]\n1 failed, 6 passed, 23 deselected in 9.77s\n"
+  },
+  {
+    "name": "M6-item-prefix",
+    "file": "lib/round_gate.py",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "5bd23a4321907770823b95e4214a75c83ce63dc1992aa40c1a514c8627478228",
+    "after_sha256": "a0084a86f87bd2735b706e24b9335ff5503663f73ee473565b462d503698433b",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -495,7 +495,7 @@\n             current = None\n         elif current is not None:\n             for item in required:\n-                prefix = f\"- {item}:\"\n+                prefix = f\"- {item}\"\n                 if line.startswith(prefix) and line[len(prefix):].strip():\n                     current.add(item)\n     # 別々の節の断片は合算しない。完全な節が1つあれば受理する。\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M6-item-prefix/base",
+      "tests/test_preview_checks.py",
+      "-k",
+      "negative"
+    ],
+    "selector": "negative",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M6-item-prefix/lib/round_gate.py\", \"line\": 498, \"source\": \"prefix = f\\\"- {item}\\\"\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M6-item-prefix/lib/round_gate.py\", \"line\": 498, \"source\": \"prefix = f\\\"- {item}\\\"\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/M6-item-prefix/lib/round_gate.py\", \"line\": 498, \"source\": \"prefix = f\\\"- {item}\\\"\"}"
+    ],
+    "execution_hit_count": 18,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b:  \\t\\u3000\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-None-\\u7a81\\u304d\\u5408\\u308f\\u305b]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b\\u6e08: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\u6d88\\u3057\\u305f\\n-None-\\u7a81\\u304d\\u5408\\u308f\\u305b]\nFAILED tests/test_preview_checks.py::test_cli_section_and_items_only_self_report_bypassable_negative[\\u70b9\\u691c:\\n- \\u7a81\\u304d\\u5408\\u308f\\u305b: \\u78ba\\u8a8d\\u6e08\\n- \\u51fa\\u6240\\u306e\\u4ed8\\u8a18: \\xa0\\n-None-\\u51fa\\u6240\\u306e\\u4ed8\\u8a18]\n3 failed, 4 passed, 23 deselected in 12.36s\n"
+  },
+  {
+    "name": "positive-equivalent",
+    "file": "lib/round_gate.py",
+    "red_expected": false,
+    "exit_code": 0,
+    "before_sha256": "5bd23a4321907770823b95e4214a75c83ce63dc1992aa40c1a514c8627478228",
+    "after_sha256": "65383c10e18bf0744f2fb003a6fadfee62cbebade074db35ebb8eab25f7b4cff",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -483,7 +483,7 @@\n def missing_preview_checks(prompt: str, round_no: int) -> list[str]:\n     \"\"\"節と項目の有無だけを検査する。自己申告・迂回可能で、内容の正しさは見ない。\"\"\"\n     required = [\"突き合わせ\", \"出所の付記\"]\n-    if round_no >= 2:\n+    if round_no > 1:\n         required.append(\"直し残しの検索\")\n     sections: list[set[str]] = []\n     current: set[str] | None = None\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/positive-equivalent/base",
+      "tests/test_preview_checks.py"
+    ],
+    "selector": "",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/positive-equivalent/lib/round_gate.py\", \"line\": 486, \"source\": \"if round_no > 1:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/positive-equivalent/lib/round_gate.py\", \"line\": 486, \"source\": \"if round_no > 1:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-precheck/.tmp/pc/preview-mutations/positive-equivalent/lib/round_gate.py\", \"line\": 486, \"source\": \"if round_no > 1:\"}"
+    ],
+    "execution_hit_count": 30,
+    "pytest_summary": "30 passed in 23.32s"
+  }
+]

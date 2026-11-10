@@ -73,7 +73,7 @@ def _run(env_dir: Path, tmp_path: Path, images: str | None, model: str | None = 
     workdir = tmp_path / "workdir"
     workdir.mkdir(exist_ok=True)
     prompt = tmp_path / "prompt.txt"
-    prompt.write_text("dummy prompt\n")
+    prompt.write_text("dummy prompt\n点検:\n- 突き合わせ: 確認済\n- 出所の付記: 確認済\n- 直し残しの検索: 確認済\n")
     state_dir = tmp_path / "state"
     state_dir.mkdir(exist_ok=True)
     env = dict(os.environ)

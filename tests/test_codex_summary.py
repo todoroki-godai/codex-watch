@@ -62,7 +62,7 @@ EFFECTIVE_PROMPT="$STATE_DIR/fixed.prompt"
     home = tmp_path / 'home'
     home.mkdir()
     prompt = tmp_path / 'prompt.txt'
-    prompt.write_text('直しの出所: なし\ndummy prompt\n')
+    prompt.write_text('直しの出所: なし\ndummy prompt\n点検:\n- 突き合わせ: 確認済\n- 出所の付記: 確認済\n- 直し残しの検索: 確認済\n')
     # Existing fake codex/gh from model/effort tests; never call the real CLI.
     date = fake_bin / 'date'
     date.write_text('#!/bin/sh\nprintf "20261110\\n"\n')
