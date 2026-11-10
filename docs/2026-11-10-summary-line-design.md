@@ -8,7 +8,7 @@
 ## 困りごと（根拠つき）
 - session-board の一覧で、走っている Codex が `rev9-l2design` のような英字ラベルで出て、何をしているか分からない（2026-11-10 ユーザー指摘）。
 - 原因: `mods/session-board/hooks/register.tsx:202-220`（claude-config 9b2d7c5 時点）の `codexInfo`/`codexText` は、課題番号（名前の先頭の数字か `review_target` の `#N`）が取れないと `reviewer || run_id` から日時を外した英字ラベルをそのまま出す。起動口 `bin/codex-impl:28` / `bin/codex-review:18` は第3引数のラベルしか受け取らず、説明を書く欄が無い。
-- 規模: 直近24時間の走行 101件のうち 98件が英字ラベル表示（取得 2026-11-10 11:44、再現手段は末尾の script）。
+- 規模: 直近24時間の走行 101件のうち 98件が、状態ファイル上で課題番号が取れない件数（＝英字ラベルで出る潜在対象。board の表示選別は通していない。取得 2026-11-10 11:44、再現手段は末尾の script）。
 
 ## 変更（最小案）
 1. **起動口**（codex-watch）: `codex-impl`・`codex-review` が環境変数 `CODEX_SUMMARY` を読み、空でなければ状態ファイルへ `summary=<値>` を1行書く。
@@ -29,8 +29,8 @@
 - ③対象外: 1行を必須にすること／既存の走行への後付け／`review_target` 等の既存キーを表示に流用すること／`~/.claude` 手元の版を GitHub に合わせる作業（反映の手番で別に決める）
 - ④blocking: ①(a)(b)(c) のどれかが破れること、改行入りの値で状態ファイルの行が増えること（＝別キーを偽装できる）
 - ⑤検証: 起動口は既存 `tests/` の流儀でシェル検査（codex 本体は起動しない差し替え）。board は既存の `hooks/register.test.ts` に足す。
-  - 陰性試験（起動口）: 値に行境界8種（LF・CR・VT・FF・U+001C・U+0085・U+2028・U+2029）それぞれ＋`review_target=none:other` を混ぜて起動し、書かれた状態ファイルを `round_gate.read_state_file` と board の `parseState` の両方で読んで、キー集合と既存キーの値が summary 無しの起動と同じであること（新キーの追加・既存キーの上書きの両方を見る）。
-  - 陰性試験（board）: 同じ8種を含む状態文字列で、表示が1行・孤立サロゲート無し・60コードポイント以内。空白だけの summary で従来表示。
+  - 陰性試験（起動口）: 値に行境界10種（LF・CR・VT・FF・U+001C・U+001D・U+001E・U+0085・U+2028・U+2029）それぞれ＋`review_target=none:other` を混ぜて起動し、書かれた状態ファイルを `round_gate.read_state_file` と board の `parseState` の両方で読んで、**`summary` を除くキー集合と既存キーの値が summary 無しの起動と同じで、追加キーは `summary` だけ**であること（新キーの追加・既存キーの上書きの両方を見る）。
+  - 陰性試験（board）: 同じ10種を含む状態文字列で、表示が1行・孤立サロゲート無し・60コードポイント以内。空白だけの summary で従来表示。
   - 結合試験: 状態文字列 → `parseState` → `collectCodex` 相当 → 行の文字列まで通して、summary が出ること（純粋関数だけの検査では配線漏れを拾えないため）。
   - 陽性対照: 普通の日本語1行、および `日本語=a=b` がそのまま出て、`pid` 等の既存キーが保たれる。summary 無しの旧状態で従来表示（`Codex が old を実装中（1分）`）。
   - 変異: 正規化を `\n\r\t` だけの置換に戻す／優先順を反転する／`slice` を UTF-16 単位に戻す、の3つを当てて、それぞれ赤くなることを確認する。
@@ -43,7 +43,7 @@
 | board は summary を表示に使っていない | `grep -n summary ~/.claude-wt.noindex/board-codex-summary/mods/session-board/hooks/register.tsx` の codexInfo 内に無し（203-208行）／2026-11-10 |
 | 状態ファイルは1行1キー、先頭 `=` で分割 | `register.tsx` `parseState`（58-64行、調査担当の報告。頭は 202-220 を実物で確認）／2026-11-10 |
 | 起動口のラベルは第3引数のみ | `bin/codex-impl:28 LABEL="${3:-impl}"`（頭が実物で確認）・`bin/codex-review:18`（調査担当の報告）／2026-11-10 |
-| 英字表示の件数 | 下の script ／2026-11-10 11:44 で 101件中98件 |
+| 状態ファイル上で課題番号が取れない件数 | 下の script ／2026-11-10 11:44 で 101件中98件 |
 
 ```python
 # python3 -I で実行
