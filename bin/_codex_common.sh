@@ -57,8 +57,8 @@ print(v if is_single_line(v) else ' '.join(v.splitlines()))
 # 任意の説明は既存の単一行化を通し、空なら state にキー自体を書かない。
 codex_summary_state() {
   local summary
-  summary="$(sanitize_single_line "${CODEX_SUMMARY:-}")"
-  summary="$(python3 -c 'import sys; print(sys.argv[1].strip()[:60])' "$summary")"
+  summary="$(sanitize_single_line "${CODEX_SUMMARY:-}")" || summary=""
+  summary="$(python3 -c 'import sys; print(sys.argv[1].strip()[:60])' "$summary")" || summary=""
   [[ -n "$summary" ]] && printf 'summary=%s\n' "$summary"
   return 0
 }

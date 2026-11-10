@@ -78,9 +78,10 @@ EFFECTIVE_PROMPT="$STATE_DIR/fixed.prompt"
     if 'SUMMARY_MUTATION_TRACE' in os.environ:
         env['SUMMARY_MUTATION_TRACE'] = os.environ['SUMMARY_MUTATION_TRACE']
 
-    def run(value):
+    def run(value, **env_overrides):
         Path(env["FAKE_GH_BODY"]).write_text("")
         run_env = dict(env)
+        run_env.update(env_overrides)
         if value is not None:
             run_env['CODEX_SUMMARY'] = value
         result = subprocess.run(['bash', str(launcher), str(workdir), str(prompt), 'summary-test'],
@@ -117,6 +118,14 @@ def test_negative_line_injection(launch, boundary):
 def test_negative_empty_after_normalization(launch, value):
     raw_before, baseline = launch(None)
     raw, states = launch(value)
+    assert_preserved(baseline, states, None)
+    assert raw == raw_before
+
+
+def test_negative_invalid_utf8_summary(launch):
+    locale = dict(LANG='en_US.UTF-8', LC_ALL='en_US.UTF-8')
+    raw_before, baseline = launch(None, **locale)
+    raw, states = launch(os.fsdecode(b'\xe4\xbc\x9a\xe7\xa4'), **locale)
     assert_preserved(baseline, states, None)
     assert raw == raw_before
 
