@@ -128,7 +128,9 @@ def test_cli_generated_prompt_requires_evidence_for_must(fake_bin: Path, tmp_pat
     prompt = prompts[0].read_text()
     conditions = (BIN_DIR.parent / "templates/must-criteria.md").read_text().strip()
     assert "このまま本線へ入れた場合" in conditions
-    assert "再現の手順か失敗する試験" in conditions
+    assert "実害の記録・再現の手順・失敗する試験" in conditions
+    assert "そのまま入れると相手が壊れる" in conditions
+    assert "根拠: (C) <壊れる相手>" in conditions
     assert "根拠: (A) <件数か再現手順>" in conditions
     assert "根拠: (B)<番号> <理由>" in conditions
     assert "各 [Must] に件数を1行・0件なら落とす" in conditions
