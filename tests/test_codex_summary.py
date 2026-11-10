@@ -44,6 +44,7 @@ def launch(request, tmp_path, fake_bin):
     bindir.mkdir()
     shutil.copy2(ROOT / 'bin/_codex_common.sh', bindir / '_codex_common.sh')
     shutil.copytree(ROOT / 'lib', tmp_path / 'lib')
+    shutil.copytree(ROOT / 'templates', tmp_path / 'templates')
     source = (ROOT / 'bin' / request.param).read_text()
     anchor = '{\n  echo "run_id=$RUN_ID"'
     assert source.count(anchor) == 1

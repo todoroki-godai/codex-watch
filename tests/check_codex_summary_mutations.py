@@ -35,7 +35,7 @@ def main():
     for name, target, old, new, selection in MUTATIONS:
         with tempfile.TemporaryDirectory(prefix='summary-mutation-') as temporary:
             folder = Path(temporary)
-            for directory in ('bin', 'lib', 'tests'):
+            for directory in ('bin', 'lib', 'tests', 'templates'):
                 shutil.copytree(ROOT / directory, folder / directory,
                                 ignore=shutil.ignore_patterns('__pycache__'))
             path = folder / target

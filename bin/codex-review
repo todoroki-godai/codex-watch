@@ -202,6 +202,22 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
   echo "\`$(python3 "$GATE_PY" recipe)\`"
   echo 'この2行が欠けている、または実際にコマンドを実行した値でない場合、このレビューは機械照合で受領不可（取り直し）になる。'
   echo
+  [[ -s "$(dirname "$GATE_PY")/../templates/must-criteria.md" ]] || exit 2
+  cat "$(dirname "$GATE_PY")/../templates/must-criteria.md" || exit 2
+  # 総上限とは別に、今回と同じ種別の巡だけを既存台帳から数える。
+  PROMPT_ROUND="$(python3 -c '
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from round_gate import ledger_own_round
+d = json.loads(sys.argv[3])
+print(ledger_own_round(Path(sys.argv[2]), d["record_target"],
+                       d.get("head_sha") or "unmanaged", kind_label=sys.argv[4]))
+' "$(dirname "$GATE_PY")" "$STATE_DIR" "$GATE_JSON" "$CODEX_REVIEW_KIND_LABEL")" || exit 2
+  if [[ "$PROMPT_ROUND" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND >= 2 )); then
+    echo 'この巡は前の巡の [Must] が直ったかを確かめるだけ。新しい論点は [Should] として別課題の候補に返す。新しい [Must] は今回の直しが新たに壊したものだけ。'
+  fi
+  echo
   cat "$PROMPT_FILE"
 } > "$EFFECTIVE_PROMPT"
 

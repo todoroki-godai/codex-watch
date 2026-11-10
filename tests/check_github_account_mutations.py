@@ -53,7 +53,7 @@ for name, select, replacements in cases:
     folder = OUT / name
     if folder.exists(): shutil.rmtree(folder)
     folder.mkdir()
-    for d in ('bin','lib'):
+    for d in ('bin','lib','templates'):
         shutil.copytree(ROOT/d,folder/d,ignore=shutil.ignore_patterns('__pycache__'))
     changed = common
     for old,new in replacements:
