@@ -18,8 +18,8 @@ OUT.mkdir(parents=True, exist_ok=True)
 SHELL = 'bin/codex-review'
 GATE = 'lib/round_gate.py'
 original_shell = (ROOT / SHELL).read_text()
-start = original_shell.index('  PROMPT_ROUND=')
-end = original_shell.index('\n  if [[ "$PROMPT_ROUND"', start)
+start = original_shell.index('PROMPT_ROUND=')
+end = original_shell.index('\npython3 - ', start)
 round_assignment = original_shell[start:end]
 
 # name, file, old, new, pytest -k, executed source/command evidence, red?

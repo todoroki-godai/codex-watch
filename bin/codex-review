@@ -111,6 +111,33 @@ if [[ "$GATE_EXIT" -ne 0 ]]; then
   exit "$GATE_EXIT"
 fi
 
+# 点検は自己申告の書き忘れ検査。前置きと同じ巡数を一度だけ計算する。
+PROMPT_ROUND="$(python3 -c '
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from round_gate import ledger_own_round
+d = json.loads(sys.argv[3])
+print(ledger_own_round(Path(sys.argv[2]), d["record_target"],
+                     d.get("head_sha") or "unmanaged", kind_label=sys.argv[4]))
+' "$(dirname "$GATE_PY")" "$STATE_DIR" "$GATE_JSON" "$CODEX_REVIEW_KIND_LABEL")" || exit 2
+python3 - "$(dirname "$GATE_PY")" "$PROMPT_FILE" "$PROMPT_ROUND" <<'PYPREVIEW' || exit 2
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from round_gate import missing_preview_checks
+try:
+    missing = missing_preview_checks(Path(sys.argv[2]).read_text(encoding="utf-8"), int(sys.argv[3]))
+except (OSError, UnicodeError, ValueError) as error:
+    print(f"依頼文の点検を確認できません: {error}", file=sys.stderr)
+    sys.exit(2)
+if missing:
+    print("依頼文に『点検:』の節が無い／項目が足りない（足りない項目: "
+          + "、".join(missing) + "）。書き手が出す前に点検して、結果を節に書く。"
+          "決まりは review-gate スキルの『出す前の点検』", file=sys.stderr)
+    sys.exit(2)
+PYPREVIEW
+
 RUN_ID="${LABEL}-$(date +%Y%m%d-%H%M%S)-$$"
 LOG_FILE="$STATE_DIR/$RUN_ID.log"
 STATE_FILE="$STATE_DIR/$RUN_ID.state"
@@ -205,15 +232,7 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
   [[ -s "$(dirname "$GATE_PY")/../templates/must-criteria.md" ]] || exit 2
   cat "$(dirname "$GATE_PY")/../templates/must-criteria.md" || exit 2
   # 総上限とは別に、今回と同じ種別の巡だけを既存台帳から数える。
-  PROMPT_ROUND="$(python3 -c '
-import json, sys
-from pathlib import Path
-sys.path.insert(0, sys.argv[1])
-from round_gate import ledger_own_round
-d = json.loads(sys.argv[3])
-print(ledger_own_round(Path(sys.argv[2]), d["record_target"],
-                       d.get("head_sha") or "unmanaged", kind_label=sys.argv[4]))
-' "$(dirname "$GATE_PY")" "$STATE_DIR" "$GATE_JSON" "$CODEX_REVIEW_KIND_LABEL")" || exit 2
+
   if [[ "$PROMPT_ROUND" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND >= 2 )); then
     echo 'この巡は前の巡の [Must] が直ったかを確かめるだけ。新しい論点は [Should] として別課題の候補に返す。新しい [Must] は今回の直しが新たに壊したものだけ。'
   fi
