@@ -18,10 +18,11 @@
 2. **board**（claude-config）: `codexInfo` が `summary` を返し、`codexText` は `summary` が非空ならそれを主語に使う:
    `Codex が「<summary>」を<実装|設計レビュー|コードレビュー>中（3分）` / 終了時 `Codex の<work>が<elapsed>前に終了: 「<summary>」`。
    - 優先順: summary → 課題番号（従来）→ 英字ラベル（従来）。summary が無い古い走行は従来どおり。
+   - summary と課題番号の両方があるときは `Codex が 課題 #N「<summary>」を…中` と並べて出す（2026-11-10 ユーザー選択「番号も並べて出す」。コードレビュー巡1の [Should]1 由来）。
    - 名前の衝突に注意: `codexText(c, summary, elapsed)` の第2引数 `summary` は既に「課題の要約」の意味で使われている（`register.tsx:213-216`、呼び出し 1845行）。board 側では新しい値を `CodexRow.doing` として持ち、既存の `summary` 引数の意味は変えない。検査は既存の `hooks/register.test.ts` に足す。
    - 画面に出す前に、行境界になる文字（LF・CR・VT・FF・U+001C〜001E・U+0085・U+2028・U+2029）と他の制御文字を空白にし、前後空白を除き、`Array.from(v).slice(0, 60).join('')` でコードポイント単位に切る（UTF-16 の途中で切って孤立サロゲートを作らない）。状態ファイルは起動口以外でも書けるため、読む側でも守る。正規化後に空なら summary 無しとして扱う。
    - 配線: `collectCodex`（`register.tsx:937-948`）で状態の `summary` を `CodexRow.doing` へ入れ、行生成（1844-1849行の `codexText` 呼び出し）まで渡す。
-3. **手順書**（claude-config）: `rules/pipeline-routing.md` 27行目（codex-impl の起動の正典）と `refs/codex-exec.md` 18行目（codex-review の起動）に、「起動時に `CODEX_SUMMARY='<何をしているか30字ほど・名詞で終える>'` を付ける」を1文ずつ。
+3. **手順書**（claude-config）: `refs/pipeline-routing.md` 44行目（codex-impl の起動の正典。2026-11-06 に rules 旧27行から移動済み）と `refs/codex-exec.md` 18行目（codex-review の起動）に、「起動時に `CODEX_SUMMARY='<何をしているか30字ほど・名詞で終える>'` を付ける」を1文ずつ。
 
 ## 完成条件（round 0）
 - ①守る対象: (a) 新しく起こした走行が、`CODEX_SUMMARY` を付ければ見回りの画面で日本語1行で読めること (b) 付けない起動・古い状態ファイルの表示と起動の成否が今と変わらないこと (c) 状態ファイルの既存キーの値が変わらないこと（codex-status・codex-watch・board の他の読み手を壊さない）
