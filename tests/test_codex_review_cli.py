@@ -117,6 +117,25 @@ def _run(
     )
 
 
+def test_cli_generated_prompt_requires_evidence_for_must(fake_bin: Path, tmp_path: Path):
+    result = _run(
+        fake_bin, tmp_path, review_target="issue:example-org/example-repo#1",
+        review_goal_cut=VALID_GOAL_CUT, gate_check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    prompts = list((tmp_path / "state").glob("*.prompt.*"))
+    assert len(prompts) == 1
+    prompt = prompts[0].read_text()
+    conditions = (BIN_DIR.parent / "templates/must-criteria.md").read_text().strip()
+    assert "このまま本線へ入れた場合" in conditions
+    assert "再現の手順か失敗する試験" in conditions
+    assert "根拠: (A) <件数か再現手順>" in conditions
+    assert "根拠: (B)<番号> <理由>" in conditions
+    assert "各 [Must] に件数を1行・0件なら落とす" in conditions
+    assert prompt.count(conditions) == 1
+    assert prompt.index(conditions) < prompt.index("dummy prompt")
+
+
 def test_cli_unset_model_and_effort_use_config_defaults(
     fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
