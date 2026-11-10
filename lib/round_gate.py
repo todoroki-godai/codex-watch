@@ -416,12 +416,14 @@ CONTENT_HASH_RECIPE = (
 # ---------------------------------------------------------------------------
 
 
-def read_state_file(path: Path) -> dict[str, str]:
+def read_state_file(path: Path, *, strict: bool = False) -> dict[str, str]:
     """1行1キー形式の state ファイルを dict にする。壊れた行は無視する。"""
     out: dict[str, str] = {}
     try:
         text = path.read_text()
     except OSError:
+        if strict:
+            raise
         return out
     for line in text.splitlines():
         if "=" not in line:
@@ -431,17 +433,28 @@ def read_state_file(path: Path) -> dict[str, str]:
     return out
 
 
-def ledger_head_shas_for_target(state_dir: Path, target_key: str) -> list[tuple[float, str]]:
+def ledger_head_shas_for_target(
+    state_dir: Path, target_key: str, *, kind_label: str | None = None,
+) -> list[tuple[float, str]]:
     """state dir を走査し、target に一致する state ファイルの (started_at, head_sha) を
     started_at 昇順で返す（head_sha 未記録のエントリは除外＝v2 以前の state）。
     """
     entries: list[tuple[float, str]] = []
-    if not state_dir.is_dir():
+    if kind_label is None and not state_dir.is_dir():
         return entries
-    for p in sorted(state_dir.glob("*.state")):
-        d = read_state_file(p)
+    # 種別指定時だけ読み取り失敗を伝播する。総上限側の既存の読み方は維持する。
+    paths = (state_dir.glob("*.state") if kind_label is None else
+             (p for p in state_dir.iterdir() if p.name.endswith(".state")))
+    for p in sorted(paths):
+        d = read_state_file(p, strict=kind_label is not None)
         if d.get("review_target") != target_key:
             continue
+        if kind_label is not None:
+            recorded_kind = d.get("kind_label", "コード")
+            if recorded_kind not in ("設計", "コード"):
+                raise ValueError(f"種別を数えられません: {p}")
+            if recorded_kind != kind_label:
+                continue
         head = d.get("head_sha")
         if not head:
             continue
@@ -454,10 +467,12 @@ def ledger_head_shas_for_target(state_dir: Path, target_key: str) -> list[tuple[
     return entries
 
 
-def ledger_own_round(state_dir: Path, target_key: str, head_sha: str) -> int:
+def ledger_own_round(
+    state_dir: Path, target_key: str, head_sha: str, *, kind_label: str | None = None,
+) -> int:
     """この HEAD で発注したら何巡目になるか（同一 HEAD の既存発注があればその巡、無ければ新規=len+1）。"""
     distinct: list[str] = []
-    for _started, head in ledger_head_shas_for_target(state_dir, target_key):
+    for _started, head in ledger_head_shas_for_target(state_dir, target_key, kind_label=kind_label):
         if head not in distinct:
             distinct.append(head)
     if head_sha in distinct:

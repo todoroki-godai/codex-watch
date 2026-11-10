@@ -133,7 +133,10 @@ def test_cli_generated_prompt_requires_evidence_for_must(fake_bin: Path, tmp_pat
     assert "根拠: (C) <壊れる相手>" in conditions
     assert "根拠: (A) <件数か再現手順>" in conditions
     assert "根拠: (B)<番号> <理由>" in conditions
-    assert "各 [Must] に件数を1行・0件なら落とす" in conditions
+    assert "件数が0でも、実害の記録・再現の手順・失敗する試験を示せる欠陥は (A) とする。" in conditions
+    assert "③初回の発生も許せない安全の境界" in conditions
+    assert "どんな侵害が起き、なぜ初回も許せないかを書く" in conditions
+    assert "行が無い・中身が空のときだけ自分で数え直し、0件なら落とす（(B)(C) は除く）。" in conditions
     assert prompt.count(conditions) == 1
     assert prompt.index(conditions) < prompt.index("dummy prompt")
 
@@ -267,6 +270,7 @@ def _run_in_git_workdir(
     *,
     review_target: str,
     review_goal_cut: str,
+    kind_label: str = "コード",
 ) -> subprocess.CompletedProcess:
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("dummy prompt\n")
@@ -278,7 +282,7 @@ def _run_in_git_workdir(
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
-    env["CODEX_REVIEW_KIND_LABEL"] = "コード"
+    env["CODEX_REVIEW_KIND_LABEL"] = kind_label
     env["REVIEW_TARGET"] = review_target
     env["REVIEW_GOAL_CUT"] = review_goal_cut
     env["FAKE_GH_BODY"] = str(tmp_path / "fake_gh_body.txt")

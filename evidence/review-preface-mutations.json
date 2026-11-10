@@ -1,0 +1,238 @@
+[
+  {
+    "name": "total-round",
+    "file": "bin/codex-review",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "1d5cfce0209dda494738d09a453e514e9e852548a6659260fb9448137f9a6ac2",
+    "after_sha256": "c5902a2837d3dcd7fb655b3106a03fc9b76cf1ad87a480a7839d9702ab5421f4",
+    "diff": "--- bin/codex-review\n+++ bin/codex-review\n@@ -205,15 +205,7 @@\n   [[ -s \"$(dirname \"$GATE_PY\")/../templates/must-criteria.md\" ]] || exit 2\n   cat \"$(dirname \"$GATE_PY\")/../templates/must-criteria.md\" || exit 2\n   # 総上限とは別に、今回と同じ種別の巡だけを既存台帳から数える。\n-  PROMPT_ROUND=\"$(python3 -c '\n-import json, sys\n-from pathlib import Path\n-sys.path.insert(0, sys.argv[1])\n-from round_gate import ledger_own_round\n-d = json.loads(sys.argv[3])\n-print(ledger_own_round(Path(sys.argv[2]), d[\"record_target\"],\n-                       d.get(\"head_sha\") or \"unmanaged\", kind_label=sys.argv[4]))\n-' \"$(dirname \"$GATE_PY\")\" \"$STATE_DIR\" \"$GATE_JSON\" \"$CODEX_REVIEW_KIND_LABEL\")\" || exit 2\n+  PROMPT_ROUND=\"$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])[\"total_round\"])' \"$GATE_JSON\")\" || exit 2\n   if [[ \"$PROMPT_ROUND\" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND >= 2 )); then\n     echo 'この巡は前の巡の [Must] が直ったかを確かめるだけ。新しい論点は [Should] として別課題の候補に返す。新しい [Must] は今回の直しが新たに壊したものだけ。'\n   fi\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/total-round/base",
+      "tests/test_review_must_criteria.py",
+      "tests/test_codex_review_cli.py",
+      "-k",
+      "scope_separates_kinds"
+    ],
+    "selector": "scope_separates_kinds",
+    "executed_evidence": [
+      "+codex-review:208: PROMPT_ROUND=2",
+      "+codex-review:208: PROMPT_ROUND=2",
+      "+codex-review:208: PROMPT_ROUND=2"
+    ],
+    "execution_hit_count": 6,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_review_must_criteria.py::test_scope_separates_kinds[prior_kinds0-\\u30b3\\u30fc\\u30c9-False]\nFAILED tests/test_review_must_criteria.py::test_scope_separates_kinds[prior_kinds4-\\u8a2d\\u8a08-False]\nFAILED tests/test_review_must_criteria.py::test_scope_separates_kinds[prior_kinds5-\\u8a2d\\u8a08-False]\n3 failed, 3 passed, 26 deselected in 6.14s\n"
+  },
+  {
+    "name": "ignore-kind",
+    "file": "lib/round_gate.py",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "1343405f53f388d1e860525271663b7b06fc410b4dee4d3d56da04c42648184a",
+    "after_sha256": "4c51b08ca8a9e982df4cd9ebb0def74812b342b4fd68926639d91c0d4c703461",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -453,7 +453,7 @@\n             recorded_kind = d.get(\"kind_label\", \"コード\")\n             if recorded_kind not in (\"設計\", \"コード\"):\n                 raise ValueError(f\"種別を数えられません: {p}\")\n-            if recorded_kind != kind_label:\n+            if False:\n                 continue\n         head = d.get(\"head_sha\")\n         if not head:\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/ignore-kind/base",
+      "tests/test_review_must_criteria.py",
+      "tests/test_codex_review_cli.py",
+      "-k",
+      "scope_separates_kinds"
+    ],
+    "selector": "scope_separates_kinds",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/ignore-kind/lib/round_gate.py\", \"line\": 456, \"source\": \"if False:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/ignore-kind/lib/round_gate.py\", \"line\": 456, \"source\": \"if False:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/ignore-kind/lib/round_gate.py\", \"line\": 456, \"source\": \"if False:\"}"
+    ],
+    "execution_hit_count": 6,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_review_must_criteria.py::test_scope_separates_kinds[prior_kinds0-\\u30b3\\u30fc\\u30c9-False]\nFAILED tests/test_review_must_criteria.py::test_scope_separates_kinds[prior_kinds4-\\u8a2d\\u8a08-False]\nFAILED tests/test_review_must_criteria.py::test_scope_separates_kinds[prior_kinds5-\\u8a2d\\u8a08-False]\n3 failed, 3 passed, 26 deselected in 6.33s\n"
+  },
+  {
+    "name": "allow-empty",
+    "file": "bin/codex-review",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "1d5cfce0209dda494738d09a453e514e9e852548a6659260fb9448137f9a6ac2",
+    "after_sha256": "cf4244fdd42c0a5d7dd980f653b1135f2bbba2d46ed68374c1b755c713991d1d",
+    "diff": "--- bin/codex-review\n+++ bin/codex-review\n@@ -202,7 +202,6 @@\n   echo \"\\`$(python3 \"$GATE_PY\" recipe)\\`\"\n   echo 'この2行が欠けている、または実際にコマンドを実行した値でない場合、このレビューは機械照合で受領不可（取り直し）になる。'\n   echo\n-  [[ -s \"$(dirname \"$GATE_PY\")/../templates/must-criteria.md\" ]] || exit 2\n   cat \"$(dirname \"$GATE_PY\")/../templates/must-criteria.md\" || exit 2\n   # 総上限とは別に、今回と同じ種別の巡だけを既存台帳から数える。\n   PROMPT_ROUND=\"$(python3 -c '\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/allow-empty/base",
+      "tests/test_review_must_criteria.py",
+      "tests/test_codex_review_cli.py",
+      "-k",
+      "missing_canonical and empty"
+    ],
+    "selector": "missing_canonical and empty",
+    "executed_evidence": [
+      "+codex-review:205: cat '/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/allow-empty/base/test_missing_canonical_stops_b0/launcher with spaces/lib/../templates/must-criteria.md'"
+    ],
+    "execution_hit_count": 1,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_review_must_criteria.py::test_missing_canonical_stops_before_dispatch[empty]\n1 failed, 31 deselected in 1.11s\n"
+  },
+  {
+    "name": "first-round-scope",
+    "file": "bin/codex-review",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "1d5cfce0209dda494738d09a453e514e9e852548a6659260fb9448137f9a6ac2",
+    "after_sha256": "0e4c2348c67f629daf8cf5645c095195d7f3dc9f0c639d2ec672961f332f8f71",
+    "diff": "--- bin/codex-review\n+++ bin/codex-review\n@@ -214,7 +214,7 @@\n print(ledger_own_round(Path(sys.argv[2]), d[\"record_target\"],\n                        d.get(\"head_sha\") or \"unmanaged\", kind_label=sys.argv[4]))\n ' \"$(dirname \"$GATE_PY\")\" \"$STATE_DIR\" \"$GATE_JSON\" \"$CODEX_REVIEW_KIND_LABEL\")\" || exit 2\n-  if [[ \"$PROMPT_ROUND\" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND >= 2 )); then\n+  if [[ \"$PROMPT_ROUND\" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND >= 1 )); then\n     echo 'この巡は前の巡の [Must] が直ったかを確かめるだけ。新しい論点は [Should] として別課題の候補に返す。新しい [Must] は今回の直しが新たに壊したものだけ。'\n   fi\n   echo\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/first-round-scope/base",
+      "tests/test_review_must_criteria.py",
+      "tests/test_codex_review_cli.py",
+      "-k",
+      "followup_scope_from_ledger"
+    ],
+    "selector": "followup_scope_from_ledger",
+    "executed_evidence": [
+      "+codex-review:217: ((  PROMPT_ROUND >= 1  ))",
+      "+codex-review:217: ((  PROMPT_ROUND >= 1  ))",
+      "+codex-review:217: ((  PROMPT_ROUND >= 1  ))"
+    ],
+    "execution_hit_count": 3,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_review_must_criteria.py::test_cli_followup_scope_from_ledger[1]\n1 failed, 2 passed, 29 deselected in 3.44s\n"
+  },
+  {
+    "name": "legacy-default",
+    "file": "lib/round_gate.py",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "1343405f53f388d1e860525271663b7b06fc410b4dee4d3d56da04c42648184a",
+    "after_sha256": "2c0bd3759cbf296847f69edc838e2c4be912683a00446bc4d43e5cdfda5ee714",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -450,7 +450,7 @@\n         if d.get(\"review_target\") != target_key:\n             continue\n         if kind_label is not None:\n-            recorded_kind = d.get(\"kind_label\", \"コード\")\n+            recorded_kind = d.get(\"kind_label\", \"設計\")\n             if recorded_kind not in (\"設計\", \"コード\"):\n                 raise ValueError(f\"種別を数えられません: {p}\")\n             if recorded_kind != kind_label:\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/legacy-default/base",
+      "tests/test_review_must_criteria.py",
+      "tests/test_codex_review_cli.py",
+      "-k",
+      "scope_separates_kinds"
+    ],
+    "selector": "scope_separates_kinds",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/legacy-default/lib/round_gate.py\", \"line\": 453, \"source\": \"recorded_kind = d.get(\\\"kind_label\\\", \\\"設計\\\")\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/legacy-default/lib/round_gate.py\", \"line\": 453, \"source\": \"recorded_kind = d.get(\\\"kind_label\\\", \\\"設計\\\")\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/legacy-default/lib/round_gate.py\", \"line\": 453, \"source\": \"recorded_kind = d.get(\\\"kind_label\\\", \\\"設計\\\")\"}"
+    ],
+    "execution_hit_count": 6,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_review_must_criteria.py::test_scope_separates_kinds[prior_kinds3-\\u30b3\\u30fc\\u30c9-True]\nFAILED tests/test_review_must_criteria.py::test_scope_separates_kinds[prior_kinds4-\\u8a2d\\u8a08-False]\n2 failed, 4 passed, 26 deselected in 6.49s\n"
+  },
+  {
+    "name": "count-dispatches",
+    "file": "lib/round_gate.py",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "1343405f53f388d1e860525271663b7b06fc410b4dee4d3d56da04c42648184a",
+    "after_sha256": "bf3b1003ef26e12b549f9458d18eb954e003e2c7dea78d816cf201a4ddd12e7e",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -473,7 +473,7 @@\n     \"\"\"この HEAD で発注したら何巡目になるか（同一 HEAD の既存発注があればその巡、無ければ新規=len+1）。\"\"\"\n     distinct: list[str] = []\n     for _started, head in ledger_head_shas_for_target(state_dir, target_key, kind_label=kind_label):\n-        if head not in distinct:\n+        if True:\n             distinct.append(head)\n     if head_sha in distinct:\n         return distinct.index(head_sha) + 1\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/count-dispatches/base",
+      "tests/test_review_must_criteria.py",
+      "tests/test_codex_review_cli.py",
+      "-k",
+      "scope_counts_rounds_not_dispatches"
+    ],
+    "selector": "scope_counts_rounds_not_dispatches",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/count-dispatches/lib/round_gate.py\", \"line\": 476, \"source\": \"if True:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/count-dispatches/lib/round_gate.py\", \"line\": 476, \"source\": \"if True:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/count-dispatches/lib/round_gate.py\", \"line\": 476, \"source\": \"if True:\"}"
+    ],
+    "execution_hit_count": 9,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_review_must_criteria.py::test_scope_counts_rounds_not_dispatches[duplicate-head-True]\n1 failed, 2 passed, 29 deselected in 3.25s\n"
+  },
+  {
+    "name": "ignore-target",
+    "file": "lib/round_gate.py",
+    "red_expected": true,
+    "exit_code": 1,
+    "before_sha256": "1343405f53f388d1e860525271663b7b06fc410b4dee4d3d56da04c42648184a",
+    "after_sha256": "e05dc63ec565c929a0e7bfafe09ee96cd1c0f8e64be6d439a11479a64baafadc",
+    "diff": "--- lib/round_gate.py\n+++ lib/round_gate.py\n@@ -447,7 +447,7 @@\n              (p for p in state_dir.iterdir() if p.name.endswith(\".state\")))\n     for p in sorted(paths):\n         d = read_state_file(p, strict=kind_label is not None)\n-        if d.get(\"review_target\") != target_key:\n+        if False:\n             continue\n         if kind_label is not None:\n             recorded_kind = d.get(\"kind_label\", \"コード\")\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/ignore-target/base",
+      "tests/test_review_must_criteria.py",
+      "tests/test_codex_review_cli.py",
+      "-k",
+      "scope_counts_rounds_not_dispatches"
+    ],
+    "selector": "scope_counts_rounds_not_dispatches",
+    "executed_evidence": [
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/ignore-target/lib/round_gate.py\", \"line\": 450, \"source\": \"if False:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/ignore-target/lib/round_gate.py\", \"line\": 450, \"source\": \"if False:\"}",
+      "{\"file\": \"/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/ignore-target/lib/round_gate.py\", \"line\": 450, \"source\": \"if False:\"}"
+    ],
+    "execution_hit_count": 17,
+    "pytest_summary": "=========================== short test summary info ============================\nFAILED tests/test_review_must_criteria.py::test_scope_counts_rounds_not_dispatches[other-target-False]\n1 failed, 2 passed, 29 deselected in 3.43s\n"
+  },
+  {
+    "name": "positive-equivalent",
+    "file": "bin/codex-review",
+    "red_expected": false,
+    "exit_code": 0,
+    "before_sha256": "1d5cfce0209dda494738d09a453e514e9e852548a6659260fb9448137f9a6ac2",
+    "after_sha256": "bea36214fd3cff7df2ad781f38f2061c4c52e9c199fbf90edc1b63d9683d245f",
+    "diff": "--- bin/codex-review\n+++ bin/codex-review\n@@ -214,7 +214,7 @@\n print(ledger_own_round(Path(sys.argv[2]), d[\"record_target\"],\n                        d.get(\"head_sha\") or \"unmanaged\", kind_label=sys.argv[4]))\n ' \"$(dirname \"$GATE_PY\")\" \"$STATE_DIR\" \"$GATE_JSON\" \"$CODEX_REVIEW_KIND_LABEL\")\" || exit 2\n-  if [[ \"$PROMPT_ROUND\" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND >= 2 )); then\n+  if [[ \"$PROMPT_ROUND\" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND > 1 )); then\n     echo 'この巡は前の巡の [Must] が直ったかを確かめるだけ。新しい論点は [Should] として別課題の候補に返す。新しい [Must] は今回の直しが新たに壊したものだけ。'\n   fi\n   echo\n",
+    "command": [
+      "/opt/homebrew/bin/python3",
+      "-m",
+      "pytest",
+      "-q",
+      "-p",
+      "no:cacheprovider",
+      "--basetemp=/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/cw-must/.tmp/fx/review-preface-mutations/positive-equivalent/base",
+      "tests/test_review_must_criteria.py",
+      "tests/test_codex_review_cli.py"
+    ],
+    "selector": "",
+    "executed_evidence": [
+      "+codex-review:217: ((  PROMPT_ROUND > 1  ))",
+      "+codex-review:217: ((  PROMPT_ROUND > 1  ))",
+      "+codex-review:217: ((  PROMPT_ROUND > 1  ))"
+    ],
+    "execution_hit_count": 20,
+    "pytest_summary": "32 passed in 24.84s"
+  }
+]
