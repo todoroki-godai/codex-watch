@@ -152,6 +152,26 @@ STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
 mkdir -p "$STATE_DIR"
 prepare_codex_github_account
 
+# 行頭の見込み欄を優先し、なければ本文の最初の一致を読む。環境値は空でも優先する。
+ESTIMATE_MIN="$(python3 - "$PROMPT_FILE" <<'PYESTIMATE'
+import os, re, sys
+from pathlib import Path
+value = os.environ.get('CODEX_IMPL_ESTIMATE_MIN')
+if value is None:
+    body = Path(sys.argv[1]).read_text(encoding='utf-8')
+    label = r'見込み[:：]\s*'
+    heading = re.search(r'^(?:## )?' + label + r'(.*)$', body, re.MULTILINE)
+    match = (re.match(r'約?(-?[0-9]+)\s*分', heading.group(1)) if heading else
+             re.search(label + r'約?([0-9]+)\s*分', body))
+    value = match.group(1) if match else ''
+if not re.fullmatch(r'-?[0-9]+', value):
+    print('警告: 見込みが未指定または整数でないため estimate_min は空です。', file=sys.stderr)
+    value = ''
+print(value)
+PYESTIMATE
+)"
+
+
 RUN_ID="${LABEL}-$(date +%Y%m%d-%H%M%S)-$$"
 LOG_FILE="$STATE_DIR/$RUN_ID.log"
 STATE_FILE="$STATE_DIR/$RUN_ID.state"
@@ -215,6 +235,7 @@ CODEX_PID=$!
   codex_summary_state
   echo "requested_model=$REQUESTED_MODEL"
   echo "requested_effort=$REQUESTED_EFFORT"
+  echo "estimate_min=$ESTIMATE_MIN"
   echo "started_at=$(date +%s)"
   echo "started_at_human=$(date '+%Y-%m-%d %H:%M:%S')"
 } > "$STATE_FILE"

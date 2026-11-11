@@ -11,7 +11,7 @@
 |---|---|
 | `codex-review <対象dir> <promptfile> [ラベル]` | レビュー発注（`-s read-only`）。detach して run id を返す |
 | `codex-impl <worktree> <promptfile> [ラベル]` | 実装発注（専用権限プロファイル）。linked worktree でなければ拒否 |
-| `codex-watch <run id>` | STALL / VERDICT / EXIT / TIMEOUT の4事象を報告する見張り |
+| `codex-watch <run id>` | STALL / VERDICT / FILTERED / EXIT / OVERDUE / TIMEOUTを報告する見張り |
 | `codex-status <run id>` | 生存・経過・無音時間・判定行・ログ末尾を1画面で表示 |
 
 状態は `~/.codex-watch/<run id>.{log,report,state}` に残る。
@@ -46,6 +46,18 @@
 語で止めるたび、止めた時点の依頼文を `~/.codex-watch/receipt-gate-stops/<時刻>-<依頼文のsha256先頭12桁>.md` に1ファイル保存します（元の改行を含むバイト列そのまま・権限0600・既存ファイルは上書きしない）。
 `~/.codex-watch/receipt-gate-stops.log` の1行JSONには `time`（時刻）、`prompt`（元の絶対パス）、`match`（最初に当たった語）、`snapshot`（写しの絶対パス）、`sha256`（依頼文のSHA256全64桁）を記録します。元の依頼文を直して再起動しても、停止時の写しは残ります。
 写しの保存・停止ログの記録に失敗した場合、および検査の異常（想定外の例外・python3 が無い）は起動しない側に倒れます。止めた起動は状態ファイルを作りません。
+
+依頼文には完了の基準と見込みを次の2欄で書いてください。
+```text
+## 終わりの条件
+実装と全試験の確認が済んだら報告して終える。
+## 見込み: 45分
+```
+行頭の `## 見込み: N分` または `見込み: N分` の最初の欄を優先し、なければ本文で最初の `見込み: N分` を state の `estimate_min` に記録します。全角コロン・`約N分`・太字・末尾の句点も読めます。
+`CODEX_IMPL_ESTIMATE_MIN` が定義されていれば（空でも）そちらが優先です。未指定・整数以外は空で記録し、警告1行で起動を続けます。
+正の見込みの2倍を**超えて**プロセスが生存していれば、`codex-watch` は `OVERDUE` を1行出し exit 0 します。run 開始からの経過で判定し、自動では run を止めません。
+OVERDUE を出すと見張りは終わります。その run の終了報告を受けるには、頭が同じ run id で見張りを張り直してください。頭は git log・status と出力を読んで継続を判断します。通知後は `<run>.overdue` が残るため、張り直した見張りは同じ run の OVERDUE を繰り返しません。
+見込みなしの古い state は従来どおりです。`codex-status` は経過行に見込みを併記します。
 
 ### 測り直しの実行契約
 

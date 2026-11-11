@@ -36,12 +36,15 @@ extract_answer() {
 show_one() {
   local state_file="$1"
   # shellcheck disable=SC1090
-  local run_id pid log workdir started_at requested_model requested_effort
+  local run_id pid log workdir started_at requested_model requested_effort estimate_min estimate_label
   run_id=$(sed -n 's/^run_id=//p' "$state_file")
   pid=$(sed -n 's/^pid=//p' "$state_file")
   log=$(sed -n 's/^log=//p' "$state_file")
   workdir=$(sed -n 's/^workdir=//p' "$state_file")
   started_at=$(sed -n 's/^started_at=//p' "$state_file")
+  estimate_min=$(sed -n 's/^estimate_min=//p' "$state_file")
+  estimate_label=""
+  [[ -n "$estimate_min" ]] && estimate_label=" / 見込み${estimate_min}分"
   requested_model=$(sed -n 's/^requested_model=//p' "$state_file")
   requested_effort=$(sed -n 's/^requested_effort=//p' "$state_file")
 
@@ -72,7 +75,7 @@ show_one() {
   echo "run_id   : $run_id"
   echo "状態     : $diagnosis"
   echo "プロセス : $alive (pid=$pid)"
-  echo "経過     : $(( elapsed / 60 ))分$(( elapsed % 60 ))秒"
+  echo "経過     : $(( elapsed / 60 ))分$(( elapsed % 60 ))秒${estimate_label}"
   echo "無音     : $(( silent / 60 ))分$(( silent % 60 ))秒"
   echo "判定行   : ${verdict_count}件（'tokens used' の完全一致）"
   echo "ログ     : $log (${size}B / ${lines}行)"
