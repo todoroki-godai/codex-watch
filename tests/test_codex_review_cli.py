@@ -131,9 +131,9 @@ def test_cli_generated_prompt_requires_evidence_for_must(fake_bin: Path, tmp_pat
     assert "実害の記録・再現の手順・失敗する試験" in conditions
     assert "そのまま入れると相手が壊れる" in conditions
     assert "根拠: (C) <壊れる相手>" in conditions
-    assert "根拠: (A) <件数か再現手順>" in conditions
+    assert "根拠: (A) <件数か再現手順・件数が0なら起きたら壊れるもの>" in conditions
     assert "根拠: (B)<番号> <理由>" in conditions
-    assert "件数が0でも、実害の記録・再現の手順・失敗する試験を示せる欠陥は (A) とする。" in conditions
+    assert "件数が0でも、実害の記録・再現の手順・失敗する試験のどれかに加えて「起きたら何が壊れるか」を示し、データ・点数・本番・利用者に見える画面のどれかが壊れる欠陥は (A) とするが、壊れるのがレビューや作業のやり直しだけなら [Should] とする。" in conditions
     assert "③初回の発生も許せない安全の境界" in conditions
     assert "どんな侵害が起き、なぜ初回も許せないかを書く" in conditions
     assert "行が無い・中身が空のときだけ自分で数え直し、0件なら落とす（(B)(C) は除く）。" in conditions
