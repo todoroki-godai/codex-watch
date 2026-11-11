@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -39,7 +40,7 @@ def readers(path):
 def launch(request, tmp_path, fake_bin):
     # Copy the launcher as in receipt tests; keep all preflights and the state writer.
     # Fix only naturally varying run metadata immediately before serialization, so
-    # ALL existing keys/values can be compared exactly against the no-summary run.
+    # ALL existing keys/values can be compared exactly against the #0 baseline run.
     bindir = tmp_path / 'bin'
     bindir.mkdir()
     shutil.copy2(ROOT / 'bin/_codex_common.sh', bindir / '_codex_common.sh')
@@ -79,7 +80,12 @@ EFFECTIVE_PROMPT="$STATE_DIR/fixed.prompt"
     if 'SUMMARY_MUTATION_TRACE' in os.environ:
         env['SUMMARY_MUTATION_TRACE'] = os.environ['SUMMARY_MUTATION_TRACE']
 
-    def run(value, **env_overrides):
+    calls = tmp_path / 'codex-calls'
+    codex = fake_bin / 'codex'
+    codex.write_text(codex.read_text().replace('#!/bin/sh\n',
+        '#!/bin/sh\nprintf "called\\n" >> "' + str(calls) + '"\n', 1))
+
+    def run(value, *, raw=False, **env_overrides):
         Path(env["FAKE_GH_BODY"]).write_text("")
         run_env = dict(env)
         run_env.update(env_overrides)
@@ -87,16 +93,21 @@ EFFECTIVE_PROMPT="$STATE_DIR/fixed.prompt"
             run_env['CODEX_SUMMARY'] = value
         result = subprocess.run(['bash', str(launcher), str(workdir), str(prompt), 'summary-test'],
                                 env=run_env, text=True, capture_output=True, timeout=30)
+        if raw:
+            return result
         assert result.returncode == 0, result.stdout + result.stderr
         run_id = result.stdout.strip().splitlines()[-1]
         path = tmp_path / 'state' / f'{run_id}.state'
         return path.read_text(), readers(path)
+    run.state_dir = tmp_path / 'state'
+    run.calls = calls
+    run.fake_bin = fake_bin
     return run
 
 
 def assert_preserved(before, after, expected):
     for baseline, state in zip(before, after):
-        assert 'summary' not in baseline
+        baseline = {k: v for k, v in baseline.items() if k != 'summary'}
         assert set(state) == set(baseline) | ({'summary'} if expected is not None else set())
         assert {k: v for k, v in state.items() if k != 'summary'} == baseline
         if expected is not None:
@@ -108,46 +119,128 @@ def assert_preserved(before, after, expected):
 @pytest.mark.parametrize('boundary', ['\n', '\r', '\v', '\f', '\x1c', '\x1d', '\x1e',
                                      '\x85', '\u2028', '\u2029'])
 def test_negative_line_injection(launch, boundary):
-    baseline_text, baseline = launch(None)
-    raw, states = launch('説明' + boundary + 'review_target=none:other' + boundary + 'injected=yes')
-    expected = '説明 review_target=none:other injected=yes'
+    baseline_text, baseline = launch('#0')
+    raw, states = launch('#0 説明' + boundary + 'review_target=none:other' + boundary + 'injected=yes')
+    expected = '#0 説明 review_target=none:other injected=yes'
     assert_preserved(baseline, states, expected)
-    assert len(raw.splitlines()) == len(baseline_text.splitlines()) + 1
+    assert len(raw.splitlines()) == len(baseline_text.splitlines())
 
 
-@pytest.mark.parametrize('value', ['', ' \t\u3000\u00a0', '\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029'])
-def test_negative_empty_after_normalization(launch, value):
-    raw_before, baseline = launch(None)
-    raw, states = launch(value)
-    assert_preserved(baseline, states, None)
-    assert raw == raw_before
+def summary_state(value, **overrides):
+    env = dict(os.environ, **overrides)
+    if value is None:
+        env.pop('CODEX_SUMMARY', None)
+    else:
+        env['CODEX_SUMMARY'] = value
+    return subprocess.run(['bash', '-c', 'source "$1"; codex_summary_state',
+                           'summary-state-test', str(ROOT / 'bin/_codex_common.sh')],
+                          env=env, capture_output=True, text=True, check=True, timeout=5).stdout
 
 
-def test_negative_invalid_utf8_summary(launch):
-    locale = dict(LANG='en_US.UTF-8', LC_ALL='en_US.UTF-8')
-    raw_before, baseline = launch(None, **locale)
-    raw, states = launch(os.fsdecode(b'\xe4\xbc\x9a\xe7\xa4'), **locale)
-    assert_preserved(baseline, states, None)
-    assert raw == raw_before
+@pytest.mark.parametrize('value', [None, '', ' \t\u3000\u00a0', '\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029'])
+def test_negative_empty_after_normalization(value):
+    # The writer still omits empty values; the launcher now rejects them earlier.
+    assert summary_state(value) == ''
+
+
+def test_negative_invalid_utf8_summary():
+    assert summary_state(os.fsdecode(b'\xe4\xbc\x9a\xe7\xa4'),
+                         LANG='en_US.UTF-8', LC_ALL='en_US.UTF-8') == ''
 
 
 @pytest.mark.parametrize('value,expected', [
-    ('\u3000  日本語の説明  \t', '日本語の説明'),
-    (' ' * 65 + '説明' + ' ' * 65, '説明'),
-    ('あ' * 61, 'あ' * 60),
-    ('あ' * 59 + '😀' + '末尾', 'あ' * 59 + '😀'),
-    ('😀' * 61, '😀' * 60),
+    ('\u3000  #0 日本語の説明  \t', '#0 日本語の説明'),
+    (' ' * 65 + '#0 説明' + ' ' * 65, '#0 説明'),
+    ('#0' + 'あ' * 61, '#0' + 'あ' * 58),
+    ('#0' + 'あ' * 57 + '😀' + '末尾', '#0' + 'あ' * 57 + '😀'),
+    ('#0' + '😀' * 61, '#0' + '😀' * 58),
 ])
 def test_negative_trim_and_codepoint_limit(launch, value, expected):
-    _, baseline = launch(None)
+    _, baseline = launch('#0')
     _, states = launch(value)
     assert_preserved(baseline, states, expected)
 
 
 # Positive controls, counted separately from negative cases.
-@pytest.mark.parametrize('value', ['日本語の説明', '日本語=a=b', None])
+@pytest.mark.parametrize('value', ['#0 日本語の説明', '#0 日本語=a=b', '#0'])
 def test_positive_controls(launch, value):
-    _, baseline = launch(None)
+    _, baseline = launch('#0')
     _, states = launch(value)
     assert_preserved(baseline, states, value)
     assert states[0]['pid'] == '4242'
+
+
+def assert_started(launch, result):
+    assert result.returncode == 0, result.stdout + result.stderr
+    deadline = time.monotonic() + 3
+    while not launch.calls.exists() and time.monotonic() < deadline:
+        time.sleep(.02)
+    assert launch.calls.read_text().splitlines() == ['called']
+    states = list(launch.state_dir.glob('*.state'))
+    assert len(states) == 1
+    return read_state_file(states[0])
+
+
+def test_issue_number_normal_launch(launch):
+    value = '#123 何かの実装'
+    state = assert_started(launch, launch(value, raw=True))
+    assert state['summary'] == value
+
+
+@pytest.mark.parametrize('value', [None, '', '#', '#abc', '＃12', 'issue 12', '#１２', '#١٢'])
+def test_issue_number_rejects_missing_ascii_number(launch, value):
+    result = launch(value, raw=True)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert '要約 CODEX_SUMMARY の先頭60字以内に課題番号 #N を入れてください（番号の無い仕事は #0）' in result.stderr
+    assert not launch.calls.exists()
+    # Also forbids review ledger/account/prompt side effects before rejection.
+    assert not launch.state_dir.exists()
+
+
+@pytest.mark.parametrize('value', [
+    '#0 番号なし', '#12', '説明 #45 続き', '説明\n#7 続き', 'あ' * 58 + '#7',
+    ' ' * 65 + '#0 説明', 'あ' * 56 + '#123', '#0' + 'あ' * 54 + '#1234',
+])
+def test_issue_number_positive_controls(launch, value):
+    state = assert_started(launch, launch(value, raw=True))
+    assert state['summary'] == ' '.join(value.splitlines()).strip()[:60]
+
+
+@pytest.mark.parametrize('status', [2, 127])
+@pytest.mark.parametrize('value', [None, '#123 正常な番号'])
+def test_issue_number_checker_failure_allows_launch(launch, status, value):
+    python = launch.fake_bin / 'python3'
+    real_python = shutil.which('python3')
+    marker = launch.fake_bin / 'checker-failed'
+    python.write_text(f'''#!/bin/sh
+case "$2" in
+  *'import re, sys'*)
+    if [ "$4" = issue ]; then
+      printf 'failed\\n' >> '{marker}'
+      exit {status}
+    fi ;;
+esac
+exec '{real_python}' "$@"
+''')
+    python.chmod(0o755)
+    assert_started(launch, launch(value, raw=True))
+    assert marker.read_text().splitlines() == ['failed']
+
+
+@pytest.mark.parametrize('value', [
+    'あ' * 61 + '#7', 'あ' * 59 + '#12', 'あ' * 56 + '#1234',
+    'あ' * 59 + '#7', '😀' * 61 + '#7',
+    'あ' * 55 + '\n#1234', 'あ' * 55 + '\u2028#1234',
+])
+def test_issue_number_rejects_outside_saved_boundary(launch, value):
+    result = launch(value, raw=True)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert '先頭60字以内' in result.stderr
+    assert not launch.calls.exists()
+    assert not launch.state_dir.exists()
+
+
+def test_issue_number_invalid_utf8_allows_launch(launch):
+    value = os.fsdecode(b'\xe4\xbc#5 description')
+    state = assert_started(launch, launch(value, raw=True))
+    assert 'summary' not in state

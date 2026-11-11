@@ -154,7 +154,7 @@ sys.exit(int(os.environ.get('FAKE_CODEX_EXIT','0')))
         if k.startswith(('CODEX_', 'REVIEW_', 'GH_', 'GITHUB_')):
             env.pop(k)
     env.update(PATH=f'{fake}:{env["PATH"]}', HOME=str(home),
-               FAKE_GIT_ROOT=str(work), CODEX_WATCH_DIR=str(state),
+               FAKE_GIT_ROOT=str(work), CODEX_WATCH_DIR=str(state), CODEX_SUMMARY='#0',
                CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1',
                CODEX_REVIEW_KIND_LABEL='コード', REVIEW_TARGET='none:account-test',
                CAPTURE=str(tmp_path / 'capture.json'), RELEASE=str(tmp_path / 'release'))

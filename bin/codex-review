@@ -33,7 +33,7 @@ case "${CODEX_REVIEW_KIND_LABEL:-}" in
 CODEX_REVIEW_KIND_LABEL が未指定、または不正な値です。
   足りないもの: 環境変数 CODEX_REVIEW_KIND_LABEL（このレビューの「種別」列に書く値）
   取りうる値: 設計 / コード
-  実行例: CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
+  実行例: CODEX_SUMMARY='#N …' CODEX_REVIEW_KIND_LABEL=設計 codex-review <workdir絶対パス> <promptfile> <label>
   選び方（1行）: レビュー対象が設計文書（docs/design 等・コードを1行も変えない）なら「設計」、
   実装コード（.ts/.py 等の差分）なら「コード」
 EOF
@@ -75,6 +75,7 @@ fi
 GATE_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/round_gate.py"
 # shellcheck source=SCRIPTDIR/_codex_common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
+check_codex_summary_issue
 for _v in "$WORKDIR" "$PROMPT_FILE" "$LABEL" "${REVIEW_GOAL_CUT:-}"; do
   if ! python3 -c "
 import sys

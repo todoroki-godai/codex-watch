@@ -94,6 +94,7 @@ def _run(
     state_dir.mkdir(exist_ok=True)
 
     env = dict(os.environ)
+    env["CODEX_SUMMARY"] = "#0"
     for key in ("CODEX_REVIEW_MODEL", "CODEX_REVIEW_EFFORT", "CODEX_REVIEW_NO_GATE", "CODEX_REVIEW_ACK_PHRASING"):
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
@@ -284,6 +285,7 @@ def _run_in_git_workdir(
     state_dir.mkdir(exist_ok=True)
 
     env = dict(os.environ)
+    env["CODEX_SUMMARY"] = "#0"
     for key in ("CODEX_REVIEW_MODEL", "CODEX_REVIEW_EFFORT", "CODEX_REVIEW_NO_GATE", "CODEX_REVIEW_ACK_PHRASING"):
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"

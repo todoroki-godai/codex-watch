@@ -93,7 +93,7 @@ Path(os.environ['TEST_DONE']).touch()
         state = tmp_path / 'state'
         env = {k:v for k,v in os.environ.items() if not k.startswith(('AWS_', 'CODEX_', 'GH_', 'GITHUB_'))}
         env.update(PATH=f'{fake}:{env["PATH"]}', HOME=str(tmp_path / 'home'),
-                   CODEX_WATCH_DIR=str(state), CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1',
+                   CODEX_WATCH_DIR=str(state), CODEX_SUMMARY='#0', CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1',
                    TEST_GITDIR=gitdir, TEST_COMMON=common, TEST_MODE=mode,
                    TEST_CAPTURE=str(tmp_path / 'capture'), TEST_CALLS=str(tmp_path / 'calls'),
                    TEST_MARKER=str(tmp_path / 'injected'), TEST_DONE=str(tmp_path / 'done'),
