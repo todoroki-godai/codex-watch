@@ -98,6 +98,7 @@ PYRECEIPT
 
 # shellcheck source=SCRIPTDIR/_codex_common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
+check_codex_summary_issue
 
 # --- 安全ガード: 共有 checkout / main 作業コピーへの書き込みを拒否する ---
 GIT_DIR_ABS="$(git -C "$WORKDIR" rev-parse --absolute-git-dir 2>/dev/null || true)"

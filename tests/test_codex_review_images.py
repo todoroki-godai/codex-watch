@@ -77,6 +77,7 @@ def _run(env_dir: Path, tmp_path: Path, images: str | None, model: str | None = 
     state_dir = tmp_path / "state"
     state_dir.mkdir(exist_ok=True)
     env = dict(os.environ)
+    env["CODEX_SUMMARY"] = "#0"
     for key in ("CODEX_REVIEW_MODEL", "CODEX_REVIEW_EFFORT", "CODEX_REVIEW_NO_GATE",
                 "CODEX_REVIEW_ACK_PHRASING", "CODEX_REVIEW_IMAGES", "CODEX_REVIEW_GATE_CHECK"):
         env.pop(key, None)

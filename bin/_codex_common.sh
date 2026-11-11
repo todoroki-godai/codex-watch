@@ -54,6 +54,17 @@ print(v if is_single_line(v) else ' '.join(v.splitlines()))
 " "$gate_dir" "$v"
 }
 
+# 一致なし (1) だけを拒否する。判定異常は通し、止める範囲を広げない。
+check_codex_summary_issue() {
+  local status=0
+  LC_ALL=C grep -Eq '#[0-9]+' <<< "${CODEX_SUMMARY:-}" || status=$?
+  if [[ "$status" -eq 1 ]]; then
+    echo '要約 CODEX_SUMMARY に課題番号 #N を入れてください（番号の無い仕事は #0）' >&2
+    return 2
+  fi
+  return 0
+}
+
 # 任意の説明は既存の単一行化を通し、空なら state にキー自体を書かない。
 codex_summary_state() {
   local summary

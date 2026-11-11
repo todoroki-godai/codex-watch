@@ -50,7 +50,7 @@ def launch(sandbox):
     (tree / 'lib/codex_impl_aws.py').write_text(
         'import sys\nif len(sys.argv)==1: print("CODEX_IMPL_AWS_STATE=none; CODEX_IMPL_AWS_EXPIRATION=; " )\n')
     executable(fake / 'codex', 'cat >/dev/null\n')
-    env.update(CODEX_IMPL_ALLOW_MAIN='1', CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1')
+    env.update(CODEX_SUMMARY='#0', CODEX_IMPL_ALLOW_MAIN='1', CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1')
 
     def run(body, override=None):
         prompt = tmp / 'prompt with spaces.md'

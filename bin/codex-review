@@ -75,6 +75,7 @@ fi
 GATE_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/round_gate.py"
 # shellcheck source=SCRIPTDIR/_codex_common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
+check_codex_summary_issue
 for _v in "$WORKDIR" "$PROMPT_FILE" "$LABEL" "${REVIEW_GOAL_CUT:-}"; do
   if ! python3 -c "
 import sys

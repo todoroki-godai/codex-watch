@@ -56,7 +56,7 @@ def main():
             assert trace.exists() and trace.read_text().splitlines(), (name, 'branch not read', result.stdout, result.stderr)
             # Exit 1 is assertion failure; syntax/collection errors do not count.
             assert (result.returncode == 1 and 'AssertionError' in result.stdout
-                    and 'assert_preserved' in result.stdout), (name, result.stdout, result.stderr)
+                    and ('assert_preserved' in result.stdout or 'summary_state' in result.stdout)), (name, result.stdout, result.stderr)
             summary = result.stdout.strip().splitlines()[-1]
             print(f'{name}: RED; branch hits={len(trace.read_text().splitlines())}; {summary}', flush=True)
 

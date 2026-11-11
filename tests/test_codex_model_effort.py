@@ -179,6 +179,7 @@ def _run_impl(
     state_dir.mkdir(exist_ok=True)
 
     env = dict(os.environ)
+    env["CODEX_SUMMARY"] = "#0"
     for key in ("CODEX_IMPL_ALLOW_MISSING_NODE_MODULES", "CODEX_IMPL_MODEL", "CODEX_IMPL_EFFORT"):
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
