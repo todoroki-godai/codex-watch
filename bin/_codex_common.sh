@@ -54,12 +54,34 @@ print(v if is_single_line(v) else ' '.join(v.splitlines()))
 " "$gate_dir" "$v"
 }
 
-# 一致なし (1) だけを拒否する。判定異常は通し、止める範囲を広げない。
+# state 保存と起動判定で正規化を共有する。判定時も切り詰め前の番号全体を見て、
+# 保存範囲で数字が途切れる一致を採用しない。異常は一致なし (1) と区別する。
+_codex_summary_normalized() {
+  local summary
+  summary="$(sanitize_single_line "${CODEX_SUMMARY:-}")" || return 2
+  python3 -c '
+import re, sys
+try:
+    value = sys.argv[1].strip()
+    value.encode("utf-8")
+    summary = value[:60]
+    if sys.argv[2] == "issue":
+        status = 0 if any(m.end() <= len(summary) for m in re.finditer(r"#[0-9]+", value)) else 1
+    else:
+        print(summary)
+        status = 0
+except Exception:
+    sys.exit(2)
+sys.exit(status)
+' "$summary" "${1:-state}"
+}
+
+# 一致なし (1) だけを拒否する。正規化・判定異常は通す。
 check_codex_summary_issue() {
   local status=0
-  LC_ALL=C grep -Eq '#[0-9]+' <<< "${CODEX_SUMMARY:-}" || status=$?
+  _codex_summary_normalized issue || status=$?
   if [[ "$status" -eq 1 ]]; then
-    echo '要約 CODEX_SUMMARY に課題番号 #N を入れてください（番号の無い仕事は #0）' >&2
+    echo '要約 CODEX_SUMMARY の先頭60字以内に課題番号 #N を入れてください（番号の無い仕事は #0）' >&2
     return 2
   fi
   return 0
@@ -68,8 +90,7 @@ check_codex_summary_issue() {
 # 任意の説明は既存の単一行化を通し、空なら state にキー自体を書かない。
 codex_summary_state() {
   local summary
-  summary="$(sanitize_single_line "${CODEX_SUMMARY:-}")" || summary=""
-  summary="$(python3 -c 'import sys; print(sys.argv[1].strip()[:60])' "$summary")" || summary=""
+  summary="$(_codex_summary_normalized)" || summary=""
   [[ -n "$summary" ]] && printf 'summary=%s\n' "$summary"
   return 0
 }

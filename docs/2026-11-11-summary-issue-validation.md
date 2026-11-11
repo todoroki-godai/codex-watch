@@ -206,3 +206,104 @@ Bash 構文検査と `git diff --check` も成功。起点との関数本文比�
 
 実 Codex・実 GitHub・実 AWS への起動、session-board の実画面での採用効果は未確認。
 外部ポート・DB は使用していない。共有の稼働版は変更していない。
+
+## レビュー巡1の修正（303d13f から）
+
+以下は上記の初回実装記録を更新する追記。生の CODEX_SUMMARY を検査する仕様と、
+M3「truncate before checking」を欠陥扱いした初回記録は、この修正で置き換える。
+
+`_codex_summary_normalized` に既存の単一行化・strip・60コードポイントの
+切り詰めを集約し、起動判定と state 保存で共有する。判定は、切り詰め前の
+正規化値にある ASCII 番号の一致終端が保存範囲内にあるかを1式で確認する。
+そのため `#1234` の一部 `#123` だけを有効な番号として採用しない。
+範囲内に別の完全な番号（例 #0）があれば起動する。
+README の案内と拒否文は「先頭60字以内」に合わせ、review の実行例にも
+`CODEX_SUMMARY='#N …'` を追加した。
+
+不正 UTF-8（`b'\xe4\xbc#5 description'`）は正規化異常として**通す**。
+本人決定「判定失敗は通す」に従い、一致なしの終了値1と異常を区別する。
+この場合の state は従来どおり summary キーを省略する。
+両起動口で Codex 呼出1回・state 生成・summary キーなしを試験で固定した。
+
+### 入力の探索と対照（両起動口）
+
+陰性: 番号欠落・非 ASCII 番号の既存8入力×2口=16件に加え、保存境界7入力×2口=14件。
+境界入力は `あ*61+#7`、`あ*59+#12`、`あ*56+#1234`（57字目から番号・全61字）、
+`あ*59+#7`（全61字）、`😀*61+#7`、`あ*55+LF+#1234`、
+`あ*55+LS+#1234`。すべて exit 2・Codex 呼出0回・state ディレクトリなしを確認する。
+
+陽性対照: 既存の先頭 #0・#12・文中番号・改行後番号に加え、
+`あ*58+#7`（60字目で完結）、`空白*65+#0 説明`（strip 後に判定）、
+`あ*56+#123`（60字目で完結）、`#0+あ*54+#1234`（別の完全な番号あり）の
+8入力×2口=16件。通常起動 `#123 何かの実装` は別に2件。
+判定異常 2/127 は未設定・有効要約との組合せ8件、不正 UTF-8 は別に2件。
+これらの異常時通過を陰性・陽性対照の件数に混ぜない。
+
+保存境界の既存陰性試験は、先頭に #0 を置き、日本語・絵文字の60字切り詰めと
+単一行化を引き続き検査する。改行は LF と LS を境界付近へ挿入し、
+先頭空白除去・番号の位置移動・末尾数字の延長・日本語から絵文字への置換も探索した。
+
+### 起動判定の変異
+
+各変異は既存の一時コピー方式で適用・破棄する。実行マーカーと終了値1と
+AssertionError を必須にし、構文・収集エラーを赤として扱わない。生存0件。
+
+```text
+M1 require number at start: RED; branch hits=16; 8 failed, 8 passed, 83 deselected in 13.67s
+M2 reject numberless escape: RED; branch hits=16; 6 failed, 10 passed, 83 deselected in 15.67s
+M3 check without truncation: RED; branch hits=14; 14 failed, 85 deselected in 30.94s
+M4 shift boundary to 61: RED; branch hits=14; 8 failed, 6 passed, 85 deselected in 19.25s
+M5 accept a cut number: RED; branch hits=14; 6 failed, 8 passed, 85 deselected in 15.03s
+M6 reject checker failures: RED; branch hits=10; 10 failed, 89 deselected in 5.04s
+```
+
+M3 は保存範囲への切り詰めを除去、M4 は60→61へ変更。
+別種の M1 は文頭への制限、M2 は #0 拒否、M5 は切断済み番号への誤一致、
+M6 は異常時の拒否。既存の保存用変異検査器も、共通化後の処理位置と
+実行マーカー位置へ追従させる。保存用 M4 は共有化により保存前の起動拒否で
+赤になるため、検査器の失敗箇所判定にも起動成功の assertion を追加した。
+初回は試験自体が赤でも検査器がこの失敗箇所を認めず停止したため、修正後に全6件を再実行する。
+
+### 7段
+
+| 足した・変更したもの | 止まった段 |
+| --- | --- |
+| 正規化の共有関数と state 保存・起動判定の接続 | 2: 既存 sanitize_single_line と state の正規化を共有 |
+| 番号終端の境界判定 | 6: 既存 Python 内の any と正規表現の1式。ASCII 数字と終端を検査 |
+| 正規化異常の扱い | 2: 既存の異常時通過・summary 省略を再利用し、Unicode 異常を一致なしと区別 |
+| 境界・不正 UTF-8・偽判定器の起動試験 | 2: 既存 launch fixture・偽コマンド・state reader を再利用 |
+| 変異6件と保存用検査器の追従 | 2: 既存の置換・実行マーカー・赤必須方式を再利用 |
+| README・実行例・検証記録 | 2: 既存の記載箇所を更新 |
+
+新しい依存・外部サービスは追加していない。
+
+保存用変異の最終再実行（全6件完了・コピー破棄、生存0件）:
+
+```text
+python3 tests/check_codex_summary_mutations.py
+M1 narrow normalization: RED; branch hits=80; 16 failed, 4 passed, 79 deselected in 44.05s
+M2 normalize wrong value: RED; branch hits=80; 20 failed, 79 deselected in 62.27s
+M3 empty check before normalization: RED; branch hits=4; 2 failed, 2 passed, 95 deselected in 0.92s
+M4 truncate before trim: RED; branch hits=38; 2 failed, 8 passed, 89 deselected in 24.60s
+M5 drop impl wiring: RED; branch hits=14; 11 failed, 11 passed, 77 deselected in 41.84s
+M6 drop review wiring: RED; branch hits=14; 11 failed, 11 passed, 77 deselected in 52.49s
+
+python3 -m pytest -q tests/test_codex_summary.py
+99 passed in 167.82s (0:02:47)
+```
+
+### 修正後の全件試験と未確認
+
+変異はすべて一時コピーに適用・破棄し、本体に変異がない状態で実行した全件試験:
+
+```text
+python3 -m pytest -q tests
+561 passed, 5 skipped in 430.62s (0:07:10)
+```
+
+`tests/test_progress_overdue.py` と `tests/test_codex_summary.py` を含め失敗0件。
+5件の skip は既存の opt-in 実 gh/keychain 試験4件と、impl 対象外の review 記録試験1件。
+`bash -n bin/_codex_common.sh bin/codex-review` と `git diff --check` も成功。
+
+実 Codex・GitHub・AWS への起動と session-board の実画面・採用効果は未確認。
+外部ポート・DB は未使用。共有の稼働版は変更していない。

@@ -151,9 +151,9 @@ def test_negative_invalid_utf8_summary():
 @pytest.mark.parametrize('value,expected', [
     ('\u3000  #0 日本語の説明  \t', '#0 日本語の説明'),
     (' ' * 65 + '#0 説明' + ' ' * 65, '#0 説明'),
-    ('あ' * 61 + '#0', 'あ' * 60),
-    ('あ' * 59 + '😀' + '末尾#0', 'あ' * 59 + '😀'),
-    ('😀' * 61 + '#0', '😀' * 60),
+    ('#0' + 'あ' * 61, '#0' + 'あ' * 58),
+    ('#0' + 'あ' * 57 + '😀' + '末尾', '#0' + 'あ' * 57 + '😀'),
+    ('#0' + '😀' * 61, '#0' + '😀' * 58),
 ])
 def test_negative_trim_and_codepoint_limit(launch, value, expected):
     _, baseline = launch('#0')
@@ -191,13 +191,16 @@ def test_issue_number_normal_launch(launch):
 def test_issue_number_rejects_missing_ascii_number(launch, value):
     result = launch(value, raw=True)
     assert result.returncode == 2, result.stdout + result.stderr
-    assert '要約 CODEX_SUMMARY に課題番号 #N を入れてください（番号の無い仕事は #0）' in result.stderr
+    assert '要約 CODEX_SUMMARY の先頭60字以内に課題番号 #N を入れてください（番号の無い仕事は #0）' in result.stderr
     assert not launch.calls.exists()
     # Also forbids review ledger/account/prompt side effects before rejection.
     assert not launch.state_dir.exists()
 
 
-@pytest.mark.parametrize('value', ['#0 番号なし', '#12', '説明 #45 続き', '説明\n#7 続き', 'あ' * 61 + '#7'])
+@pytest.mark.parametrize('value', [
+    '#0 番号なし', '#12', '説明 #45 続き', '説明\n#7 続き', 'あ' * 58 + '#7',
+    ' ' * 65 + '#0 説明', 'あ' * 56 + '#123', '#0' + 'あ' * 54 + '#1234',
+])
 def test_issue_number_positive_controls(launch, value):
     state = assert_started(launch, launch(value, raw=True))
     assert state['summary'] == ' '.join(value.splitlines()).strip()[:60]
@@ -206,16 +209,38 @@ def test_issue_number_positive_controls(launch, value):
 @pytest.mark.parametrize('status', [2, 127])
 @pytest.mark.parametrize('value', [None, '#123 正常な番号'])
 def test_issue_number_checker_failure_allows_launch(launch, status, value):
-    grep = launch.fake_bin / 'grep'
-    real_grep = shutil.which('grep')
+    python = launch.fake_bin / 'python3'
+    real_python = shutil.which('python3')
     marker = launch.fake_bin / 'checker-failed'
-    grep.write_text(f'''#!/bin/sh
-if [ "$1" = '-Eq' ] && [ "$2" = '#[0-9]+' ]; then
-    printf 'failed\\n' >> '{marker}'
-    exit {status}
-fi
-exec '{real_grep}' "$@"
+    python.write_text(f'''#!/bin/sh
+case "$2" in
+  *'import re, sys'*)
+    if [ "$4" = issue ]; then
+      printf 'failed\\n' >> '{marker}'
+      exit {status}
+    fi ;;
+esac
+exec '{real_python}' "$@"
 ''')
-    grep.chmod(0o755)
+    python.chmod(0o755)
     assert_started(launch, launch(value, raw=True))
     assert marker.read_text().splitlines() == ['failed']
+
+
+@pytest.mark.parametrize('value', [
+    'あ' * 61 + '#7', 'あ' * 59 + '#12', 'あ' * 56 + '#1234',
+    'あ' * 59 + '#7', '😀' * 61 + '#7',
+    'あ' * 55 + '\n#1234', 'あ' * 55 + '\u2028#1234',
+])
+def test_issue_number_rejects_outside_saved_boundary(launch, value):
+    result = launch(value, raw=True)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert '先頭60字以内' in result.stderr
+    assert not launch.calls.exists()
+    assert not launch.state_dir.exists()
+
+
+def test_issue_number_invalid_utf8_allows_launch(launch):
+    value = os.fsdecode(b'\xe4\xbc#5 description')
+    state = assert_started(launch, launch(value, raw=True))
+    assert 'summary' not in state
