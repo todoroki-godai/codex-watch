@@ -153,3 +153,30 @@ def test_scope_counts_rounds_not_dispatches(tmp_path, fake_bin, scenario, expect
     sys.path.insert(0, str(ROOT / 'lib'))
     from round_gate import ledger_own_round
     assert ledger_own_round(state, target, head, kind_label='コード') == (2 if scenario == 'duplicate-head' else 1)
+
+
+def test_cause_precedes_final_evidence_for_each_must():
+    lines = (ROOT / 'templates/must-criteria.md').read_text().splitlines()
+    evidence = next(line for line in lines if line.startswith('各 [Must] の末尾に「根拠:'))
+    causes = [line for line in lines if '「原因:' in line]
+    assert len(causes) == 1
+    assert causes[0].startswith('各 [Must] の「根拠:」行の直前に「原因:')
+    assert '次に' not in causes[0]
+    assert 'のどれかの1行を書く。' in evidence
+    receiver = next(line for line in lines if line.startswith('受け手は各 [Must] 末尾の「根拠:'))
+    assert lines.index(evidence) < lines.index(receiver) < lines.index(causes[0])
+
+
+def test_cause_candidates_match_canonical_order_exactly():
+    text = (ROOT / 'templates/must-criteria.md').read_text()
+    candidate = text.split('「原因:', 1)[1].split('」', 1)[0].strip()
+    assert candidate == '<読まない・環境差・波及・段取り・本物のどれか1語>'
+
+
+def test_cause_definitions_contain_non_whitespace_content():
+    lines = (ROOT / 'templates/must-criteria.md').read_text().splitlines()
+    cause = next(line for line in lines if '「原因:' in line)
+    for word in ('読まない', '環境差', '波及', '段取り', '本物'):
+        assert word + '＝' in cause
+        definition = cause.split(word + '＝', 1)[1].split('／', 1)[0].split('）。', 1)[0]
+        assert any(not char.isspace() and char not in '（）()。' for char in definition)
