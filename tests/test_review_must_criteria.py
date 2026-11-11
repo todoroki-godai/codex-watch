@@ -163,3 +163,11 @@ def test_cause_precedes_final_evidence_for_each_must():
     assert causes[0].startswith('各 [Must] の「根拠:」行の直前に「原因:')
     assert '次に' not in causes[0]
     assert 'のどれかの1行を書く。' in evidence
+    words = ('読まない', '環境差', '波及', '段取り', '本物')
+    assert '・'.join(words) + 'のどれか1語>' in causes[0]
+    for word in words:
+        assert word + '＝' in causes[0]
+        definition = causes[0].split(word + '＝', 1)[1].split('／', 1)[0].split('）。', 1)[0]
+        assert definition.strip('（） 。')
+    receiver = next(line for line in lines if line.startswith('受け手は各 [Must] 末尾の「根拠:'))
+    assert lines.index(evidence) < lines.index(receiver) < lines.index(causes[0])
