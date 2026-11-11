@@ -152,16 +152,18 @@ STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
 mkdir -p "$STATE_DIR"
 prepare_codex_github_account
 
-# 最初の見込み行だけを読む。環境変数は空でも優先し、不正でも起動は止めない。
+# 行頭の見込み欄を優先し、なければ本文の最初の一致を読む。環境値は空でも優先する。
 ESTIMATE_MIN="$(python3 - "$PROMPT_FILE" <<'PYESTIMATE'
 import os, re, sys
 from pathlib import Path
 value = os.environ.get('CODEX_IMPL_ESTIMATE_MIN')
 if value is None:
-    value = next((line.split(':', 1)[1].strip() for line in
-                  Path(sys.argv[1]).read_text(encoding='utf-8').splitlines()
-                  if re.match(r'^(?:## )?見込み:', line)), '')
-    value = value[:-1] if value.endswith('分') else ''
+    body = Path(sys.argv[1]).read_text(encoding='utf-8')
+    label = r'見込み[:：]\s*'
+    heading = re.search(r'^(?:## )?' + label + r'(.*)$', body, re.MULTILINE)
+    match = (re.match(r'約?(-?[0-9]+)\s*分', heading.group(1)) if heading else
+             re.search(label + r'約?([0-9]+)\s*分', body))
+    value = match.group(1) if match else ''
 if not re.fullmatch(r'-?[0-9]+', value):
     print('警告: 見込みが未指定または整数でないため estimate_min は空です。', file=sys.stderr)
     value = ''

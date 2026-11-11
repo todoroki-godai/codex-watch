@@ -57,6 +57,24 @@ def launch(sandbox):
         prompt.write_bytes(('直しの出所: なし\n' + body).encode())
         if override is not None:
             env['CODEX_IMPL_ESTIMATE_MIN'] = override
+        trace_dir = os.environ.get('CODEX_OVERDUE_TRACE_DIR')
+        if trace_dir:
+            trace = Path(trace_dir)
+            trace.mkdir(parents=True, exist_ok=True)
+            trace_file = trace / f'parser-{len(list(trace.glob("parser-*")))}.log'
+            script = tree / 'bin/codex-impl'
+            source = script.read_text()
+            # Record executed Python line numbers only, never input or environment values.
+            source = source.replace("if value is None:",
+                "_trace = open(" + repr(str(trace_file)) + ", 'w')\n"
+                "def _parser_trace(frame, event, arg):\n"
+                "    if event == 'line' and frame.f_code.co_filename == '<stdin>':\n"
+                "        _trace.write(str(frame.f_lineno) + '\\n')\n"
+                "    return _parser_trace\n"
+                "sys.settrace(_parser_trace)\n"
+                "sys._getframe().f_trace = _parser_trace\n"
+                "if value is None:", 1)
+            script.write_text(source)
         r = subprocess.run(['bash', str(tree / 'bin/codex-impl'), str(tmp), str(prompt)],
                            env=env, capture_output=True, text=True, errors="replace", timeout=10)
         assert r.returncode == 0, r.stderr
@@ -74,8 +92,21 @@ def launch(sandbox):
     ('見込み: 0分', None, '0'), ('見込み: -1分', None, '-1'),
     ('見込み: 01分', None, '01'), ('見込み: ' + '9'*40 + '分', None, '9'*40),
     ('見込み: 1.5分', None, ''), ('見込み: 分', None, ''), ('本文', None, ''),
-    (' 見込み: 1分', None, ''), ('見込み：1分', None, ''),
-    ('本文 見込み: 1分', None, ''), ('見込み: 1分ほか', None, ''),
+    (' 見込み: 1分', None, '1'), ('見込み：1分', None, '1'),
+    ('本文 見込み: 1分', None, '1'), ('見込み: 1分ほか', None, '1'),
+    # Sanitized spelling from the 2026-11-11 run prompts (one case per form).
+    ('- 終わり: 確認する。見込み: 30分。', None, '30'),
+    ('- 終わり: 確認する。見込み: 40分。', None, '40'),
+    ('- **見込み: 約63分**。', None, '63'),
+    ('見込み: 約40分', None, '40'),
+    ('## 見込み: 25分', None, '25'),
+    ('**見込み: 約63分**', None, '63'),
+    ('文。見込み： 約30 分（確認込み）。', None, '30'),
+    ('文。見込み: 3分。\n## 見込み: 9分', None, '9'),
+    ('文。見込み: 3分。見込み: 9分。', None, '3'),
+    ('見込み： 約9分（確認込み）\n見込み: 3分', None, '9'),
+    ('\ufeff見込み: 30分', None, '30'),
+    ('見込み: x分\n文。見込み: 9分。', None, ''),
     ('見込み: 1分', '9', '9'), ('見込み: 1分', '', ''),
     ('見込み: 1分', '1.5', ''), ('見込み: 1分', '1\n2', ''),
     ('見込み: 1分', '$(touch injected)', ''), ('見込み: $((1+1))分', None, ''),
@@ -172,3 +203,12 @@ def test_status(watch, estimate):
         assert new.stdout.replace(' / 見込み45分', '') == old.stdout
     else:
         assert new.stdout == old.stdout
+
+
+def test_overdue_rearm_then_exit(watch):
+    first, marker = watch(elapsed=500, maximum=100)
+    assert first.returncode == 0 and first.stdout.startswith('OVERDUE:')
+    assert marker.exists()
+    final, _ = watch(marker=True, dead=True)
+    assert final.returncode == 0 and final.stdout.startswith('EXIT:')
+    assert 'OVERDUE:' not in final.stdout

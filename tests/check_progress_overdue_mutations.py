@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / '.tmp/progress-overdue/mutations'
+OUT = ROOT / '.tmp/progress-overdue-fix1/mutations'
 OUT.mkdir(parents=True, exist_ok=True)
 files = ['bin/codex-impl', 'bin/codex-watch', 'bin/codex-status', 'tests/test_progress_overdue.py']
 snapshot = {f: (ROOT / f).read_bytes() for f in files}
@@ -29,6 +29,10 @@ cases = [
     ('06-swap-priority', 'bin/codex-impl', "value = os.environ.get('CODEX_IMPL_ESTIMATE_MIN')", 'value = None', 'test_estimate_record', False),
     ('07-inclusive-boundary', 'bin/codex-watch', '> 2 * int(estimate) * 60', '>= 2 * int(estimate) * 60', 'test_boundary', False),
     ('08-exit-order', 'bin/codex-watch', 'if ! kill -0 "$PID" 2>/dev/null; then', 'if false; then', 'test_exit_wins', False),
+    ('09-remove-inline', 'bin/codex-impl', "re.search(label + r'約?([0-9]+)\\s*分', body)", 'None', 'test_estimate_record', False),
+    ('10-remove-fullwidth', 'bin/codex-impl', '見込み[:：]', '見込み:', 'test_estimate_record', False),
+    ('11-swap-heading-priority', 'bin/codex-impl', "heading = re.search(r'^(?:## )?' + label + r'(.*)$', body, re.MULTILINE)", 'heading = None', 'test_estimate_record', False),
+    ('positive-parser-equivalent', 'bin/codex-impl', "heading = re.search(r'^(?:## )?' + label + r'(.*)$', body, re.MULTILINE)", "heading = re.search(r'(?m)^(?:## )?' + label + r'(.*)$', body)", 'test_estimate_record', True),
 ]
 results = []
 for name, filename, old, new, select, green in cases:
