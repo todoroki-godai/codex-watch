@@ -32,6 +32,9 @@ STATE_DIR="${CODEX_WATCH_DIR:-$HOME/.codex-watch}"
 STATE_FILE="$STATE_DIR/$RUN_ID.state"
 [[ -f "$STATE_FILE" ]] || { echo "ERROR: そのrun idの記録がありません: $RUN_ID"; exit 1; }
 
+ESTIMATE_MIN=$(sed -n 's/^estimate_min=//p' "$STATE_FILE")
+STARTED_AT=$(sed -n 's/^started_at=//p' "$STATE_FILE")
+OVERDUE_FILE="$STATE_DIR/$RUN_ID.overdue"
 PID=$(sed -n 's/^pid=//p' "$STATE_FILE")
 LOG=$(sed -n 's/^log=//p' "$STATE_FILE")
 REPORT="${REPORT:-${LOG%.log}.report}"
@@ -101,6 +104,24 @@ while :; do
       echo "EXIT: $RUN_ID プロセス終了・報告ファイルが空（異常終了の疑い。tail -200 \"$LOG\" を確認）${MODEL_SUFFIX}"
     fi
     exit 0
+  fi
+
+  if [[ ! -e "$OVERDUE_FILE" ]]; then
+    # Python の整数で比較し、大きな見込みや先頭ゼロでも桁あふれさせない。
+    overdue_elapsed="$(python3 - "$ESTIMATE_MIN" "$STARTED_AT" "$now" <<'PYOVERDUE'
+import re, sys
+estimate, started, now = sys.argv[1:]
+if (re.fullmatch(r'[0-9]+', estimate) and int(estimate) > 0
+        and re.fullmatch(r'[0-9]+', started)
+        and int(now) - int(started) > 2 * int(estimate) * 60):
+    print((int(now) - int(started)) // 60)
+PYOVERDUE
+)"
+    if [[ -n "$overdue_elapsed" ]]; then
+      touch "$OVERDUE_FILE"
+      echo "OVERDUE: $RUN_ID 見込み${ESTIMATE_MIN}分の2倍を超過（経過${overdue_elapsed}分）。git log・status と出力を読んで判断する"
+      exit 0
+    fi
   fi
 
   if [[ -f "$LOG" ]] && [[ "$stall_reported" -eq 0 ]]; then
