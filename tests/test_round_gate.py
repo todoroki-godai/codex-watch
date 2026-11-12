@@ -1513,3 +1513,17 @@ def test_clean_hash_contains_full_head_line(tmp_path):
     subprocess.run(["git", "commit", "--allow-empty", "-qm", "initial"], cwd=tmp_path, check=True)
     head = rg.git_head_sha(str(tmp_path))
     assert rg.git_content_hash(str(tmp_path)) == hashlib.sha256((head + "\n").encode()).hexdigest()
+
+
+def test_untracked_hash_input_has_exact_git_output(tmp_path):
+    import hashlib
+    import subprocess
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "initial"], cwd=repo, check=True)
+    (repo / "new").write_bytes(b"new content\n")
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True).stdout
+    data = git("rev-parse", "HEAD") + git("status", "--porcelain", "-uall")
+    data += git("diff", "HEAD") + git("hash-object", "new")
+    assert rg.git_content_hash(str(repo)) == hashlib.sha256(data).hexdigest()
