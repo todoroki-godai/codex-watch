@@ -1349,7 +1349,7 @@ class TestAbortedDispatchNotCounted:
         )
 
 
-@pytest.mark.parametrize("failure", ["outside", "index", "status", "diff", "ls-files", "hash-object"])
+@pytest.mark.parametrize("failure", ["outside", "index", "rev-parse", "status", "diff", "ls-files", "hash-object"])
 def test_hash_failure_has_no_output(tmp_path, monkeypatch, failure):
     import subprocess
     import shutil
@@ -1455,3 +1455,75 @@ def test_echo_recipe_matches_legacy_printf_bytes(tmp_path, dirty):
     assert current.returncode == previous.returncode == 0
     assert current.stdout == previous.stdout
     assert len(current.stdout) == 65
+
+
+@pytest.mark.parametrize("kind", ["clean", "tracked", "untracked"])
+def test_hash_receipt_matches_for_each_worktree_state(tmp_path, kind):
+    import subprocess
+    tmp_path = tmp_path / "repo"
+    _init_repo(tmp_path)
+    (tmp_path / "tracked").write_text("base")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=tmp_path, check=True)
+    if kind == "tracked":
+        (tmp_path / "tracked").write_text("changed")
+    if kind == "untracked":
+        (tmp_path / "new").write_text("new")
+    expected = rg.git_content_hash(str(tmp_path))
+    claim = subprocess.run(["/bin/sh", "-c", rg.CONTENT_HASH_RECIPE], cwd=tmp_path,
+                           check=True, capture_output=True, text=True).stdout.strip()
+    assert claim == expected != rg.EMPTY_SHA256
+    sha = rg.git_head_sha(str(tmp_path))
+    assert rg.check_receipt(sha, expected, f"ok\nread_sha={sha}\ncontent_hash={claim}\n").status == "ok"
+
+
+@pytest.mark.parametrize("expected,claimed", [
+    (rg.EMPTY_SHA256, rg.EMPTY_SHA256),
+    (rg.EMPTY_SHA256.upper(), HASH_A),
+    (HASH_A, rg.EMPTY_SHA256.upper()),
+])
+def test_receipt_rejects_empty_digest(expected, claimed):
+    result = rg.check_receipt(SHA_A, expected, f"ok\nread_sha={SHA_A}\ncontent_hash={claimed}\n")
+    assert result.status == "rejected"
+    assert "空入力" in result.reason
+
+
+def test_git_content_hash_rejects_empty_digest(monkeypatch, tmp_path):
+    import subprocess
+    monkeypatch.setattr(rg.subprocess, "run", lambda *a, **kw: subprocess.CompletedProcess(a, 0, (rg.EMPTY_SHA256 + "\n").encode(), b""))
+    with pytest.raises(rg.Indeterminate, match="空入力"):
+        rg.git_content_hash(str(tmp_path))
+
+
+def test_hash_changes_when_clean_head_changes(tmp_path):
+    import subprocess
+    tmp_path = tmp_path / "repo"
+    _init_repo(tmp_path)
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "first"], cwd=tmp_path, check=True)
+    first = rg.git_content_hash(str(tmp_path))
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "second"], cwd=tmp_path, check=True)
+    assert rg.git_content_hash(str(tmp_path)) != first
+
+
+def test_clean_hash_contains_full_head_line(tmp_path):
+    import hashlib
+    import subprocess
+    tmp_path = tmp_path / "repo"
+    _init_repo(tmp_path)
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "initial"], cwd=tmp_path, check=True)
+    head = rg.git_head_sha(str(tmp_path))
+    assert rg.git_content_hash(str(tmp_path)) == hashlib.sha256((head + "\n").encode()).hexdigest()
+
+
+def test_untracked_hash_input_has_exact_git_output(tmp_path):
+    import hashlib
+    import subprocess
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    subprocess.run(["git", "commit", "--allow-empty", "-qm", "initial"], cwd=repo, check=True)
+    (repo / "new").write_bytes(b"new content\n")
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True).stdout
+    data = git("rev-parse", "HEAD") + git("status", "--porcelain", "-uall")
+    data += git("diff", "HEAD") + git("hash-object", "new")
+    assert rg.git_content_hash(str(repo)) == hashlib.sha256(data).hexdigest()

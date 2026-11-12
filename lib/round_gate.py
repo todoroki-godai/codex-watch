@@ -325,6 +325,9 @@ def parse_receipt_claim(report_text: str) -> tuple[str | None, str | None]:
     return sha, content_hash
 
 
+EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
 @dataclass(frozen=True)
 class ReceiptCheck:
     status: str  # "ok" | "rejected"
@@ -344,6 +347,8 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
                 "旧形式の state です（head_sha または content_hash が記録されていません）。"
                 "判定不能のため受領不可とします。",
             )
+        if expected_content_hash.lower() == EMPTY_SHA256:
+            return ReceiptCheck("rejected", "照合不能: 発注時の content_hash が空入力の値です（計算失敗または旧形式 state）。再発注してください。")
         claimed_sha, claimed_hash = parse_receipt_claim(report_text)
         if claimed_sha is None or claimed_hash is None:
             lines = (report_text or "").splitlines()
@@ -357,6 +362,8 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
                 "2行目=read_sha= / 3行目=content_hash= の申告がありません。"
                 f" 実際の2行目: {previews[0]} / 実際の3行目: {previews[1]}",
             )
+        if claimed_hash == EMPTY_SHA256:
+            return ReceiptCheck("rejected", "照合不能: 申告された content_hash が空入力の値です（計算失敗）。")
         if claimed_sha != expected_head_sha.lower():
             return ReceiptCheck(
                 "rejected",
@@ -380,6 +387,7 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
 # 変異も検出できなかった指摘への対応）。
 #
 # 各要素:
+# - `git rev-parse HEAD`: 成功時の入力を必ず非空にし、対象の HEAD を含める。
 # - `git status --porcelain -uall`: 追跡ファイルの状態変化（add/削除/リネーム含む）と、
 #   未追跡ファイルの**存在**をパスの一覧として拾う（中身は拾わない）。
 # - `git diff HEAD`: 追跡ファイルの**内容差分**（ステージ済み・未ステージ双方、HEAD との差分）。
@@ -404,7 +412,7 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
 # 成功するまで出力を保留するため、失敗した部分入力のハッシュを表示しない。
 CONTENT_HASH_RECIPE = (
     "bash -o pipefail -c '"
-    'hash=$( { git status --porcelain -uall && git diff HEAD && '
+    'hash=$( { git rev-parse HEAD && git status --porcelain -uall && git diff HEAD && '
     'git ls-files -o --exclude-standard -z | xargs -0 -r git hash-object; } '
     '| shasum -a 256) && echo "${hash%% *}"'
     "'"
@@ -934,6 +942,8 @@ def git_content_hash(workdir: str) -> str:
         value = out.stdout.decode("ascii").strip()
     except UnicodeDecodeError as e:
         raise Indeterminate(f"判定不能: content_hash の出力が ASCII として読めません（{e}）") from e
+    if value == EMPTY_SHA256:
+        raise Indeterminate("判定不能: content_hash が空入力の値です（計算失敗）")
     if not RE_SHA256_HEX.match(value):
         raise Indeterminate(f"判定不能: content_hash の出力が sha256 の形式ではありません: {value!r}")
     return value
