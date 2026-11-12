@@ -228,6 +228,7 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
   # そのまま埋め込む）。ここで手書きし直すと二重管理になり、手順が食い違っても気づけない
   # （2026-09-21 レビュー2巡目 [Must]2 の再発防止）。
   echo "\`$(python3 "$GATE_PY" recipe)\`"
+  echo 'このコマンドが非0終了なら値を書かず止めて報告すること。'
   echo 'この2行が欠けている、または実際にコマンドを実行した値でない場合、このレビューは機械照合で受領不可（取り直し）になる。'
   echo
   [[ -s "$(dirname "$GATE_PY")/../templates/must-criteria.md" ]] || exit 2
