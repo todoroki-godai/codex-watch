@@ -19,7 +19,7 @@ exec timeout -k 10 3600 ~/Library/Caches/ms-playwright/chromium_headless_shell-<
 
 - `<版>` は使う playwright の `playwright-core/browsers.json` の `chromium-headless-shell` の revision に合わせる。
 - 普段使いの Chrome やそのプロファイルには繋がせない（CDP で繋ぐと中の Cookie・ログインを全部操作できるため）。
-- 資格情報（簡易認証・共通ログイン）は Codex に渡さない。ログインが要る画面は、資格情報を渡さない形が決まるまで対象外。
+- 資格情報（簡易認証・共通ログイン）の値は依頼文・引数・ファイル・ログに出さない。ログインが要る画面は、updater-index の dev の画面（`dev.`・`admin-dev.up-idx.test.updater-bc-dev.com`）と、そこから転送される共通ログイン `bizauth.stg.updater.co.jp` に限り、確認専用アカウントで対象にする（2026-11-12 本人決定「毎回」。値は `basic-auth`・`test-login` スキルの手順で、秘密の保管庫から1本のパイプと fd で撮影スクリプトへ直接渡す）。stg・本番のアプリ・他PJ・普段使いの Chrome のログイン画面は対象外のまま。**この行が、updater-index の dev に限って、それ以前の「資格情報を渡さない形が決まるまでログインが要る画面は対象外」を撤回する。**
 - 終わったら起こしたプロセスだけを止め、終了を確かめる（`timeout` で1時間後にも自然に消える）。
 
 ## 依頼文に貼る定型
@@ -31,4 +31,5 @@ exec timeout -k 10 3600 ~/Library/Caches/ms-playwright/chromium_headless_shell-<
 - 新しいページを開いて使い、終わったらページだけ閉じる。`browser.close()` は呼ばない（接続を切るだけにする）。
 - localhost 以外へは接続しない。開いてよい URL は <許す URL の一覧>。
 - 繋げない・撮れないときは、出たエラーをそのまま書いて止まる（別の方法でブラウザを起動しない）。
+- （ログインが要る画面のときだけ足す）スキルの撮影スクリプトの `chromium.launch(...)` は上の CDP 接続に替え、`browser.close()` は文脈を閉じる処理に替える。資格情報の値は表示・引数・ファイル・ログに出さず、スキルの手順のパイプと fd で直接渡す。
 ```
