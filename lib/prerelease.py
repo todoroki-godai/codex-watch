@@ -34,6 +34,10 @@ def section(body: str, title: str) -> str:
     return re.split(r'^## ', tail, maxsplit=1, flags=re.M)[0]
 
 
+class ConflictingHistory(ValueError):
+    """A dispatch identity has contradictory source rows; approval cannot waive it."""
+
+
 def history(body: str, state_dir: Path, target: str, *, strict: bool) -> int:
     """Union by dispatch id; unidentified legacy rows only increase the count.
 
@@ -43,20 +47,29 @@ def history(body: str, state_dir: Path, target: str, *, strict: bool) -> int:
     from round_gate import read_state_file
     text = section(body, '巡の履歴')
     ids: set[str] = set()
+    rows_by_id: dict[str, list[str]] = {}
+    unreadable = False
     anonymous = 0
     legacy_rows: list[list[str]] = []
     for line in text.splitlines():
         if not line.strip() or line.startswith('| 巡 |') or line.startswith('|---'):
             continue
         if not re.match(r'^\|\s*\d+\s*\|', line):
-            raise ValueError('巡の履歴に解釈できない行があります')
+            unreadable = True
+            continue
         match = re.search(r'<!-- dispatch_id=([A-Za-z0-9_.:-]+) -->$', line)
         if not match:
             if strict:
                 raise ValueError('履歴行に dispatch_id の補完が必要です')
             legacy_rows.append([cell.strip() for cell in line.split("|")[1:6]])
         else:
+            fingerprint = [cell.strip() for cell in line.split('|')[1:6]]
+            if match[1] in rows_by_id and rows_by_id[match[1]] != fingerprint:
+                raise ConflictingHistory('同じ発注IDの履歴内容が矛盾しています')
+            rows_by_id[match[1]] = fingerprint
             ids.add(match[1])
+    if unreadable:
+        raise ValueError('巡の履歴に解釈できない行があります')
     for path in sorted(state_dir.iterdir()):
         if path.suffix not in ('.state', '.reservation'):
             continue
@@ -170,7 +183,7 @@ def evaluate(target, workdir: str, state_dir: Path, body: str, total: int,
         if path.suffix not in ('.state', '.reservation'):
             continue
         saved = read_state_file(path, strict=True)
-        if saved.get('review_target') != target.key() or not saved.get('prerelease_evidence'):
+        if saved.get('review_target') != target.key() or saved.get('authority') != 'project_prerelease':
             continue
         prior = json.loads(saved['prerelease_evidence'])['record']
         if prior['series_id'] != data['series_id'] or prior['total_cap'] != data['total_cap']:

@@ -1273,14 +1273,19 @@ def run_gate(
     history_error = ""
     if "## 巡の履歴" in body or prerelease_record:
         try:
-            from prerelease import history
+            from prerelease import ConflictingHistory, history
             history_round = history(body, state_dir, target.key(), strict=False) + 1
             total = max(total, history_round)
+        except ConflictingHistory as error:
+            raise Indeterminate(str(error)) from error
         except (OSError, ValueError) as error:
             history_error = str(error)
-    if prerelease_record and history_error and total <= 2:
-        raise Indeterminate(history_error)
     decision = decide(total, body)
+    if history_error and not (total >= 3 and decision.status == "pass"
+                              and parse_approval_rounds(body)
+                              and parse_total_cap(body) is not None
+                              and total <= parse_total_cap(body)):
+        raise Indeterminate(history_error)
     evidence = {}
     # Human approval is evaluated first: policy/API failures cannot stop it.
     if decision.status != "pass" and prerelease_record:
@@ -1440,7 +1445,7 @@ def main(argv: list[str] | None = None) -> int:
                     raise Indeterminate("送信前の正本再照合が不一致です。再判定してください")
                 reservation = state_dir / (args.reserve_run_id + '.reservation')
                 with reservation.open('x') as stream:
-                    stream.write(f"run_id={args.reserve_run_id}\nreview_target={args.target}\nround={result['total_round']}\nprerelease_evidence={json.dumps(result['prerelease_evidence'], ensure_ascii=False)}\n")
+                    stream.write(f"run_id={args.reserve_run_id}\nreview_target={args.target}\nauthority={result['authority']}\nround={result['total_round']}\nprerelease_evidence={json.dumps(result['prerelease_evidence'], ensure_ascii=False)}\n")
             # どの分岐で返っても state に残せるよう、通過側の dict にも必ず載せる。
             result.setdefault("mandatory_gate", check_mandatory_gate(args.mandatory_gate)[0])
         except (Indeterminate, OSError, ValueError) as e:

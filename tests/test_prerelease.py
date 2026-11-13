@@ -328,6 +328,6 @@ def test_saved_bundled_cap_cannot_be_raised(case, field, value):
     c = case
     original = copy.deepcopy(c['data'])
     saved = {'record': original}
-    (c['state'] / 'agent-1.state').write_text(f'run_id=agent-1\nreview_target={TARGET}\nprerelease_evidence=' + json.dumps(saved) + '\n')
+    (c['state'] / 'agent-1.state').write_text(f'run_id=agent-1\nreview_target={TARGET}\nauthority=project_prerelease\nprerelease_evidence=' + json.dumps(saved) + '\n')
     changed = copy.deepcopy(original); changed[field] = value
     with pytest.raises(ValueError, match='固定総上限'): evaluate(c, data=changed)
