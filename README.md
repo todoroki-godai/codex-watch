@@ -139,3 +139,44 @@ git revert --no-commit $(git rev-list --first-parent efe4aad..HEAD)
 ### 内容ハッシュ手順の変更前に発注した run
 
 旧手順の空入力ハッシュを記録した state は計算失敗と区別できないため受領不可とし、再発注します。旧手順の差分ありの値も、新手順で計算した申告値とは不一致となり受領不可です。state には手順の版がないため旧値を一般に識別できず、旧手順のまま申告した場合は一致してしまう可能性があります。手順変更前の run は再発注してください。既存 state は変更しません。
+
+## 公開前の巡3〜5（A）
+
+通常の `巡Nの人間承認` と総上限は従来どおり先に判定します。この経路は公開状態APIの失敗では止まりません。
+人間承認が無い場合だけ、`REVIEW_PRERELEASE_RECORD=<裁定ID>` で対象PR/課題本文の
+`## 公開前裁定` 節にある単一の JSON コードブロックを参照できます。環境変数は参照IDです。
+裁定の権限は本文とレビュー済みの [固定登録](config/prerelease-projects.json) から取得します。
+
+登録の追加・変更は codex-watch の変更としてレビューを通してください。最初の登録は
+`min-sys/updater-index` の Git common directory と既知の2規則blobです。
+GitHubの既定枝commitとローカルorigin/mainの両方でblobを照合します（fetchはしません）。
+公開終了条件は、`dev-standing-approval.md` への「公開日・本人原文・受領時刻」の追記PRが本線に入ることです。
+既知blobが変わる、規則が無い、APIが読めない場合も特例は使えず、通常の人間承認が必要と表示します。
+
+本文の `## 巡の履歴` は既存の表形式を使い、CLI外の発注も1行ずつ補完し、行末に
+`<!-- dispatch_id=Agent発注の一意ID -->` を付けます。stateと本文をIDで突き合わせ、本文だけの行も数えます。
+特例には両方の正本が読めることと全行のIDが必要です。旧CLI行は通常経路では日時・SHA・種別・レビュアー・巡の
+複合識別子でstateと照合し、照合できない行は減らさず追加で数えます。
+Aの特例では種別を分けず保守的に合算します。保存済みの系列ID・総上限は途中で変更できません（変更時の再裁定は今回未対応）。前身系列やIDの無い旧行は補完を要求して停止します。
+Cの系列移行・種別別の新計数とDの振り分け接続は未実装です。
+
+裁定JSONの必須欄は次のとおりです（`tests/test_prerelease.py` に実際に通る一式があります）。
+
+- `id`, `authority: "project_prerelease"`, `target`, `series_id`, `kind`（今回の種別）
+- `base_sha`, `head_sha`, `content_hash`（既存 `round_gate.py content-hash --workdir <dir>` の値）
+- `files`（基点からのGit差分の全通常ファイル）、`files_hash`（ソートした一覧を `json.dumps(..., ensure_ascii=False, separators=(',', ':'))` してUTF-8のSHA256）
+- `plan`, `reason`, `rollback`, `cost`, `dispatch_reason`, `history_ref: "## 巡の履歴"`
+- `decided_at`（timezone付きISO8601、未来不可）、`total_cap`（整数3〜5、今回巡以上）
+- `blocking`, `invariants`, `remaining_checks`, `predecessors`（明示の配列。blockingとpredecessorsは空のみ）
+- `operation: "local-read-only-review"`, `explicit_confirmation: false`
+- 巡5では `round5_options: ["縮小", "前身継承で切り出し", "撤回して再設計"]`
+
+対象は登録PJ内のローカル読取レビューに限定します。未追跡・削除・symlink・別repo・対象一覧不一致は停止します。
+共有物や環境操作の許可、本人の既決・明示確認の撤回には使えません。構造検査は理由の正しさや人間承認の真偽を認証しません。
+採用案・理由の意味と既決との整合は正本を書く担当の責任です。実際の起動は `-s read-only` のままです。
+
+判定・前置き・保存には補完後の同じ巡を使います。特例だけ送信直前に本文・対象版・既定枝を再確認し、
+変化・通信失敗なら未送信で停止します。排他ロックの中で `<run id>.reservation` を保存し、送信失敗でも枠は残します。
+state・本文行と同じIDなので予約と実績を二重計数しません。予約が残って止まる場合は消さず、発注履歴を確認してください。
+送信後の本線更新まで原子的に止める保証はありません。`CODEX_REVIEW_NO_GATE` との併用は拒否します。
+既存の別系統レビュー・受領照合・Must解消・変異確認・人間によるマージ判断は省略しません。

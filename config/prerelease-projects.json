@@ -1,0 +1,12 @@
+[
+  {
+    "repo": "min-sys/updater-index",
+    "common_dir": "/Users/matsukaze-takashi/updater/updater-index/.git",
+    "default_branch": "main",
+    "policies": {
+      ".claude/rules/pre-release-proceed-with-recommendation.md": "77f88b90f1b8dcf8846b7328a7fed26e7425198f",
+      ".claude/rules/dev-standing-approval.md": "13a57ce3183ccc2457ecf3c561c9822dab5779a8"
+    },
+    "ends_when": "公開日・本人原文・受領時刻を追記したPRが本線入り。どちらかの既知blobが変わった場合も特例不成立"
+  }
+]
