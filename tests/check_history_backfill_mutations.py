@@ -38,6 +38,8 @@ CASES = [
      "if any('=' not in line for line in raw):", '別種の回避2・state上書きキー許容'),
     ('N8-reuse-id', 'or ids[found[0]] != 1 or found[0] in used):', 'or ids[found[0]] != 1):',
      'ambiguous and used-id', 'if (counts[key] != 1', '使用済みID再利用'),
+    ('N9-invalid-id', 'or not RE_ID.fullmatch(found[0])', 'or False', 'ambiguous and invalid-id', 'or False', '別種の回避3・ID書式を無視'),
+    ('N10-existing-id', "        if '<!-- dispatch_id=' in line:", '        if False:', 'existing', 'if False:', '別種の回避4・既存IDの保護を無効化'),
     ('P1-equivalent-status', '        return 1 if warnings else 0', '        return int(bool(warnings))',
      '', 'return int(bool(warnings))', 'positive'),
     ('P2-equivalent-key-order', "        states.append((key, data.get('run_id', '')))",
@@ -78,7 +80,7 @@ def witness(frame,event,arg):
             data={'file':frame.f_code.co_filename,'line':frame.f_lineno,'source':source}
             for key in ('key','found','warnings','target','i'):
                 if key in frame.f_locals: data[key]=frame.f_locals[key]
-            with open(os.environ['HB_TRACE'],'a') as stream: stream.write(json.dumps(data)+'\\n')
+            with open(os.environ['HB_TRACE'],'a') as stream: stream.write(json.dumps(data, default=repr)+'\\n')
     return witness
 sys.settrace(witness)
 ''')

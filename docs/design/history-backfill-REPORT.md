@@ -1,4 +1,4 @@
-履歴の補い: CLI codex-history-backfill／試験 719件成功（5件skip）／変異 陰性未実行・陽性未実行・生存未確認（commit拒否で停止）
+履歴の補い: CLI codex-history-backfill／試験 719件成功／変異 陰性10件赤・陽性2件緑・生存0件
 
 ## 入力の区分表（試験作成前）
 
@@ -20,7 +20,7 @@
 
 6つの問い: 数字=候補数とID長、継ぎ目=CLIから特例判定、時刻=秒まで文字列一致、できない操作=曖昧補完と既存ID上書き禁止、文字と欠け=5キー・ID・空白、合図=未照合時の非0。時刻の現在値依存・DB・画面は無関係。
 
-## 実装と停止理由
+## 前回の実装と停止理由（当時の記録）
 
 追加: `bin/codex-history-backfill`、`lib/history_backfill.py`、README Aの6行、実例fixture、CLI試験31件、コミットarchive用変異ランナー。
 既存ID付き行は変更しない。説明文は位置を保って警告する。未補完・説明文があれば提案を出力して終了1、state破損・節欠落・I/O失敗は終了2。出力先が指定stateまたは本物の `~/.codex-watch` 内なら拒否。
@@ -31,7 +31,7 @@ CLI→GitHubの操作は既存 `gh_fetch_body` の `gh issue/pr view` のみ。s
 本人指示「名義の hook で拒否されたら変更を残して報告。頭が commit」に従い、変更は未コミットで残す。
 基点/現在HEAD: `531a18e026a3dca16ac53c577293bd444105443f`。新規commit SHAなし。
 
-## 試験と変異
+## 前回の試験と変異（当時の記録）
 
 追加試験: `python3 -m pytest tests/test_history_backfill.py -q` → 31 passed。
 初回のfixture名衝突（stateディレクトリ）を修正して上記成功。製品の赤ではなく追加試験の準備不備。
@@ -94,10 +94,24 @@ CLI→GitHubの操作は既存 `gh_fetch_body` の `gh issue/pr view` のみ。s
 
 環境ごとの実設定差は未調査（依頼外）。今回のCLI処理に環境別分岐は無し。
 
-## 次回と結果ファイル
+## 前回の次回と結果ファイル（当時の記録）
 
 指定された外部キュー先 `/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/` は、この実行環境の書込許可範囲外。2ファイルの内容を作業場所内 `.tmp/codex-queue/` に用意し、頭による転記用とする。外部の指定先に作成できたとは扱わない。
 既定案: 頭が差分をレビューしてコミットし、この同じ作業場所で変異ランナーを実行、生存があれば試験/実装を修正し、全体試験を通して報告を更新する。
 代案: アカウント整合した実行環境で同じ作業場所を再開する（この窓では切替しない）。
 
 最終検査: `git diff --check` 成功。新規3 Pythonファイルの構文検査成功。`git diff` はREADMEの変更が残るため空ではなく、新規ファイルも未追跡のまま（hook拒否に従い保持）。終了条件のcommit済み変異検証・生存0・diff空は未達。
+
+## history-backfill2 の実行結果（今回）
+
+対象 HEAD `31b76e4e41c6cfcfe03cac390d47ca9874eb9a20`。開始時に `git diff HEAD` が空であることを確認。HEAD の runner を実行すると N1〜N3 は赤、N4 は実行行の証跡が空で停止した。トレーサーが `Target` を JSON 化できず CLI を異常終了させ、試験を見かけ上通していた。`json.dumps` に `default=repr` を追加して記録を修正し、HEAD archive を対象に再実行した。
+
+N1〜N10 はすべて赤、P1・P2 は各31件緑、生存0件。各変異の非空差分と実行行は `.tmp/history-backfill-mutations/<変異名>/mutation.diff` と `executed.jsonl`、結果は同ディレクトリの `results.json`。N1〜N8・P1〜P2 は前回表の区分。追加 N9 は不正IDの書式検査を除去（invalid-id）、N10 は既存IDの保護を無効化（existing）；前回の対象照合除去・重複キー許容とは別種。入力区分と変換は冒頭の表および前回の変異表を参照。全変異はコミット済み HEAD archive 内に適用し、実行後に `git diff` と `git diff HEAD` が空であることを runner が確認した。その後、runner に記録の修正と N9・N10 を反映したため、現在は runner と本報告の差分が残る。再実行にはこの差分のコミットが必要。
+
+7段: ㋐着弾確認と陽性対照は依頼上必要、㋑既存 runner と pytest のケースを使用、㋒標準ライブラリ `json.dumps(default=repr)` を利用、㋓既存 Python 実行環境、㋔導入済み pytest、㋕シリアライズ修正は1行、㋖追加は既存一覧の2行。既存の入力区分表を使用し、新規の試験関数は追加していない。runner の呼び出し元は手動実行のみ（`git grep -n 'check_history_backfill_mutations'` で報告書以外の呼び出し元なし）。
+
+読んだもの: 今回指定の本報告と `tests/check_history_backfill_mutations.py`、`lib/history_backfill.py`、`tests/test_history_backfill.py`、前回記載の参照先 test-design。段取り表の該当行・本人の決定の出所・見本 HTML・前身の設計と巡の履歴は今回の指定欄が空のため無し（前回の参照履歴は上記「読んだもの」に記載）。環境差は上記の表どおり実設定未調査、dev/stg/prod には接続・読み書きなし。
+
+指定の2つの結果ファイルの保存先は書込許可範囲外で作成できない。作業場所内 `.tmp/codex-queue/` に転記用を用意した。commit は今回の明示指示により行わない。
+
+全体試験: `python3 -m pytest tests -q` → 719 passed、5 skipped、330.08秒（計724件）。skip は未実行。DB への接続・検証は未実行。
