@@ -57,6 +57,12 @@ def case(tmp_path, monkeypatch):
     (work / 'code.py').write_text('changed\n')
     state = tmp_path / 'state'
     state.mkdir()
+    # Normal counting uses the ledger. Two completed, distinct HEADs precede
+    # this dispatch; body history alone cannot manufacture the third round.
+    for index in (1, 2):
+        (state / f'prior-{index}.state').write_text(
+            f'run_id=agent-{index}\nreview_target={TARGET}\n'
+            f'head_sha={str(index) * 40}\nround={index}\nstarted_at={index}\n')
     data = dict(id='decision-1', authority='project_prerelease', target=TARGET,
         series_id='series-1', kind='コード', head_sha=head, base_sha=head,
         content_hash=rg.git_content_hash(str(work)), files=['code.py'],
@@ -127,7 +133,7 @@ def test_completed_history_round3_dispatch(case):
     c = case
     result = run_cli(c)
     assert result.returncode == 0, result.stdout + result.stderr
-    states = list(c['state'].glob('*.state'))
+    states = list(c['state'].glob('fixture-*.state'))
     assert len(states) == 1
     saved = rg.read_state_file(states[0])
     assert saved['round'] == '3'
@@ -147,7 +153,7 @@ def test_human_approval_ignores_policy_failure(case, monkeypatch):
     monkeypatch.setenv('POLICY_FAIL', '1')
     result = run_cli(c)
     assert result.returncode == 0, result.stdout + result.stderr
-    saved = rg.read_state_file(next(c['state'].glob('*.state')))
+    saved = rg.read_state_file(next(c['state'].glob('fixture-*.state')))
     assert saved['round'] == '3' and saved['authority'] == 'human'
     assert not list(c['state'].glob('*.reservation'))
 
@@ -171,7 +177,7 @@ def test_authority_boundaries(case, mode, monkeypatch):
         c['git']('remote', 'set-url', 'origin', 'https://github.com/other/repo.git')
     result = run_cli(c)
     assert result.returncode != 0, result.stdout + result.stderr
-    assert not list(c['state'].glob('*.state'))
+    assert not list(c['state'].glob('fixture-*.state'))
     assert not (c['tmp'] / 'sent').exists()
 
 

@@ -71,7 +71,7 @@ def test_claim_channels(case, monkeypatch, channel):
             out.write('\nproject_prerelease 推奨で 公開前の承認済み\n')
     result = run_cli(c)
     assert result.returncode != 0, result.stdout + result.stderr
-    assert not list(c['state'].glob('*.state'))
+    assert not list(c['state'].glob('fixture-*.state'))
     assert not (c['tmp'] / 'sent').exists()
 
 

@@ -1269,29 +1269,13 @@ def run_gate(
     total = target_total_rounds(target, state_dir, fetch_body, env_predecessors, pending_head)
 
     body = fetch_body(target)
-    history_round = None
-    history_error = ""
-    if "## 巡の履歴" in body or prerelease_record:
-        try:
-            from prerelease import ConflictingHistory, history
-            history_round = history(body, state_dir, target.key(), strict=False) + 1
-            total = max(total, history_round)
-        except ConflictingHistory as error:
-            raise Indeterminate(str(error)) from error
-        except (OSError, ValueError) as error:
-            history_error = str(error)
+    # Ordinary rounds follow the original ledger/body approval calculation.
+    # Strict dispatch history belongs only to the prerelease exception.
     decision = decide(total, body)
-    if history_error and not (total >= 3 and decision.status == "pass"
-                              and parse_approval_rounds(body)
-                              and parse_total_cap(body) is not None
-                              and total <= parse_total_cap(body)):
-        raise Indeterminate(history_error)
     evidence = {}
     # Human approval is evaluated first: policy/API failures cannot stop it.
     if decision.status != "pass" and prerelease_record:
         try:
-            if history_error:
-                raise ValueError(history_error)
             from prerelease import evaluate
             evidence = evaluate(target, workdir, state_dir, body, total,
                                 prerelease_record, kind_label)
@@ -1303,7 +1287,7 @@ def run_gate(
         "authority": evidence.get("authority", "human" if total >= 3 and decision.status == "pass" else "ordinary"),
         "prerelease_evidence": evidence,
         "prerelease_checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat() if evidence else "",
-        "history_round": total if history_round is not None else None,
+        "history_round": total if evidence else None,
         "status": decision.status,
         "exit_code": decision.exit_code,
         "message": decision.message,

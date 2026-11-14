@@ -28,8 +28,9 @@ def body_with(lines):
 
 def test_identical_duplicate(case):
     row = rows()[0]
-    result = gate(case, body_with([row, row]))
-    assert result['status'] == 'pass' and result['total_round'] == 2
+    for path in case['state'].iterdir():
+        path.unlink()
+    assert pre.history(body_with([row, row]), case['state'], TARGET, strict=True) == 1
 
 
 @pytest.mark.parametrize('approval', ['', '\n巡3の人間承認\n総上限: 3巡\n'])
@@ -42,8 +43,8 @@ def test_conflicting_id(case, field, approval):
     else:
         second = first.replace({'round': '| 1 |', 'sha': 'aaaaaaa', 'time': '2026-11-11', 'kind': 'コード'}[field],
                                {'round': '| 2 |', 'sha': 'bbbbbbb', 'time': '2026-11-12', 'kind': '設計'}[field])
-    with pytest.raises(rg.Indeterminate, match='発注ID'):
-        gate(case, body_with([first, second]) + approval, 'decision-1', target='issue:other/repo#1')
+    with pytest.raises(pre.ConflictingHistory, match='発注ID'):
+        pre.history(body_with([first, second]) + approval, case['state'], TARGET, strict=True)
 
 
 @pytest.mark.parametrize('approval,allowed', [('', False), ('\n巡3の人間承認\n', False),
@@ -56,8 +57,13 @@ def test_malformed_history(case, approval, allowed):
         result = gate(case, body, target='issue:other/repo#1')
         assert result['status'] == 'pass' and result['total_round'] == 3 and result['authority'] == 'human'
     else:
-        with pytest.raises(rg.Indeterminate):
-            gate(case, body, target='issue:other/repo#1')
+        result = gate(case, body, target='issue:other/repo#1')
+        # This target has no ledger: only an approval line raises its round.
+        expected = ('blocked', 3) if approval == '\n巡3の人間承認\n' else ('pass', 1)
+        assert (result['status'], result['total_round']) == expected
+    # The same malformed row must still invalidate the exception.
+    with pytest.raises(ValueError):
+        pre.history(body, case['state'], TARGET, strict=True)
 
 
 def test_normal_human(case):
