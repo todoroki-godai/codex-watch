@@ -1,0 +1,7 @@
+run_id=review-2023-d1-20261115-064619-99965
+review_target=issue:min-sys/updater-index#2023
+round=1
+kind_label=設計
+started_at_human=2026-11-15 06:46:20
+head_sha=355d097a36456e75bb6efa3799750de177742ccd
+reviewer=review-2023-d1
