@@ -685,10 +685,14 @@ class Decision:
     message: str
 
 
-def decide(total_for_decision: int, body: str) -> Decision:
+def decide(total_for_decision: int, body: str, prerelease_context: dict | None = None) -> Decision:
     if total_for_decision <= 2:
         return Decision("pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 通過")
 
+    if 3 <= total_for_decision <= 5 and prerelease_context:
+        cap = prerelease_context['record']['total_cap']
+        if total_for_decision <= cap:
+            return Decision("pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 公開前のPJ裁定で通過")
     if total_for_decision <= 5:
         approvals = parse_approval_rounds(body)
         cap = parse_total_cap(body)
@@ -1068,6 +1072,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=os.environ.get("REVIEW_MANDATORY_GATE", ""),
         help="goal-cut が0でも発注を認める必須ゲート名（review.md が名指しするものに限る）",
     )
+    gate.add_argument("--prerelease-record", default=os.environ.get("REVIEW_PRERELEASE_RECORD", ""))
+    gate.add_argument("--kind-label", default=os.environ.get("CODEX_REVIEW_KIND_LABEL", ""))
+    gate.add_argument("--snapshot", default="")
+    gate.add_argument("--reserve-run-id", default="")
     gate.add_argument("--json", action="store_true")
 
     record = sub.add_parser("record", help="gate 通過後、巡行を本文へ追記する")
@@ -1112,6 +1120,8 @@ def run_gate(
     fetch_body=gh_fetch_body,
     goal_cut: str = "",
     mandatory_gate: str = "",
+    prerelease_record: str = "",
+    kind_label: str = "",
 ) -> dict:
     """判定のみを行い、副作用（body 追記・state 書込）は行わない。呼び出し側（bash）が
     exit code を見て dispatch の可否を決め、通過時に record を別途呼ぶ。
@@ -1152,6 +1162,8 @@ def run_gate(
 
     # 空白のみの理由（例: `CODEX_REVIEW_NO_GATE=" "`）は「理由必須」の実質的な迂回になるため、
     # strip 後に空なら bypass を成立させない（理由なしと同じ扱いで通常ゲートへ進む）。
+    if no_gate_reason and no_gate_reason.strip() and prerelease_record:
+        raise Indeterminate("公開前特例とbypassは同時利用できません")
     if no_gate_reason and no_gate_reason.strip():
         return {
             "status": "bypass",
@@ -1257,9 +1269,25 @@ def run_gate(
     total = target_total_rounds(target, state_dir, fetch_body, env_predecessors, pending_head)
 
     body = fetch_body(target)
+    # Ordinary rounds follow the original ledger/body approval calculation.
+    # Strict dispatch history belongs only to the prerelease exception.
     decision = decide(total, body)
+    evidence = {}
+    # Human approval is evaluated first: policy/API failures cannot stop it.
+    if decision.status != "pass" and prerelease_record:
+        try:
+            from prerelease import evaluate
+            evidence = evaluate(target, workdir, state_dir, body, total,
+                                prerelease_record, kind_label)
+            decision = decide(total, body, evidence)
+        except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, Indeterminate) as error:
+            decision.message += "。公開前特例不成立: " + str(error)
 
     return {
+        "authority": evidence.get("authority", "human" if total >= 3 and decision.status == "pass" else "ordinary"),
+        "prerelease_evidence": evidence,
+        "prerelease_checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat() if evidence else "",
+        "history_round": total if evidence else None,
         "status": decision.status,
         "exit_code": decision.exit_code,
         "message": decision.message,
@@ -1310,6 +1338,8 @@ def record_round(
         d.get("reviewer", "codex"),
     )
 
+    if d.get("authority") == "project_prerelease":
+        row += f" <!-- dispatch_id={d['run_id']} -->"
     ok = False
     err = None
     for attempt in range(2):
@@ -1370,7 +1400,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "gate":
         state_dir = Path(args.state_dir)
+        lock = None
         try:
+            if args.reserve_run_id:
+                import fcntl
+                from prerelease import RE_ID
+                if not RE_ID.fullmatch(args.reserve_run_id):
+                    raise Indeterminate("予約IDが不正です")
+                lock = (state_dir / '.prerelease.lock').open('a')
+                fcntl.flock(lock, fcntl.LOCK_EX)
             result = run_gate(
                 args.target,
                 args.workdir,
@@ -1379,11 +1417,26 @@ def main(argv: list[str] | None = None) -> int:
                 args.no_gate_reason,
                 goal_cut=args.goal_cut,
                 mandatory_gate=args.mandatory_gate,
+                prerelease_record=args.prerelease_record,
+                kind_label=args.kind_label,
             )
+            if args.reserve_run_id:
+                snapshot = json.loads(args.snapshot)
+                keys = ('authority', 'prerelease_evidence', 'total_round', 'head_sha', 'record_target')
+                if result['status'] != 'pass' or result.get('authority') != 'project_prerelease' or any(
+                    result.get(key) != snapshot.get(key) for key in keys
+                ):
+                    raise Indeterminate("送信前の正本再照合が不一致です。再判定してください")
+                reservation = state_dir / (args.reserve_run_id + '.reservation')
+                with reservation.open('x') as stream:
+                    stream.write(f"run_id={args.reserve_run_id}\nreview_target={args.target}\nauthority={result['authority']}\nround={result['total_round']}\nprerelease_evidence={json.dumps(result['prerelease_evidence'], ensure_ascii=False)}\n")
             # どの分岐で返っても state に残せるよう、通過側の dict にも必ず載せる。
             result.setdefault("mandatory_gate", check_mandatory_gate(args.mandatory_gate)[0])
-        except Indeterminate as e:
-            result = {"status": "indeterminate", "exit_code": EXIT_INDETERMINATE, "message": e.reason}
+        except (Indeterminate, OSError, ValueError) as e:
+            result = {"status": "indeterminate", "exit_code": EXIT_INDETERMINATE, "message": str(e)}
+        finally:
+            if lock is not None:
+                lock.close()
         if args.json:
             print(json.dumps(result, ensure_ascii=False))
         else:
