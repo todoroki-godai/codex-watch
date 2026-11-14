@@ -76,7 +76,7 @@ def case(tmp_path, monkeypatch):
     body_file = tmp_path / 'body'
     history = rg.ROUND_SECTION_TITLE + '\n' + rg.ROUND_ROW_HEADER + '\n' + rg.ROUND_ROW_SEP + '\n'
     for index in (1, 2):
-        history += rg.render_round_row(index, 'コード', '2026-11-12', head[:7], 'Agent') + f' <!-- dispatch_id=agent-{index} -->\n'
+        history += rg.render_round_row(index, 'コード', '2026-11-12', str(index) * 7, 'Agent') + f' <!-- dispatch_id=agent-{index} -->\n'
     def body(record=data, suffix=''):
         result = history + '\n## 公開前裁定\n```json\n' + json.dumps(record, ensure_ascii=False) + '\n```\n' + suffix
         body_file.write_text(result)
@@ -149,6 +149,7 @@ def test_completed_history_round3_dispatch(case):
 
 def test_human_approval_ignores_policy_failure(case, monkeypatch):
     c = case
+    (c['state'] / 'third.state').write_text(f'run_id=third\nreview_target={TARGET}\nround=3\nhead_sha={c["data"]["head_sha"]}\n')
     c['body'](suffix='\n巡3の人間承認\n総上限: 3巡\n')
     monkeypatch.setenv('POLICY_FAIL', '1')
     result = run_cli(c)
@@ -231,8 +232,8 @@ def test_scope_and_history(case, mode):
 
 def test_union_body_only_and_state_only(case):
     c = case
-    (c['state'] / 'one.state').write_text(f'run_id=agent-1\nreview_target={TARGET}\n')
-    (c['state'] / 'three.state').write_text(f'run_id=cli-3\nreview_target={TARGET}\n')
+    (c['state'] / 'one.state').write_text(f'run_id=agent-1\nreview_target={TARGET}\nhead_sha={"1"*40}\n')
+    (c['state'] / 'three.state').write_text(f'run_id=cli-3\nreview_target={TARGET}\nhead_sha={"3"*40}\n')
     assert pre.history(c['body'](), c['state'], TARGET, strict=True) == 3
 
 
@@ -334,6 +335,6 @@ def test_saved_bundled_cap_cannot_be_raised(case, field, value):
     c = case
     original = copy.deepcopy(c['data'])
     saved = {'record': original}
-    (c['state'] / 'agent-1.state').write_text(f'run_id=agent-1\nreview_target={TARGET}\nauthority=project_prerelease\nprerelease_evidence=' + json.dumps(saved) + '\n')
+    (c['state'] / 'agent-1.state').write_text(f'run_id=agent-1\nreview_target={TARGET}\nhead_sha={"1"*40}\nauthority=project_prerelease\nprerelease_evidence=' + json.dumps(saved) + '\n')
     changed = copy.deepcopy(original); changed[field] = value
     with pytest.raises(ValueError, match='固定総上限'): evaluate(c, data=changed)

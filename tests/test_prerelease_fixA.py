@@ -13,13 +13,13 @@ def gate(c, body, record='', target=TARGET):
 def test_ordinary_empty_evidence(case):
     c = case
     (c['state'] / 'ordinary.state').write_text(
-        f'review_target={TARGET}\nrun_id=agent-1\nround=1\nauthority=ordinary\nprerelease_evidence={{}}\n')
+        f'review_target={TARGET}\nrun_id=agent-1\nround=1\nhead_sha={"1"*40}\nauthority=ordinary\nprerelease_evidence={{}}\n')
     assert evaluate(c)['authority'] == 'project_prerelease'
 
 
 def rows():
     return [rg.render_round_row(i, 'コード', f'2026-11-{10+i}', sha, 'Agent') +
-        f' <!-- dispatch_id=dispatch-{i} -->' for i, sha in ((1, 'aaaaaaa'), (2, 'bbbbbbb'))]
+        f' <!-- dispatch_id=dispatch-{i} -->' for i, sha in ((1, 'a'*40), (2, 'b'*40))]
 
 
 def body_with(lines):
@@ -53,27 +53,26 @@ def test_malformed_history(case, approval, allowed):
     case['git']('remote', 'set-url', 'origin', 'https://github.com/other/repo.git')
     first, second = rows()
     body = body_with([first, second.replace('| 2 |', 'unreadable')]) + approval
-    if allowed:
-        result = gate(case, body, target='issue:other/repo#1')
-        assert result['status'] == 'pass' and result['total_round'] == 3 and result['authority'] == 'human'
+    if '巡3の人間承認' in approval:
+        with pytest.raises(rg.Indeterminate, match='帰属'):
+            gate(case, body, target='issue:other/repo#1')
     else:
         result = gate(case, body, target='issue:other/repo#1')
-        # This target has no ledger: only an approval line raises its round.
-        expected = ('blocked', 3) if approval == '\n巡3の人間承認\n' else ('pass', 1)
-        assert (result['status'], result['total_round']) == expected
+        assert (result['status'], result['total_round']) == ('pass', 1)
     # The same malformed row must still invalidate the exception.
     with pytest.raises(ValueError):
         pre.history(body, case['state'], TARGET, strict=True)
 
 
 def test_normal_human(case):
+    (case['state'] / 'third.state').write_text(f'run_id=third\nreview_target={TARGET}\nround=3\nhead_sha={case["data"]["head_sha"]}\n')
     result = gate(case, body_with(rows()) + '\n巡3の人間承認\n総上限: 3巡\n')
     assert result['status'] == 'pass' and result['total_round'] == 3 and result['authority'] == 'human'
 
 
 def test_saved_exception_cap(case):
     c = case
-    (c['state'] / 'prior.state').write_text(f'review_target={TARGET}\nrun_id=agent-1\nround=1\n'
+    (c['state'] / 'prior.state').write_text(f'review_target={TARGET}\nrun_id=agent-1\nround=1\nhead_sha={"1"*40}\n'
         'authority=project_prerelease\nprerelease_evidence=' +
         json.dumps({'record': dict(c['data'], total_cap=4)}) + '\n')
     with pytest.raises(ValueError, match='固定総上限'):
