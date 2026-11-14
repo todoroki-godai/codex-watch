@@ -1,6 +1,17 @@
-履歴の補い: CLI codex-history-backfill／試験 719件成功／変異 陰性10件赤・陽性2件緑・生存0件
+履歴の補い（巡1の直し）: Must1・Should1 を直した／試験 724件成功／変異は頭の commit 後に回す
 
 ## 入力の区分表（試験作成前）
+
+今回の追加分（出所: 今回の依頼・レビュー Must1 / Should1）。正常通しは下表の `test_real_history_gate`。
+
+| 入力 | 区分・境目 | 置く値 | 期待 | 期待の出所 | 大きさ | 試験名 |
+|---|---|---|---|---|---|---|
+| stateと履歴 | 正常通し | 実例2行と対応state | 対応するIDのみ補完 | 今回の依頼 | CLI→特例 | test_real_history_gate |
+| 必須値 | 種別・レビュアー欠落と既定値行 | 両方欠落／各々欠落、コード／codex行 | 未補完を警告 | Must1 | CLI | test_missing_values_do_not_default |
+| 表以外 | 区切り・見出しの前方一致 | `|--- 説明文`／`| 巡 |`から始まる説明 | 維持して警告 | Should1 | CLI | test_table_like_description |
+| 表形式 | 全体が見出し・区切り | 正常見出し／区切り | 警告しない | Should1 | CLI | test_real_history_gate |
+
+数字・時刻は既存正常fixtureを使用。継ぎ目は CLI→特例、できない操作は欠落値からの補完、文字は欠落と前方一致、合図は終了1と警告で確認する。
 
 期待の出所: 課題 todoroki-godai/codex-watch#40 と今回の本人指示1〜3。正常系は #2023 の実際の2行。
 
@@ -115,3 +126,25 @@ N1〜N10 はすべて赤、P1・P2 は各31件緑、生存0件。各変異の非
 指定の2つの結果ファイルの保存先は書込許可範囲外で作成できない。作業場所内 `.tmp/codex-queue/` に転記用を用意した。commit は今回の明示指示により行わない。
 
 全体試験: `python3 -m pytest tests -q` → 719 passed、5 skipped、330.08秒（計724件）。skip は未実行。DB への接続・検証は未実行。
+
+## history-backfill3 の修正
+
+state の5項目に空・欠落がある候補は照合せず、対象の履歴行を未補完として警告する。ID重複の検査には欠落stateも残す。表見出しは既存 `ROUND_ROW_HEADER` と全体一致、区切りは行全体が Markdown の区切りの形である場合に限って除外する。
+
+試験追加前に冒頭の区分表を追記。修正前 `python3 -m pytest tests/test_history_backfill.py -q -k 'missing_values_do_not_default or table_like_description'` は5 failed（欠落3・説明文2）を確認。変異 runner に N11〜N14 を追加したが、明示指示に従い今回の変異は未実行。前回の変異結果は今回の変更の検証にはならない。
+
+修正後 `python3 -m pytest tests -q`: 724 passed、5 skipped、314.12秒（計729件）。DB 接続試験は未実行。runner の置換対象は各1か所と静的に確認したが、変異の成否は未確認。
+
+7段: ㋐依頼と誤補完防止に必要、㋑`git grep -n -E 'kind_label|reviewer|^.*巡.*\\||history_backfill|separator' -- lib tests bin` で既存照合・表見出しを確認、㋒標準の `re.fullmatch`、㋓既存 Python、㋔既存 pytest、㋕既定値の除去と既存見出し使用、㋖不足する照合条件・区切り形式だけ追加。既存定数は `ROUND_ROW_HEADER` を再利用。
+
+呼び出し元: `git grep -n -E 'backfill\\(|from history_backfill import main|check_history_backfill_mutations|ROUND_ROW_HEADER' -- lib bin tests docs/design/history-backfill-REPORT.md` で `backfill` は `history_backfill.main` のみ、`main` は `bin/codex-history-backfill` と同モジュールの `__main__`。CLI正常系・欠落・警告を試験し、全体試験で他の既存定数利用箇所を確認する。runner は手動実行であり今回は未実行。
+
+読んだもの: 指定レビュー全文、`lib/history_backfill.py`、`tests/test_history_backfill.py`、既存 runner・fixture・本報告、参照元 `/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/2023-design/.claude/skills/test-design/SKILL.md`。段取り表該当行・本人の決定の出所・見本HTML・前身の設計と巡の履歴: 無し（今回の必須欄が空）。
+
+| 環境 | 経路・設定・データの違いと今回の扱い |
+|---|---|
+| dev | 接続・読み書きなし、実設定差は未調査 |
+| stg | 接続・読み書きなし、実設定差は未調査 |
+| prod | 接続・読み書きなし、実設定差は未調査 |
+
+指定の queue 出力先は書込許可範囲外のため未作成。作業場所内 `.tmp/codex-queue/` に転記用を置く。commit は明示指示に従い行わない。次は頭が差分を確認・commit 後、変異 runner を回して全件の着弾と結果を確認する。

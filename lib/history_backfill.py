@@ -8,7 +8,7 @@ import re
 import sys
 
 from prerelease import RE_ID, section
-from round_gate import Indeterminate, gh_fetch_body, parse_target, read_state_file
+from round_gate import Indeterminate, ROUND_ROW_HEADER, gh_fetch_body, parse_target, read_state_file
 
 
 def backfill(body: str, state_dir: Path, target: str) -> tuple[str, list[str]]:
@@ -27,14 +27,15 @@ def backfill(body: str, state_dir: Path, target: str) -> tuple[str, list[str]]:
         data = read_state_file(path, strict=True)
         if data.get('review_target') != target:
             continue
-        key = (data.get('round', ''), data.get('kind_label', 'コード'),
+        key = (data.get('round', ''), data.get('kind_label', ''),
                data.get('started_at_human', ''), data.get('head_sha', '')[:7],
-               data.get('reviewer', 'codex'))
+               data.get('reviewer', ''))
         states.append((key, data.get('run_id', '')))
     rows = []
     warnings = []
     for i, line in enumerate(lines):
-        if not line.strip() or line.startswith('| 巡 |') or line.startswith('|---'):
+        if (not line.strip() or line.strip() == ROUND_ROW_HEADER
+                or re.fullmatch(r'\|(?:\s*:?-{3,}:?\s*\|)+', line.strip())):
             continue
         if re.match(r'^\|\s*\d+\s*\|', line):
             rows.append((i, tuple(cell.strip() for cell in line.split('|')[1:6])))
@@ -47,7 +48,7 @@ def backfill(body: str, state_dir: Path, target: str) -> tuple[str, list[str]]:
         line = lines[i]
         if '<!-- dispatch_id=' in line:
             continue
-        found = [rid for skey, rid in states if skey == key]
+        found = [rid for skey, rid in states if all(skey) and skey == key]
         if (counts[key] != 1 or len(found) != 1 or not RE_ID.fullmatch(found[0])
                 or ids[found[0]] != 1 or found[0] in used):
             warnings.append('未補完: ' + line.rstrip('\r\n') + f' (候補 {len(found)}件)')

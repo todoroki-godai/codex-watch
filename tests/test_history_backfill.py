@@ -146,6 +146,34 @@ def test_description(sample):
     assert '未補完' not in result.stderr
 
 
+@pytest.mark.parametrize('missing', [('kind_label',), ('reviewer',), ('kind_label', 'reviewer')])
+def test_missing_values_do_not_default(sample, missing):
+    p = sample['state'] / (IDS[0] + '.state')
+    p.write_text(''.join(line for line in p.read_text().splitlines(True)
+                         if not any(line.startswith(key + '=') for key in missing)))
+    body = sample['body'].read_text()
+    if 'kind_label' in missing:
+        body = body.replace('| 1 | 設計 |', '| 1 | コード |')
+    if 'reviewer' in missing:
+        body = body.replace('| review-2023-d1 |', '| codex |')
+    sample['body'].write_text(body)
+    result = run(sample)
+    assert result.returncode == 1
+    assert '未補完: | 1 |' in result.stderr
+    assert IDS[0] not in result.stdout
+    assert IDS[1] in result.stdout
+
+
+@pytest.mark.parametrize('line', ['|--- 説明文', '| 巡 | これは説明文'])
+def test_table_like_description(sample, line):
+    body = sample['body'].read_text() + line + '\n'
+    sample['body'].write_text(body)
+    result = run(sample)
+    assert result.returncode == 1
+    assert result.stdout == expected(body)
+    assert '説明文または解釈できない行: ' + line in result.stderr
+
+
 @pytest.mark.parametrize('size,ok', [(0,False),(1,True),(160,True),(161,False)])
 def test_id_boundary(sample, size, ok):
     p = sample['state'] / (IDS[0] + '.state')
