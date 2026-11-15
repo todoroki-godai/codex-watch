@@ -248,6 +248,8 @@ REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_REVIEW_EFFORT:-}")"
 if python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("authority") == "project_prerelease" else 1)' "$GATE_JSON"; then
   GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --goal-cut "${REVIEW_GOAL_CUT:-}" --mandatory-gate "${REVIEW_MANDATORY_GATE:-}" --snapshot "$GATE_JSON" --reserve-run-id "$RUN_ID" --json)" || { echo "公開前特例の送信前再確認で停止: $GATE_JSON" >&2; exit 5; }
 fi
+# D: observation only, after prerelease revalidation/reservation; never propagate failure.
+python3 "$(dirname "$GATE_PY")/routing_warn.py" "$STATE_DIR" "$RUN_ID" "${REVIEW_TARGET:-}" "$CODEX_REVIEW_KIND_LABEL" "$WORKDIR" || echo "routing警告: 処理失敗（発注継続）" >&2
 nohup codex exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
