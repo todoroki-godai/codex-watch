@@ -14,6 +14,7 @@ import pytest
 from test_codex_review_cli import fake_bin, VALID_GOAL_CUT
 
 ROOT = Path(os.environ.get('ROUTING_WARN_TEST_ROOT', Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(ROOT / 'lib'))
 spec = importlib.util.spec_from_file_location('routing_warn', ROOT / 'lib/routing_warn.py')
 rw = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rw)
@@ -70,9 +71,9 @@ def check_dispatch(result, state, before, verdict, stage=None, prior=0):
     assert entry['kind'] in ('コード', '設計')
     assert entry['verdict'] == verdict
     if verdict == 'pass':
-        assert entry['reasons'] == ['全段通過']
+        assert entry['reasons'][0] == '全段通過'
     elif verdict == 'error':
-        assert entry['reasons'] == ['処理失敗']
+        assert entry['reasons'][0] == '処理失敗'
     assert entry['stopped_at'] == stage
     assert (entry['stopped_at'] is not None) == (entry['verdict'] == 'would_block')
     assert before <= datetime.datetime.fromisoformat(entry['time']) <= datetime.datetime.now(datetime.timezone.utc)
@@ -152,7 +153,8 @@ def test_dispatch_timeout(tmp_path, fake_bin, monkeypatch):
         elapsed = time.monotonic() - started
         entry = check_dispatch(result, state, before, 'timeout')
         assert 29 <= elapsed < 36
-        assert entry['reasons'] == ['時間切れ']
+        assert entry['reasons'][0] == '時間切れ'
+        assert set(entry['reasons'][1:]) <= {'履歴照合失敗', '対象SHA未取得', '対象同一性未取得'}
         assert os.read(fd, 16) == b'ready'
         # EOF proves the inherited writer closed. A living descendant would EAGAIN.
         assert os.read(fd, 16) == b''

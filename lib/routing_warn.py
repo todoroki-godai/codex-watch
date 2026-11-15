@@ -61,8 +61,9 @@ def classify(data, returncode):
     return 'would_block', stopped, categories
 
 
-def evaluate(adapter, record, workdir):
-    deadline = time.monotonic() + BUDGET_SECONDS
+def evaluate(adapter, record, workdir, deadline=None):
+    if deadline is None:
+        deadline = time.monotonic() + BUDGET_SECONDS
     if not Path(adapter).is_file():
         return 'missing', None, ['部品なし']
     child = None
@@ -120,12 +121,43 @@ def evaluate(adapter, record, workdir):
                 child.stdout.close()
 
 
-def observe(state_dir, run_id, target, kind, workdir):
+def observe(state_dir, run_id, target, kind, workdir, prompt=None, record=None, deadline=None, dir_fd=None, file_dev=None, file_ino=None):
     adapter = os.environ.get('CODEX_REVIEW_ADAPTER', str(Path.home() / '.claude/skills/review-gate/adapter.py'))
+    generation_reasons = []
+    timer = prompt is not None
+    previous = None
+    deadline = (float(deadline) if deadline is not None else time.monotonic() + BUDGET_SECONDS) - 0.25
+    def expire(*_args):
+        raise subprocess.TimeoutExpired('routing', BUDGET_SECONDS)
     try:
-        verdict, stopped, reasons = evaluate(adapter, os.environ.get('REVIEW_GATE_RECORD', ''), workdir)
+        if timer:
+            previous = signal.signal(signal.SIGALRM, expire)
+            signal.setitimer(signal.ITIMER_REAL, max(0.001, deadline - time.monotonic()))
+        from routing_record import OwnedRecord, check_record, generate, write_record
+        if dir_fd is not None:
+            record = OwnedRecord(record, dir_fd, file_dev, file_ino)
+        if prompt is not None and 'REVIEW_GATE_RECORD' not in os.environ:
+            generated, generation_reasons = generate(workdir, target, kind, run_id, Path(state_dir),
+                Path(prompt).read_text(), Path(adapter).with_name('route.mjs'), deadline)
+            write_record(record, generated)
+        record = os.environ.get('REVIEW_GATE_RECORD', record or '')
+        if isinstance(record, OwnedRecord):
+            check_record(record)  # before adapter reads its path
+        if timer:
+            verdict, stopped, reasons = evaluate(adapter, record, workdir, deadline)
+        else:
+            verdict, stopped, reasons = evaluate(adapter, record, workdir)
+        if isinstance(record, OwnedRecord):
+            check_record(record)  # after adapter reads its path
+    except subprocess.TimeoutExpired:
+        verdict, stopped, reasons = 'timeout', None, ['時間切れ']
     except Exception:
         verdict, stopped, reasons = 'error', None, ['処理失敗']
+    finally:
+        if timer:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+    reasons = list(dict.fromkeys([*reasons, *generation_reasons]))
     entry = dict(dispatch_id=run_id, target=target, kind=kind,
                  time=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                  verdict=verdict, stopped_at=stopped, reasons=reasons)
@@ -150,11 +182,24 @@ def observe(state_dir, run_id, target, kind, workdir):
 
 def run_bounded(args):
     """Caller-side deadline covers evaluation, recording and blocked stderr alike."""
+    from routing_record import record_path
+    deadline = time.monotonic() + BUDGET_SECONDS
+    with record_path(len(args) == 6) as record:
+        return _run_bounded(args, record, deadline)
+
+
+def _run_bounded(args, record, deadline):
     child = None
     try:
-        child = subprocess.Popen([sys.executable, __file__, '--observe', *args],
-                                 stdin=subprocess.DEVNULL, start_new_session=True)
-        child.wait(timeout=BUDGET_SECONDS + 1)
+        from routing_record import OwnedRecord
+        extra = [record, str(deadline)] if len(args) == 6 else []
+        inherited = ()
+        if isinstance(record, OwnedRecord):
+            inherited = (record.dir_fd,)
+            extra += [str(record.dir_fd), *map(str, record.file_identity)]
+        child = subprocess.Popen([sys.executable, __file__, '--observe', *args, *extra],
+                                 stdin=subprocess.DEVNULL, start_new_session=True, pass_fds=inherited)
+        child.wait(timeout=max(0, deadline - time.monotonic() - 0.05) if len(args) == 6 else BUDGET_SECONDS + 1)
     except (subprocess.TimeoutExpired, OSError):
         pass
     finally:
