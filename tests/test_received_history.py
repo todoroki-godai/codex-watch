@@ -181,3 +181,21 @@ def test_history_family_missing_cannot_be_received(case):
     body, receipts=evidence(case)
     body=body.replace('| family |', '| - |')
     assert all(e.get('status') != 'received' for e in get(case,body,receipts))
+
+
+@pytest.mark.parametrize('raw', [
+    '{"dispatch_id":"first","status":"pending","status":"received"}',
+    '{broken',
+    'null',
+    '{"dispatch_id":"unrelated","extra":NaN}',
+])
+@pytest.mark.parametrize('position', ['before', 'after'])
+def test_malformed_receipt_invalidates_all_receipts(case, raw, position):
+    body, receipts = evidence(case)
+    valid_body = body_with(body, receipts)
+    assert get(case, body, receipts)[0]['status'] == 'received'
+    invalid = 'routing-receipt: ' + raw + '\n'
+    text = body + invalid + body_with('', receipts) if position == 'before' else valid_body + invalid
+    events = rr.history(text, case[1], TARGET, 'next')
+    assert any(event.get('missing') for event in events)
+    assert all(event.get('status') != 'received' for event in events)

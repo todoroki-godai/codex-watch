@@ -110,7 +110,7 @@ def receipt_rows(text):
             rows[rid] = None if rid in rows else value
         except (ValueError, TypeError):
             malformed = True
-    return rows, malformed
+    return ({} if malformed else rows), malformed
 
 
 def received_fields(d, receipt, reasons):
