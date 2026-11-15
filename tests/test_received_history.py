@@ -160,3 +160,16 @@ def test_non_json_constant_and_status(case):
 def test_third_duplicate_stays_invalid(case):
     body, receipts = evidence(case)
     assert all(e.get('status') != 'received' for e in get(case,body,[*receipts, receipts[1], receipts[1]]))
+
+
+def test_tree_recipe_cannot_replace_route(case):
+    body, receipts=evidence(case)
+    for r in receipts: r['route_content_hash']=TREE
+    assert all(e.get('status') != 'received' for e in get(case,body,receipts))
+
+
+def test_duplicate_json_id_cannot_overwrite(case):
+    body, receipts=evidence(case)
+    raw=json.dumps(receipts[1]).replace('{', '{"dispatch_id":"first",',1)
+    events=rr.history(body_with(body,receipts[:1])+'routing-receipt: '+raw+'\n',case[1],TARGET,'next')
+    assert all(e.get('status') != 'received' for e in events)
