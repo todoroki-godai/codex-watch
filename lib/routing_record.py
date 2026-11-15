@@ -14,7 +14,7 @@ import time
 
 from history_backfill import backfill
 from prerelease import section
-from round_gate import Indeterminate, gh_fetch_body, git_head_sha, parse_target, read_state_file
+from round_gate import check_receipt, Indeterminate, gh_fetch_body, git_head_sha, parse_target, read_state_file
 
 KEYS = ('series_id', 'predecessor_ids', 'base_sha', 'family_tags')
 SHA = re.compile(r'(?:[a-f0-9]{40}|[a-f0-9]{64})')
@@ -86,13 +86,67 @@ def declared_keys(text):
             for m in fields(line[len('routing-record:'):])}
 
 
-def history(body, state_dir, target, run_id):
-    """Reuse legacy one-to-one ID matching, then bundle canonical round/kind rows.
+def receipt_rows(text):
+    """Strict JSON and one receipt per dispatch; duplicates cannot overwrite."""
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate key')
+            result[key] = value
+        return result
+    def non_json(_):
+        raise ValueError('non JSON constant')
+    rows = {}
+    malformed = False
+    for line in text.splitlines():
+        if not line.startswith('routing-receipt:'):
+            continue
+        try:
+            value = json.loads(line[len('routing-receipt:'):], object_pairs_hook=unique, parse_constant=non_json)
+            if not isinstance(value, dict) or not present(value.get('dispatch_id')):
+                raise ValueError('receipt shape')
+            rid = value['dispatch_id']
+            rows[rid] = None if rid in rows else value
+        except (ValueError, TypeError):
+            malformed = True
+    return ({} if malformed else rows), malformed
 
-    Legacy states contain neither accepted results nor route target identities.
-    Do not reinterpret their whole-worktree hashes or report-file existence.
-    """
-    proposed, warnings = backfill(body, Path(state_dir), target)
+
+def received_fields(d, receipt, reasons):
+    """Return only verified fields; discard check_receipt's untrusted reason."""
+    if receipt is None or receipt.get('status') != 'received':
+        return {}
+    fields = {}
+    tags = receipt.get('finding_family_tags')
+    if valid('family_tags', tags):
+        fields['finding_family_tags'] = tags
+    route_hash = d.get('route_content_hash', '')
+    if (re.fullmatch(r'[a-f0-9]{64}', route_hash)
+            and receipt.get('route_content_hash') == route_hash):
+        fields['content_hash'] = route_hash
+    try:
+        report = Path(d['report']).read_text()
+        checked = check_receipt(d.get('head_sha', ''), d.get('content_hash', ''), report)
+        ok = checked.status == 'ok'
+    except (OSError, ValueError, KeyError):
+        ok = False
+    if not ok:
+        reasons.append('受領照合失敗')
+        return {}
+    if len(fields) == 2:
+        fields['status'] = 'received'
+    return fields
+
+
+def history(body, state_dir, target, run_id, reasons=None):
+    """Bundle only complete, uniquely matched receipt evidence per round."""
+    if reasons is None:
+        reasons = []
+    receipts, malformed = receipt_rows(section(body, '巡の履歴'))
+    legacy_body = ''.join(line for line in body.splitlines(keepends=True)
+                          if not line.startswith('routing-receipt:'))
+    proposed, warnings = backfill(legacy_body, Path(state_dir), target)
     text = section(proposed, '巡の履歴')
     states = {}
     for p in sorted(Path(state_dir).glob('*.state')):
@@ -100,7 +154,7 @@ def history(body, state_dir, target, run_id):
         if d.get('review_target') == target:
             states.setdefault(d.get('run_id'), []).append(d)
     groups = {}
-    unknown = bool(warnings)
+    unknown = bool(warnings) or malformed
     used = set()
     for line in text.splitlines():
         if not re.match(r'^\|\s*\d+\s*\|', line):
@@ -128,6 +182,7 @@ def history(body, state_dir, target, run_id):
         entry = dict(event_id=rid, status='pending', target_sha=d['head_sha'])
         if valid('family_tags', tags):
             entry['family_tags'] = tags
+        entry.update(received_fields(d, receipts.get(rid), reasons))
         entries.append(entry)
     if any(rid not in used for rid in states):
         unknown = True
@@ -152,6 +207,11 @@ def history(body, state_dir, target, run_id):
             event['target_sha'] = next(iter(heads))
         if all('family_tags' in e for e in entries):
             event['family_tags'] = sorted({t for e in entries for t in e['family_tags']})
+        hashes = {e.get('content_hash') for e in entries}
+        if (all(e['status'] == 'received' and 'family_tags' in e for e in entries)
+                and len(heads) == 1 and len(hashes) == 1):
+            event.update(status='received', content_hash=next(iter(hashes)),
+                         finding_family_tags=sorted({t for e in entries for t in e['finding_family_tags']}))
         result.append(event)
     return result
 
@@ -198,7 +258,7 @@ def generate(workdir, target, kind, run_id, state_dir, prompt, route, deadline):
         canonical = structured(body)
         declared = declared_keys(body)
         try:
-            record['history'] = history(body, state_dir, target, run_id)
+            record['history'] = history(body, state_dir, target, run_id, reasons)
         except (OSError, ValueError, RuntimeError, Indeterminate):
             reasons.append('履歴照合失敗')
     except (OSError, ValueError, RuntimeError, Indeterminate):

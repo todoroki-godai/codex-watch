@@ -13,8 +13,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / '.tmp/routing-record-fix1/mutations'
 FILE = 'lib/routing_record.py'
+TEST_FILE = 'tests/test_routing_record.py'
 CASES = [
- ('N1-history-omission', "        record['history'] = history(body, state_dir, target, run_id)", "        record['history'] = []", 'history_grouping', "record['history'] = []", '①履歴欠落検査の除去'),
+ ('N1-history-omission', "        record['history'] = history(body, state_dir, target, run_id, reasons)", "        record['history'] = []", 'history_grouping', "record['history'] = []", '①履歴欠落検査の除去'),
  ('N2-whole-tree-hash', "        record['current'].update({k: data[k] for k in ('content_hash', 'target_list_hash', 'target_sha')})", "        record['current'].update({k: data[k] for k in ('content_hash', 'target_list_hash', 'target_sha')})\n        from round_gate import git_content_hash\n        record['current']['content_hash'] = git_content_hash(workdir)", 'complete_identity', "record['current']['content_hash'] = git_content_hash", '②別レシピへの意味破壊'),
  ('N3-series-predecessor-swap', "                record[key] = value", "                record[{'series_id':'predecessor_ids','predecessor_ids':'series_id'}.get(key,key)] = value", 'complete_identity', "record[{'series_id'", '③系列と前身入替'),
  ('N4-always-valid', 'def valid(key, value):', 'def valid(key, value):\n    return True', 'structured_invalid', 'return True', '④入力検査常時成功'),
@@ -76,7 +77,7 @@ def witness(frame,event,arg):
     return witness
 sys.settrace(witness)
 ''')
-        command=[sys.executable,'-m','pytest','tests/test_routing_record.py','-q','-p','no:cacheprovider']
+        command=[sys.executable,'-m','pytest',TEST_FILE,'-q','-p','no:cacheprovider']
         if selection: command += ['-k',selection]
         env=dict(os.environ,PYTHONPATH=os.pathsep.join((str(folder), str(Path(pytest.__file__).resolve().parents[1]))),PYTHONDONTWRITEBYTECODE='1',RR_ANCHOR=anchor,RR_TRACE=str(trace),RR_SOURCE=source,GIT_CEILING_DIRECTORIES=str(folder))
         run=subprocess.run(command,cwd=folder,env=env,capture_output=True,text=True,timeout=60)

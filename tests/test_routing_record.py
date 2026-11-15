@@ -301,6 +301,9 @@ def test_cli_wires_generated_json(case, tmp_path, fake_bin, monkeypatch):
     assert not Path(path).exists()
     assert record['series_id'] == 'series'
     assert record['current']['event_id'] == result.stdout.strip().splitlines()[-1]
+    state_data = rr.read_state_file(state / (record['current']['event_id'] + '.state'))
+    assert state_data['route_content_hash'] == record['current']['content_hash']
+    assert state_data['route_content_hash'] != state_data['content_hash']
     assert json.loads((state/'routing-warn.jsonl').read_text())['verdict'] == 'pass'
 
 

@@ -3,6 +3,7 @@
 import datetime
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import subprocess
@@ -124,6 +125,7 @@ def evaluate(adapter, record, workdir, deadline=None):
 def observe(state_dir, run_id, target, kind, workdir, prompt=None, record=None, deadline=None, dir_fd=None, file_dev=None, file_ino=None):
     adapter = os.environ.get('CODEX_REVIEW_ADAPTER', str(Path.home() / '.claude/skills/review-gate/adapter.py'))
     generation_reasons = []
+    route_hash = None
     timer = prompt is not None
     previous = None
     deadline = (float(deadline) if deadline is not None else time.monotonic() + BUDGET_SECONDS) - 0.25
@@ -140,6 +142,9 @@ def observe(state_dir, run_id, target, kind, workdir, prompt=None, record=None, 
             generated, generation_reasons = generate(workdir, target, kind, run_id, Path(state_dir),
                 Path(prompt).read_text(), Path(adapter).with_name('route.mjs'), deadline)
             write_record(record, generated)
+            value = generated.get('current', {}).get('content_hash')
+            if isinstance(record, OwnedRecord) and isinstance(value, str) and re.fullmatch(r'[a-f0-9]{64}', value):
+                route_hash = value
         record = os.environ.get('REVIEW_GATE_RECORD', record or '')
         if isinstance(record, OwnedRecord):
             check_record(record)  # before adapter reads its path
@@ -150,8 +155,10 @@ def observe(state_dir, run_id, target, kind, workdir, prompt=None, record=None, 
         if isinstance(record, OwnedRecord):
             check_record(record)  # after adapter reads its path
     except subprocess.TimeoutExpired:
+        route_hash = None
         verdict, stopped, reasons = 'timeout', None, ['時間切れ']
     except Exception:
+        route_hash = None
         verdict, stopped, reasons = 'error', None, ['処理失敗']
     finally:
         if timer:
@@ -178,6 +185,8 @@ def observe(state_dir, run_id, target, kind, workdir, prompt=None, record=None, 
     except OSError:
         notice += ' 記録失敗'
     print(notice, file=sys.stderr)
+    if route_hash is not None and verdict != 'timeout':
+        print(route_hash, flush=True)
 
 
 def run_bounded(args):

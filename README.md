@@ -198,7 +198,10 @@ adapter の指定は `CODEX_REVIEW_ADAPTER=/absolute/path/adapter.py`、既定�
 発注記録JSONのパスです。未指定なら正本本文・依頼文・state・gitから作れる項目を自動作成します。
 `routing-record: series_id=系列 predecessor_ids=[] base_sha=40桁SHA family_tags=["族"]` を
 依頼文または正本の行頭に書けます（文字列はJSON表記も可）。正本優先、キー重複・不正値は欠落扱いです。
-履歴は巡番号＋種別で束ね、受領や対象別ハッシュを確認できない旧stateはpending・欠落のまま渡します。
+履歴は巡番号＋種別で束ね、各発注の `.report` のSHA・作業木ハッシュ照合と、正本「巡の履歴」内の一意な受領行を全員分確認した巡だけ `received` として渡します。
+受領行は `routing-receipt: {"dispatch_id":"発注ID","status":"received","finding_family_tags":["族またはnone"],"route_content_hash":"発注時の対象別SHA-256"}` です。
+自動生成の対象別ハッシュは発注前に固定し、state の `route_content_hash` に控えます（受領照合用 `content_hash` とは別）。全員のSHA・対象別ハッシュ一致を要求し、族は和集合にします。
+外部記録指定時・控えのない旧state・受領証拠の不足はpending・欠落のままで、過去値や指摘なしを推測しません。受領失敗の警告理由は固定分類です。
 外部指定（空文字を含む）は保持し、自動記録だけを0700専用ディレクトリ・0600排他作成で用意し、監督側で回収します。
 生成の失敗・正本との競合は固定分類で警告します。別PJも同じ警告経路です。
 同じ利用者が読込前後の照合の間に記録を差し替えて戻すと、別の記録による判定が警告の記録に残り得ます。発注を止める関門には影響しません（[既知の限界](docs/design/routing-record.md#既知の限界)）。

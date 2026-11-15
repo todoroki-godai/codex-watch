@@ -249,7 +249,8 @@ if python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("autho
   GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --goal-cut "${REVIEW_GOAL_CUT:-}" --mandatory-gate "${REVIEW_MANDATORY_GATE:-}" --snapshot "$GATE_JSON" --reserve-run-id "$RUN_ID" --json)" || { echo "公開前特例の送信前再確認で停止: $GATE_JSON" >&2; exit 5; }
 fi
 # D: observation only, after prerelease revalidation/reservation; never propagate failure.
-python3 "$(dirname "$GATE_PY")/routing_warn.py" "$STATE_DIR" "$RUN_ID" "${REVIEW_TARGET:-}" "$CODEX_REVIEW_KIND_LABEL" "$WORKDIR" "$PROMPT_FILE" || :
+ROUTE_CONTENT_HASH="$(python3 "$(dirname "$GATE_PY")/routing_warn.py" "$STATE_DIR" "$RUN_ID" "${REVIEW_TARGET:-}" "$CODEX_REVIEW_KIND_LABEL" "$WORKDIR" "$PROMPT_FILE" || :)"
+[[ "$ROUTE_CONTENT_HASH" =~ ^[a-f0-9]{64}$ ]] || ROUTE_CONTENT_HASH=""
 nohup codex exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
@@ -329,6 +330,7 @@ esac
   echo "round=$GATE_ROUND"
   echo "head_sha=$GATE_HEAD"
   echo "content_hash=$CONTENT_HASH"
+  echo "route_content_hash=$ROUTE_CONTENT_HASH"
   echo "goal_cut=$GATE_GOAL_CUT"
   echo "mandatory_gate=$GATE_MANDATORY_GATE"
   echo "reviewer=$LABEL"
