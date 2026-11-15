@@ -21,3 +21,16 @@
 変異計画: ①停止結果の伝播 ②実行失敗の伝播 ③追記削除 ④締切削除。別種の回避はboolを数値1へ、対象と種別の入替、stderrへの生出力漏出。陽性は意味のないコメント変更。各変異に差分と実行markerを別logで残し、元バイト列へ復元する。今回commitは禁止なのでcommit済み起点の条件は未充足と明記し、HEADと固定した未commit版のSHA256で代替する。
 
 既存adapterの別session workerの後始末: 締切でSIGINTを渡し最大0.2秒待つ。模した監督部品で別session workerのFIFOがEOFになることを検証し、割込みを無効にする変異09で赤を確認する。
+
+## fix1 入力区分（試験作成前、出所: 今回の作業1〜5・レビュー3件）
+| 入力 | 区分・境目 | 値 | 期待 | 出所 | 大きさ | 試験 |
+|---|---|---|---|---|---|---|
+| 警告全体 | 正常通し | 正常adapter・通常ファイル・通常stderr | 記録後fake本体起動 | Must① | CLI | test_dispatch_outcomes[pass] |
+| 記録待ち | open待ち/write待ち | 読者なしFIFO/満杯FIFO | 外側31秒制限で本体へ進む | Must① | CLI | test_blocked_dispatch |
+| 通知待ち | stderr待ち | 満杯pipe | 外側31秒制限で本体へ進む | Must① | CLI | test_blocked_dispatch |
+| 締切 | 未満/等号/超過 | 既存29.999/30/30.001 | 既存判定の境界保持 | Must① | 関数 | test_deadline_boundary |
+| SIGINT | 通常→無視継承 | 既定/IGN | timeout後別session workerのFIFOがEOF | Must② | プロセス | test_detached_worker_cleanup |
+| 追記 | 正常→短いwrite | 全量/初回12byte/毎回1byte/0byte | 2記録が解析可・0は記録失敗 | Must③ | 関数 | test_short_write |
+| 集計 | 正常→破損混在 | 正常JSON/途中JSON/空行/不正schema | 正常分を計数・破損行数を表示 | Must③ | README実行 | test_readme_aggregation |
+
+数字・継ぎ目・時刻・できない操作・文字・合図を適用。実時間の上限は既存30秒判定＋終了猶予を覆う31秒（終了回収最大0.2秒）。外側には外部timeoutコマンドを使わない。時刻・対象・秘密の既存試験を保持。実LLM/DB/環境接続なし。正常系を先に置く。変異: 外側制限除去、SIGINT復元除去、短write処理除去、期限弱化、値入替、試験無効化＋独立検査、別種回避=0byte無限ループと壊れた行の早期終了。陽性はコメント/正常データ。未commit固定SHA256で実施し差分・実行行を別logへ残す。

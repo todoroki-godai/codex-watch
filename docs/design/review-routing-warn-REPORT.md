@@ -1,4 +1,4 @@
-D 警告接続: 試験 805件成功／変異 陰性9件赤・陽性1件緑・生存0件
+D 警告接続 fix1: Must 3件修正／全体試験818件成功・5件skip／変異 陰性9件赤・陽性1件緑・生存0件
 
 # 現在地
 
@@ -121,3 +121,48 @@ READMEの旧「D未実装」を警告接続済みへ更新し、計数と戻し�
 頭が後からレビューを出す指示に従い、この窓ではレビューを行っていない。停止型への昇格判断や記録自動生成器の追加は範囲外。
 
 最終確認: `git diff --check`成功。未commitの意図した差分のみで、変異の固定起点と製品/試験3ファイルのSHA256が一致。`final-restoration.log`・`final-status.log`参照。
+
+
+# fix1（2026-11-15、今回の3件だけ）
+
+読んだもの: `~/.codex-watch/review-routing-warn-c1-20261115-103729-47558.report`、`lib/routing_warn.py`、`bin/codex-review:248-255`、`tests/test_routing_warn.py`、`tests/check_routing_warn_mutations.py`、README集計節、本報告。レビューのread_shaと作業開始HEADはともに`34335598cf7a1442af3777ffce4b0c2412cdcccf`、開始statusは空。
+段取り表: 無し（パス・行の指定なし）。選択肢は元の段取り表を待つ/本依頼のMust①〜③を対象とする、既定は後者。今回の個別指示の「既定案で進め」に従った。本人の決定の出所: 本依頼に記載された「発注は止めず」と修正1〜7。見本HTML: 無し（CLI）。前身設計と巡: 今回のレビュー本文と本報告の既存履歴を読んだ。前身の成果を今回の実測として再利用しない。
+作業場所にtest-designは無いため、前身`/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/review-routing-d/.claude/skills/test-design/SKILL.md`を読む既定案を採用。入力区分表は同じ設計ディレクトリの`review-routing-warn-test-design.md`に試験作成前に追記した。
+
+- Must①: `run_bounded`が警告専用子の全処理を外から31秒で制限する。判定の30秒と既存回収0.2秒を覆う猶予を含む。FIFOのopen/write、満杯stderrのいずれも対象。制限を担う側はstderrへ出力しない。CLIの失敗時echoも`|| :`へ変更し、そこで再び待つ経路を除去。標準Pythonのみで外部timeoutには依存しない。
+- Must②: adapterのexec直前、子側の1行でSIGINTをSIG_DFLへ戻す。通常・SIG_IGN継承の両方で、別session workerが終了した証拠をFIFOのready→EOFで検証。adapter自身の終了処理を利用する既存設計は維持。
+- Must③: 正の短writeは残りを反復して書き切り、0byteは記録失敗とする。初回12byte→次回全量というレビューと同じ再現、毎回12byte、毎回1byte、通常、0byteを入力。READMEの集計を実行し、正常2行を数え、途中JSON・空行・不正schema・不正時刻の計5行は破損数として飛ばす。
+
+外側期限で打ち切られた記録/警告には欠落があり得る。無期限の記録待ちを発注へ伝播させないための挙動。途中で例外/強制終了した既存の破損行を完全修復するものではなく、集計時は飛ばして件数を示す。
+
+| 追加・修正したもの | 7段の停止点 |
+|---|---|
+| 警告全体の外側制限 | ㋐明示依頼、㋑既存subprocessの方式、㋒Popen/wait/killpgを再利用する最小コード |
+| SIGINT継承解除 | ㋕preexecの1行、標準signalのみ |
+| 短writeと0byte検査 | ㋒既存os.writeの残りを反復、データ消失/無進捗を防ぐ検査 |
+| 壊れた行の計数 | ㋒既存READMEのjson/Counterへ例外単位を1行ごとに置く。専用ツールは㋐で作らない |
+| 再現試験・変異証跡 | ㋑既存fake sender・一時state・変異runner・traceを再利用 |
+
+修正前検索: `git grep -n -E 'routing_warn|routing-warn|SIG_DFL|short write|JSONDecodeError' -- bin lib tests README.md`は18行（`.tmp/review-routing-warn-fix1/reuse.log`）。外部コマンドや依存は導入していない。
+呼出し元の全列挙: `.tmp/review-routing-warn-fix1/callers-final.log`。`evaluate`は`observe`と専用試験、`observe`は子側mainと専用試験、`run_bounded`は親側mainと専用試験、CLIからの接続は`bin/codex-review:252`の1か所。BUDGET_SECONDSは判定と外側上限、専用試験、変異runnerで参照する。専用試験で各経路、全体試験で既存の発注・ゲート・予約・画像・model等の呼出しを確認する。README集計は掲載内容をそのままPythonで実行する。
+
+| 環境 | 経路・設定・データの違い |
+|---|---|
+| dev | 接続/読取/書込なし。試験は一時stateとfake senderのみ |
+| stg | 接続/読取/書込なし。同じローカルCLIが対象 |
+| prod | 接続/読取/書込なし。同じローカルCLIが対象 |
+
+fix1変異: ①処理除去=01外側期限除去/02SIGINT復元除去/03残りwrite除去/09記録除去、②意味破壊=04期限を延長、③入替=05targetとkind、④検査無効化=06行内容検査を無効化して03を併用（独立した再write回数で赤）。既存計画と異なる回避を07の0byte無進捗ループ、08の集計途中終了として実適用し、双方赤。陽性は意味を変えないコメントで緑。陰性9件すべてpytest exit1、陽性1件exit0。各変更ファイルの変更行へ到達したことをtraceで検査し、`invariant.diff.log`と`landing.log`へ差分/実行を別々に保存する。READMEはcompileのファイル名/行オフセットを元のREADMEに合わせ、変更した例外分岐の実行行を記録する。
+変異証跡writerは注入前のos.writeを保持する。初回は短write注入が証跡へも作用して中断したため、その結果を合否に含めず、全10件をやり直した。
+全体stderrを最初から満杯にした初回再現は、警告の前にある既存CLI通知で待って失敗。警告処理に渡すstderrのみを満杯にする再現へ直した。これは初回の試験設計の修正であり、「前からある赤」とは扱わない。
+
+再現（cwd=`/Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/review-routing-warn`）:
+```sh
+python3 -m pytest tests -q > .tmp/review-routing-warn-fix1/package-final.log 2>&1
+python3 tests/check_routing_warn_mutations.py > .tmp/review-routing-warn-fix1/mutation-final.log 2>&1
+git diff --check > .tmp/review-routing-warn-fix1/diff-check.log 2>&1
+```
+HEADは`34335598cf7a1442af3777ffce4b0c2412cdcccf`。未commitのCLI/helper/試験/README/変異runner各SHA256を`mutations/baseline.log`に固定後、隔離コピーへ変異を適用し復元した。同ファイルの一致と`restoration.log`が変異差分残存0の証拠。今回の個別指示を優先してcommitしないため、意図した修正のgit diffは残す。レビューは今回実施しない。
+結果・次回依頼の控えは、今回の「作業場所外へ書かない」指定を優先し`.tmp/review-routing-warn-fix1/`内へ置く。
+
+最終結果: `python3 -m pytest tests -q` は **818 passed, 5 skipped in 406.71s**。範囲はtests全体。現在の赤なし。DB/実LLM/実発注の検証は未実行（今回の対象外）。初回全体は旧stderr再現だけ赤（816成功・5skip）で、最終版では解消。`git diff --check`成功。変更は対象7ファイル。commitなし、HEAD不変。次は頭でcommitとレビュー。

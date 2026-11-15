@@ -198,17 +198,38 @@ adapter の指定は `CODEX_REVIEW_ADAPTER=/absolute/path/adapter.py`、既定�
 発注記録JSONのパスで、未設定でも止めません。別PJも同じ警告経路です。
 adapterへの引数は記録パス、作業場所の順。全体の判定待ちは固定30秒で、超過時はプロセス群を打ち切り、
 `時間切れ` と記録します。先に割込みで後始末を最大0.2秒待ち、それでも残るプロセス群を強制終了します。
-adapterが別sessionへ切り離した子はそのadapter側の終了処理にも依存します。
+判定・記録のopen/write・stderr全体には呼出し側から31秒の上限を掛けます。待ちで打ち切った記録・警告は欠落する場合があります。外部のtimeoutコマンドは使いません。
+adapter起動前にSIGINTの無視継承を解除します。adapterが別sessionへ切り離した子はそのadapter側の終了処理にも依存します。
 
 `$CODEX_WATCH_DIR/routing-warn.jsonl`（未設定なら `~/.codex-watch/routing-warn.jsonl`）へ1発注1行追記します。
 欄は `dispatch_id / target / kind / time(UTC) / verdict / stopped_at / reasons`。
 verdictは `pass / would_block / error / invalid / timeout / missing`、段は `A / 1 / 2 / 3 / B / null`。
 理由は固定分類のみで、adapterの生出力・本文・資格情報は書きません。未知の理由は「その他の判定理由」です。
 記録先へ書けない場合も発注は続け、同じ警告行に `記録失敗` を添えます。その場合は件数に欠落があります。
-以下は直近7日分を理由ごとに数える読取専用の1行コマンドです。
+以下は直近7日分を理由ごとに数える読取専用のコマンド（破損行は件数を表示して飛ばす）です。
 
 ```sh
-python3 -c 'import collections,datetime,json,os,pathlib; now=datetime.datetime.now(datetime.timezone.utc); rows=(json.loads(s) for s in (pathlib.Path(os.environ.get("CODEX_WATCH_DIR",str(pathlib.Path.home()/".codex-watch")))/"routing-warn.jsonl").read_text().splitlines()); print(collections.Counter((r["verdict"],r["stopped_at"],reason) for r in rows if now-datetime.timedelta(days=7)<=datetime.datetime.fromisoformat(r["time"])<=now for reason in r["reasons"]))'
+python3 - <<'PY'
+import collections, datetime, json, os, pathlib
+now = datetime.datetime.now(datetime.timezone.utc)
+counts, broken = collections.Counter(), 0
+path = pathlib.Path(os.environ.get("CODEX_WATCH_DIR", str(pathlib.Path.home()/".codex-watch")))/"routing-warn.jsonl"
+for line in path.read_text().splitlines():
+    try:
+        row = json.loads(line)
+        when = datetime.datetime.fromisoformat(row["time"])
+        reasons = row["reasons"]
+        if (not isinstance(reasons, list) or not all(isinstance(r, str) for r in reasons)
+                or row["verdict"] not in ("pass", "would_block", "error", "invalid", "timeout", "missing")
+                or row["stopped_at"] not in (None, "A", "1", "2", "3", "B")):
+            raise ValueError("invalid row")
+        if now-datetime.timedelta(days=7) <= when <= now:
+            counts.update((row["verdict"], row["stopped_at"], reason) for reason in reasons)
+    except (ValueError, TypeError, KeyError):
+        broken += 1
+print(counts)
+print("破損行:", broken)
+PY
 ```
 
 戻す場合は `bin/codex-review` の `# D: observation only...` とその直後の `routing_warn.py` 呼出し行を消します。

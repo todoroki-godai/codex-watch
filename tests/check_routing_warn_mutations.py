@@ -10,28 +10,27 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / '.tmp/review-routing-warn/mutations'
+OUT = ROOT / '.tmp/review-routing-warn-fix1/mutations'
 OUT.mkdir(parents=True, exist_ok=True)
 HELPER = 'lib/routing_warn.py'
 CLI = 'bin/codex-review'
 TEST = 'tests/test_routing_warn.py'
-wire = '|| echo "routing警告: 処理失敗（発注継続）" >&2'
 cases = [
     ('positive-comment', [(HELPER, 'BUDGET_SECONDS = 30', 'BUDGET_SECONDS = 30  # equivalent')], 'test_dispatch_outcomes and pass', True),
-    ('01-stop-verdict', [(HELPER, '    entry = dict(', "    if verdict == 'would_block':\n        raise SystemExit(2)\n    entry = dict("), (CLI, wire, '|| exit 2')], 'test_dispatch_outcomes and blockA', False),
-    ('02-stop-failure', [(HELPER, '    entry = dict(', "    if verdict == 'error':\n        raise SystemExit(2)\n    entry = dict("), (CLI, wire, '|| exit 2')], 'test_dispatch_outcomes and error', False),
-    ('03-no-record', [(HELPER, 'if os.write(fd, line) != len(line):', 'if len(line) != len(line):')], 'test_dispatch_outcomes and pass', False),
-    ('04-no-deadline', [(HELPER, 'if time.monotonic() >= deadline:', 'if False:')], 'test_deadline_boundary', False),
-    ('05-numeric-bool', [(HELPER, 'stages[s] is True', 'stages[s] == True')], 'test_invalid_outputs', False),
-    ('06-swap-fields', [(HELPER, 'target=target, kind=kind,', 'target=kind, kind=target,')], 'test_record_arguments', False),
-    ('07-leak-reason', [(HELPER, "category = '系列・前身記録不足'", 'category = reason')], 'test_dispatch_outcomes and blockA', False),
-    ('09-no-worker-cleanup', [(HELPER, 'os.killpg(child.pid, signal.SIGINT)', 'os.killpg(child.pid, 0)')], 'test_detached_worker_cleanup', False),
-    ('08-disable-test', [(TEST, "    assert entry['verdict'] == verdict", "    assert entry['verdict'] == verdict if False else True"),
-                         (HELPER, "return 'pass', None, ['全段通過']", "return 'would_block', None, ['全段通過']")], 'test_dispatch_outcomes and pass', False),
+    ('01-no-whole-bound', [(HELPER, 'child.wait(timeout=BUDGET_SECONDS + 1)', 'child.wait(timeout=None)')], 'test_whole_budget', False),
+    ('02-no-sigint-reset', [(HELPER, 'signal.signal(signal.SIGINT, signal.SIG_DFL)', 'signal.signal(signal.SIGINT, signal.SIG_IGN)')], 'test_detached_worker_cleanup', False),
+    ('03-short-write', [(HELPER, 'line = line[written:]', "line = b''")], 'test_short_write', False),
+    ('04-weaken-bound', [(HELPER, 'child.wait(timeout=BUDGET_SECONDS + 1)', 'child.wait(timeout=BUDGET_SECONDS + 100)')], 'test_whole_budget', False),
+    ('05-swap-fields', [(HELPER, 'target=target, kind=kind,', 'target=kind, kind=target,')], 'test_record_arguments', False),
+    ('06-disable-test', [(TEST, "    assert [r['dispatch_id'] for r in rows] ==", "    assert True or [r['dispatch_id'] for r in rows] =="),
+                         (HELPER, 'line = line[written:]', "line = b''")], 'test_short_write', False),
+    ('07-zero-write-loop', [(HELPER, 'if written <= 0:', 'if written < 0:')], 'test_short_write', False),
+    ('08-aggregate-stop', [('README.md', '        broken += 1', '        raise')], 'test_readme_aggregation', False),
+    ('09-no-record', [(HELPER, 'written = os.write(fd, line)', 'written = len(line)')], 'test_dispatch_outcomes and pass', False),
 ]
-# The disable-test mutation must still be caught by an independent verdict/stage consistency assertion.
+# The disable-test mutation must still be caught by an independent write-progress assertion.
 # All copies have the current uncommitted implementation as base (commits forbidden for this run).
-files = [CLI, HELPER, TEST]
+files = [CLI, HELPER, TEST, 'README.md', 'tests/check_routing_warn_mutations.py']
 snapshot = {f: (ROOT / f).read_bytes() for f in files}
 (OUT / 'baseline.log').write_text(json.dumps({'head': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
     'files': {f: hashlib.sha256(data).hexdigest() for f,data in snapshot.items()}}, indent=2))
@@ -41,6 +40,7 @@ for name, edits, select, positive in cases:
     tree = folder / 'source'
     for directory in ('bin', 'lib', 'templates', 'tests'):
         shutil.copytree(ROOT / directory, tree / directory, dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
+    shutil.copy2(ROOT / 'README.md', tree / 'README.md')
     changes = {}
     for filename, old, new in edits:
         path = tree / filename
@@ -62,9 +62,10 @@ for name, edits, select, positive in cases:
     (tracer / 'sitecustomize.py').write_text(f'''import sys,os,json
 paths={touched!r}
 fd=os.open({str(trace)!r},os.O_WRONLY|os.O_APPEND)
+write=os.write
 def tracer(frame,event,arg):
     if event=='line' and frame.f_code.co_filename in paths and frame.f_lineno in paths[frame.f_code.co_filename]:
-        os.write(fd,(json.dumps(dict(file=frame.f_code.co_filename,line=frame.f_lineno))+"\\n").encode())
+        write(fd,(json.dumps(dict(file=frame.f_code.co_filename,line=frame.f_lineno))+"\\n").encode())
     return tracer
 sys.settrace(tracer)
 ''')
@@ -74,6 +75,8 @@ sys.settrace(tracer)
     (folder / 'execution.log').write_text('argv='+repr(argv)+'\n'+r.stdout+r.stderr)
     landed = [json.loads(line) for line in trace.read_text().splitlines()]
     assert landed, name
+    for filename in changes:
+        assert any(row['file'] == str((tree / filename).resolve()) for row in landed), (name, filename)
     # At least one changed product/test line was read by the selected test process.
     ok = r.returncode == (0 if positive else 1)
     results.append(dict(name=name,positive=positive,exit=r.returncode,landed=len(landed),ok=ok))

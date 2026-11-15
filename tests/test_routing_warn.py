@@ -244,7 +244,8 @@ def test_output_size_boundary(tmp_path, size, expected):
     assert rw.evaluate(str(p), '', str(tmp_path))[0] == expected
 
 
-def test_detached_worker_cleanup(tmp_path, monkeypatch):
+@pytest.mark.parametrize('ignored', [False, True])
+def test_detached_worker_cleanup(tmp_path, monkeypatch, ignored):
     fifo = tmp_path / 'detached.fifo'
     os.mkfifo(fifo)
     fd = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
@@ -261,15 +262,143 @@ except KeyboardInterrupt:
 """)
     monkeypatch.setattr(rw, 'BUDGET_SECONDS', 0.5)
     started = time.monotonic()
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN if ignored else signal.default_int_handler)
     try:
         assert rw.evaluate(str(p), '', str(tmp_path))[0] == 'timeout'
         assert time.monotonic() - started < 2
         assert os.read(fd, 16) == b'ready'
         assert os.read(fd, 16) == b''
     finally:
+        signal.signal(signal.SIGINT, previous)
         os.close(fd)
         if marker.exists():
             try:
                 os.killpg(int(marker.read_text()), signal.SIGKILL)
             except ProcessLookupError:
                 pass
+
+
+@pytest.mark.parametrize('chunk', [None, 'first12', 12, 1, 0])
+def test_short_write(tmp_path, monkeypatch, capsys, chunk):
+    monkeypatch.setenv('CODEX_REVIEW_ADAPTER', str(tmp_path / 'missing'))
+    original = os.write
+    calls = []
+    def write(fd, data):
+        calls.append(len(data))
+        assert len(calls) < 1000, 'write made no progress'
+        size = (12 if len(calls) == 1 else len(data)) if chunk == 'first12' else chunk
+        return original(fd, data if size is None else data[:size])
+    with monkeypatch.context() as patch:
+        patch.setattr(rw.os, 'write', write)
+        rw.observe(str(tmp_path), 'first', 'target', 'コード', str(tmp_path))
+    rw.observe(str(tmp_path), 'second', 'target', 'コード', str(tmp_path))
+    rows = [json.loads(s) for s in (tmp_path / 'routing-warn.jsonl').read_text().splitlines()]
+    assert [r['dispatch_id'] for r in rows] == (['second'] if chunk == 0 else ['first', 'second'])
+    if chunk not in (None, 0):
+        assert len(calls) > 1
+    assert ('記録失敗' in capsys.readouterr().err) == (chunk == 0)
+
+
+@pytest.mark.parametrize('broken', [False, True])
+def test_readme_aggregation(tmp_path, broken):
+    readme = (ROOT / 'README.md').read_text()
+    command = readme.split("python3 - <<'PY'\n", 1)[1].split('\nPY\n', 1)[0]
+    entry = dict(time=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                 verdict='pass', stopped_at=None, reasons=['全段通過'])
+    lines = [json.dumps(entry)]
+    if broken:
+        lines += ['{"unfinished":', '', '[]', json.dumps(dict(entry, reasons=2)),
+                  json.dumps(dict(entry, time='broken'))]
+    lines.append(json.dumps(entry))
+    (tmp_path / 'routing-warn.jsonl').write_text('\n'.join(lines) + '\n')
+    offset = readme[:readme.index(command)].count('\n')
+    program = f'exec(compile({(chr(10) * offset + command)!r}, {str(ROOT / "README.md")!r}, "exec"))'
+    result = subprocess.run([sys.executable, '-c', program], capture_output=True, text=True,
+                            env=dict(os.environ, CODEX_WATCH_DIR=str(tmp_path)), timeout=5)
+    assert result.returncode == 0, result.stderr
+    assert "('pass', None, '全段通過'): 2" in result.stdout
+    assert f'破損行: {5 if broken else 0}' in result.stdout
+
+
+@pytest.mark.parametrize('mode', ['normal', 'fifo-open', 'fifo-full', 'stderr-full'])
+def test_blocked_dispatch(tmp_path, fake_bin, monkeypatch, mode):
+    state = tmp_path / 'state'
+    state.mkdir()
+    p = adapter(tmp_path)
+    descriptors = []
+    stderr_fd = None
+    if mode.startswith('fifo'):
+        fifo = state / 'routing-warn.jsonl'
+        os.mkfifo(fifo)
+        if mode == 'fifo-full':
+            read_fd = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+            write_fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+            descriptors += [read_fd, write_fd]
+            while True:
+                try:
+                    os.write(write_fd, b'x' * 4096)
+                except BlockingIOError:
+                    break
+    elif mode == 'stderr-full':
+        # Saturate only the observation stderr: earlier CLI diagnostics are outside
+        # this warning's deadline and must remain readable.
+        fifo = tmp_path / 'stderr.fifo'
+        os.mkfifo(fifo)
+        read_fd = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+        stderr_fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+        descriptors += [read_fd, stderr_fd]
+        while True:
+            try:
+                os.write(stderr_fd, b'x' * 4096)
+            except BlockingIOError:
+                break
+        shim = fake_bin / 'python3'
+        shim.write_text(f'''#!{sys.executable}
+import os,sys
+if len(sys.argv)>1 and sys.argv[1].endswith('/routing_warn.py'):
+    fd=os.open({str(fifo)!r},os.O_WRONLY)
+    os.dup2(fd,2)
+    os.close(fd)
+os.execv({sys.executable!r},[{sys.executable!r},*sys.argv[1:]])
+''')
+        shim.chmod(0o755)
+    started = time.monotonic()
+    try:
+        result, state, before = dispatch(tmp_path, fake_bin, monkeypatch, p, timeout=36)
+        elapsed = time.monotonic() - started
+        assert result.returncode == 0, result.stdout
+        run_id = result.stdout.strip().splitlines()[-1]
+        assert (state / f'{run_id}.state').exists()
+        deadline = time.monotonic() + 2
+        while not (tmp_path / 'sent.txt').exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert (tmp_path / 'sent.txt').exists()
+        assert elapsed < 35
+        if mode == 'normal':
+            check_dispatch(result, state, before, 'pass')
+        else:
+            assert elapsed >= 30
+        if mode == 'stderr-full':
+            assert json.loads((state / 'routing-warn.jsonl').read_text())['dispatch_id'] == run_id
+    finally:
+        for fd in descriptors:
+            os.close(fd)
+
+
+def test_whole_budget(monkeypatch):
+    calls = []
+    class Child:
+        pid = 123456789
+        def wait(self, timeout=None):
+            calls.append(timeout)
+            if len(calls) == 1:
+                assert timeout == 31
+                raise subprocess.TimeoutExpired('observation', timeout)
+    def launch(argv, **kwargs):
+        assert argv[2] == '--observe'
+        assert argv[3:] == ['state', 'id', 'target', 'kind', 'work']
+        return Child()
+    monkeypatch.setattr(rw.subprocess, 'Popen', launch)
+    monkeypatch.setattr(rw.os, 'killpg', lambda pid, sig: calls.append((pid, sig)))
+    rw.run_bounded(['state', 'id', 'target', 'kind', 'work'])
+    assert calls == [31, (123456789, signal.SIGKILL), None]

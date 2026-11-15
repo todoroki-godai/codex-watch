@@ -69,7 +69,8 @@ def evaluate(adapter, record, workdir):
     try:
         child = subprocess.Popen([sys.executable, adapter, record, workdir],
                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, start_new_session=True)
+                                 stderr=subprocess.DEVNULL, start_new_session=True,
+                                 preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
         # Bound untrusted output in memory; never put raw output in a file.
         with selectors.DefaultSelector() as selector:
             selector.register(child.stdout, selectors.EVENT_READ)
@@ -135,8 +136,11 @@ def observe(state_dir, run_id, target, kind, workdir):
         line = (json.dumps(entry, ensure_ascii=True, separators=(',', ':')) + '\n').encode()
         fd = os.open(Path(state_dir) / 'routing-warn.jsonl', os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         try:
-            if os.write(fd, line) != len(line):
-                raise OSError('short write')
+            while line:
+                written = os.write(fd, line)
+                if written <= 0:
+                    raise OSError('short write')
+                line = line[written:]
         finally:
             os.close(fd)
     except OSError:
@@ -144,5 +148,26 @@ def observe(state_dir, run_id, target, kind, workdir):
     print(notice, file=sys.stderr)
 
 
+def run_bounded(args):
+    """Caller-side deadline covers evaluation, recording and blocked stderr alike."""
+    child = None
+    try:
+        child = subprocess.Popen([sys.executable, __file__, '--observe', *args],
+                                 stdin=subprocess.DEVNULL, start_new_session=True)
+        child.wait(timeout=BUDGET_SECONDS + 1)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+    finally:
+        if child is not None:
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait()
+
+
 if __name__ == '__main__':
-    observe(*sys.argv[1:])
+    if sys.argv[1:2] == ['--observe']:
+        observe(*sys.argv[2:])
+    else:
+        run_bounded(sys.argv[1:])
