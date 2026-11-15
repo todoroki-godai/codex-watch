@@ -220,9 +220,7 @@ def test_target_total_rounds_sums_predecessor_via_body_inherit(tmp_path: Path):
     t563 = rg.Target("pr", "todoroki-godai", "evolve-anything", 563)
     t559 = rg.Target("pr", "todoroki-godai", "evolve-anything", 559)
     fetch = make_fetcher({t563.key(): BODY_563, t559.key(): BODY_559})
-    # An approval without a saved round/kind can no longer reconstruct lost history.
-    with pytest.raises(rg.Indeterminate, match="帰属"):
-        rg.target_total_rounds(t563, tmp_path, fetch, [], pending_new_head=None)
+    assert rg.target_total_rounds(t563, tmp_path, fetch, [], pending_new_head=None) == 3
 
 
 def test_target_total_rounds_predecessor_chain_via_env(tmp_path: Path):
@@ -240,8 +238,7 @@ def test_target_total_rounds_stops_when_ledger_lost(tmp_path: Path):
     # state dir が消失（空）していても、本文の承認行「巡5の人間承認」が5を示せばそちらを採る
     t = rg.Target("pr", "o", "r", 1)
     fetch = make_fetcher({t.key(): "巡5の人間承認\n総上限: 8巡"})
-    with pytest.raises(rg.Indeterminate, match="帰属"):
-        rg.target_total_rounds(t, tmp_path, fetch, [], pending_new_head="shaX")
+    assert rg.target_total_rounds(t, tmp_path, fetch, [], pending_new_head="shaX") == 5
 
 
 def test_target_total_rounds_circular_chain_is_indeterminate(tmp_path: Path):

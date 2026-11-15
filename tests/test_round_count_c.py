@@ -48,8 +48,8 @@ def test_attribution_deficit(case, candidate):
         for i in range(count): saved(case['state'], f'{kind}{i}', kind, i+1, str(i+1+(kind=='設計')*3)*40)
     for k in (['コード', '設計'] if candidate == 'both' else [candidate]):
         if k != 'none': saved(case['state'], k+'5', k, 5, ('1' if k=='コード' else '4')*40)
-    with pytest.raises(rg.Indeterminate):
-        gate(case, '巡5の人間承認\n総上限: 5')
+    result = gate(case, '巡5の人間承認\n総上限: 5')
+    assert (result['status'], result['total_round']) == ('blocked', 6)
 
 
 @pytest.mark.parametrize('invalid', ['none', 'both', '0', '３', '', '-1', 'head', 'other'])
@@ -61,7 +61,10 @@ def test_invalid(case, invalid):
     elif invalid == 'head': p.write_text(p.read_text().replace('head_sha='+ '3'*40, 'head_sha='))
     elif invalid == 'other': p.write_text(p.read_text().replace(TARGET, 'issue:o/r#99'))
     else: p.write_text(p.read_text().replace('round=3', 'round='+invalid))
-    with pytest.raises(rg.Indeterminate): gate(case, body, record='decision-1')
+    result = gate(case, body, record='decision-1')
+    expected = 5 if invalid == 'both' else (3 if invalid in ('none', 'head', 'other') else 4)
+    assert result['total_round'] == expected
+    assert result['status'] == ('blocked' if expected > 3 else 'pass')
 
 
 def test_predecessor_and_past_head(case):
@@ -138,17 +141,17 @@ def test_predecessor_approval_cannot_borrow_descendants(case):
     pred = rg.parse_target('pr:min-sys/updater-index#2')
     saved(case['state'], 'pred', 'コード', 3, 'a'*40, pred.key())
     for i in (1, 2, 3): saved(case['state'], str(i), 'コード', i, str(i)*40)
-    with pytest.raises(rg.Indeterminate, match='実績1'):
-        rg.target_total_rounds(rg.parse_target(TARGET), case['state'],
-            lambda t: '巡3の人間承認' if t == pred else '', [pred], 'f'*40, kind_label='コード')
+    assert rg.target_total_rounds(rg.parse_target(TARGET), case['state'],
+            lambda t: '巡3の人間承認' if t == pred else '', [pred], 'f'*40, kind_label='コード') == 7
 
 
 def test_all_approvals_validated(case):
     body = design3(case)
-    with pytest.raises(rg.Indeterminate, match='N=2'):
-        # N3 is attributable, but N2 is now absent.
-        (case['state'] / 'd2.state').write_text((case['state'] / 'd2.state').read_text().replace('round=2', 'round=1'))
-        gate(case, body+'\n巡2の人間承認')
+    # N3 is supported but N2 has no attribution: restart with mixed count.
+    p = case['state'] / 'd2.state'
+    p.write_text(p.read_text().replace('round=2', 'round=1'))
+    result = gate(case, body+'\n巡2の人間承認')
+    assert (result['status'], result['total_round']) == ('blocked', 4)
 
 
 def test_design_predecessor_filter(case):
@@ -157,3 +160,71 @@ def test_design_predecessor_filter(case):
     saved(case['state'], 'd', '設計', 1, 'a'*40, pred.key())
     for i in (1, 2): saved(case['state'], str(i), 'コード', i, str(i)*40, pred.key())
     assert rg.target_total_rounds(rg.parse_target(TARGET), case['state'], lambda t:'', [pred], 'f'*40, kind_label='設計') == 2
+
+
+@pytest.mark.parametrize('n,count,candidate,extra', [
+    (3, 2, False, 0), (4, 3, True, 0), (3, 2, True, 0),
+    (4, 3, True, 1), (4, 3, True, 0), (5, 4, True, 0)])
+def test_fallback_cases(case, n, count, candidate, extra):
+    # The six previously blocked shapes: missing attribution or N-1 support.
+    for p in case['state'].iterdir(): p.unlink()
+    for i in range(count):
+        saved(case['state'], 'd'+str(i), '設計', n if candidate and i == 0 else 1, str(i+1)*40)
+    if extra: saved(case['state'], 'c', 'コード', 1, 'a'*40)
+    body = f'巡{n}の人間承認\n総上限: 5'
+    result = gate(case, body)
+    assert (result['status'], result['total_round']) == ('pass', max(count+extra+1, n))
+
+
+def test_fallback_cli(case, monkeypatch):
+    body = design3(case)
+    p = case['state'] / 'd3.state'
+    p.write_text(p.read_text().replace('round=3', 'round=1'))
+    case['body_file'].write_text(body.replace('総上限: 3', '総上限: 5'))
+    monkeypatch.delenv('REVIEW_PRERELEASE_RECORD')
+    result = run_cli(case)
+    assert result.returncode == 0, result.stdout + result.stderr
+    state = rg.read_state_file(next(case['state'].glob('fixture-*.state')))
+    assert state['round'] == '4'
+    assert '今回のレビュー: 巡4（種別: コード）' in open(state['effective_prompt']).read()
+    assert '| 4 | コード |' in case['body_file'].read_text()
+
+
+@pytest.mark.parametrize('mode', ['kind', 'read'])
+def test_trust_boundary(case, monkeypatch, mode):
+    body = design3(case)
+    (case['state'] / 'd1.state').write_text((case['state'] / 'd1.state').read_text().replace('round=1', 'round='))
+    if mode == 'kind':
+        saved(case['state'], 'z', 'invalid', 1, 'e'*40)
+        with pytest.raises((ValueError, rg.Indeterminate)): gate(case, body)
+    else:
+        original = rg.read_state_file
+        def read(path, *, strict=False):
+            if path.name == 'd3.state': raise OSError('fixture unreadable')
+            return original(path, strict=strict)
+        monkeypatch.setattr(rg, 'read_state_file', read)
+        with pytest.raises(OSError): gate(case, body)
+
+
+@pytest.mark.parametrize('prose', [False, True])
+def test_legacy_prerelease(case, monkeypatch, prose):
+    # N2 is unsupported; old history counts dispatches and rejects prose.
+    from functools import partial
+    from test_prerelease import NOW
+    monkeypatch.setattr(pre, 'evaluate', partial(pre.evaluate, registry=case['registry'], now=NOW))
+    p = case['state'] / 'prior-2.state'
+    p.write_text(p.read_text().replace('round=2', 'round=1'))
+    body = '巡2の人間承認\n' + case['body']()
+    if prose: body = body.replace('## 巡の履歴', '## 巡の履歴\n説明文')
+    result = gate(case, body, record='decision-1')
+    assert result['total_round'] == 3
+    assert result['status'] == ('blocked' if prose else 'pass'), result
+
+
+def test_pending_cannot_support_approval(case):
+    for p in case['state'].iterdir(): p.unlink()
+    for i in (1, 2): saved(case['state'], 'c'+str(i), 'コード', i, str(i)*40)
+    saved(case['state'], 'candidate', 'コード', 3, '1'*40)
+    saved(case['state'], 'd', '設計', 1, 'a'*40)
+    result = gate(case, '巡3の人間承認\n総上限: 3')
+    assert (result['status'], result['total_round']) == ('blocked', 4)

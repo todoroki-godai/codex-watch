@@ -53,12 +53,10 @@ def test_malformed_history(case, approval, allowed):
     case['git']('remote', 'set-url', 'origin', 'https://github.com/other/repo.git')
     first, second = rows()
     body = body_with([first, second.replace('| 2 |', 'unreadable')]) + approval
-    if '巡3の人間承認' in approval:
-        with pytest.raises(rg.Indeterminate, match='帰属'):
-            gate(case, body, target='issue:other/repo#1')
-    else:
-        result = gate(case, body, target='issue:other/repo#1')
-        assert (result['status'], result['total_round']) == ('pass', 1)
+    result = gate(case, body, target='issue:other/repo#1')
+    expected = 3 if '巡3の人間承認' in approval else 1
+    assert result['total_round'] == expected
+    assert result['status'] == ('blocked' if expected == 3 and not allowed else 'pass')
     # The same malformed row must still invalidate the exception.
     with pytest.raises(ValueError):
         pre.history(body, case['state'], TARGET, strict=True)

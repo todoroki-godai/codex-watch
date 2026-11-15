@@ -103,6 +103,66 @@ def history(body: str, state_dir: Path, target: str, *, strict: bool,
     return len(heads)
 
 
+def _legacy_history(body: str, state_dir: Path, target: str, *, strict: bool) -> int:
+    """Union by dispatch id; unidentified legacy rows only increase the count.
+
+    A does not implement C's kind/series/predecessor migration. All kinds consume
+    this conservative cap. Unknown legacy rows cannot enable the exception.
+    """
+    from round_gate import read_state_file
+    text = section(body, '巡の履歴')
+    ids: set[str] = set()
+    rows_by_id: dict[str, list[str]] = {}
+    unreadable = False
+    anonymous = 0
+    legacy_rows: list[list[str]] = []
+    for line in text.splitlines():
+        if not line.strip() or line.startswith('| 巡 |') or line.startswith('|---'):
+            continue
+        if not re.match(r'^\|\s*\d+\s*\|', line):
+            unreadable = True
+            continue
+        match = re.search(r'<!-- dispatch_id=([A-Za-z0-9_.:-]+) -->$', line)
+        if not match:
+            if strict:
+                raise ValueError('履歴行に dispatch_id の補完が必要です')
+            legacy_rows.append([cell.strip() for cell in line.split("|")[1:6]])
+        else:
+            fingerprint = [cell.strip() for cell in line.split('|')[1:6]]
+            if match[1] in rows_by_id and rows_by_id[match[1]] != fingerprint:
+                raise ConflictingHistory('同じ発注IDの履歴内容が矛盾しています')
+            rows_by_id[match[1]] = fingerprint
+            ids.add(match[1])
+    if unreadable:
+        raise ValueError('巡の履歴に解釈できない行があります')
+    for path in sorted(state_dir.iterdir()):
+        if path.suffix not in ('.state', '.reservation'):
+            continue
+        # The generic legacy parser permits duplicate keys; authority does not.
+        lines = path.read_text().splitlines()
+        keys = [line.partition('=')[0] for line in lines]
+        if any('=' not in line for line in lines) or len(keys) != len(set(keys)):
+            raise ValueError('stateが破損またはキー重複です')
+        data = read_state_file(path, strict=True)
+        if data.get('review_target') != target:
+            continue
+        run_id = data.get('run_id', '')
+        if not RE_ID.fullmatch(run_id):
+            if strict:
+                raise ValueError('stateに発注IDがありません')
+            anonymous += 1
+        else:
+            ids.add(run_id)
+        # Legacy CLI rows have an exact composite dispatch identifier. Match
+        # one row per state, never HEAD alone (same HEAD can have several runs).
+        fingerprint = [data.get('round', ''), data.get('kind_label', 'コード'),
+                       data.get('started_at_human', ''), data.get('head_sha', '')[:7],
+                       data.get('reviewer', 'codex')]
+        if fingerprint in legacy_rows:
+            legacy_rows.remove(fingerprint)
+    return len(ids) + anonymous + len(legacy_rows)
+
+
 def record(body: str, record_id: str) -> dict:
     text = section(body, '公開前裁定').strip()
     match = re.fullmatch(r'```json\s*\n(.*?)\n```', text, re.S)
@@ -152,7 +212,7 @@ def validate_record(data: dict, target: str, total: int, now: dt.datetime) -> No
 
 def evaluate(target, workdir: str, state_dir: Path, body: str, total: int,
              record_id: str, kind: str, *, registry: Path = REGISTRY,
-             now: dt.datetime | None = None) -> dict:
+             now: dt.datetime | None = None, legacy_rounds: bool = False) -> dict:
     from round_gate import git_content_hash, parse_inherited_pr_numbers
     now = now or dt.datetime.now(dt.timezone.utc)
     rows = json.loads(registry.read_text())
@@ -180,8 +240,10 @@ def evaluate(target, workdir: str, state_dir: Path, body: str, total: int,
     validate_record(data, target.key(), total, now)
     if data['kind'] != kind or parse_inherited_pr_numbers(body):
         raise ValueError('種別不一致・前身系列はAの特例対象外です')
-    if history(body, state_dir, target.key(), strict=True, kind_label=kind,
-               pending_head=git(workdir, 'rev-parse', 'HEAD')) != total:
+    history_round = (_legacy_history(body, state_dir, target.key(), strict=True) + 1
+                     if legacy_rounds else history(body, state_dir, target.key(), strict=True,
+                         kind_label=kind, pending_head=git(workdir, 'rev-parse', 'HEAD')))
+    if history_round != total:
         raise ValueError('正本履歴と判定巡が一致しません')
     # A supports the original bundled cap, not an implicit per-round increase.
     from round_gate import read_state_file
