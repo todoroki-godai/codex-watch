@@ -354,3 +354,133 @@ def test_two_concurrent_observations(case, tmp_path, monkeypatch, fake_bin):
     rows = [json.loads(line) for line in (state/'routing-warn.jsonl').read_text().splitlines()]
     assert {row['dispatch_id'] for row in rows} == {'one','two'}
     assert all(row['verdict'] == 'pass' for row in rows)
+
+
+def test_fd_write_and_read_normal(monkeypatch):
+    monkeypatch.delenv('REVIEW_GATE_RECORD', raising=False)
+    original = rr.os.open
+    opened = []
+    def opening(path, flags, *args, **kwargs):
+        opened.append((path, flags, kwargs.get('dir_fd')))
+        return original(path, flags, *args, **kwargs)
+    with rr.record_path(True) as record:
+        monkeypatch.setattr(rr.os, 'open', opening)
+        rr.write_record(record, {'ok': True})
+        rr.check_record(record)
+        assert json.loads(Path(record).read_text()) == {'ok': True}
+        assert opened and all(p == 'record.json' and fd == record.dir_fd for p, _, fd in opened)
+
+
+def test_inode_replacement_preserves_both_files(monkeypatch):
+    monkeypatch.delenv('REVIEW_GATE_RECORD', raising=False)
+    with rr.record_path(True) as record:
+        original = Path(record).with_name('original')
+        Path(record).rename(original)
+        Path(record).write_text('replacement')
+        Path(record).chmod(0o600)
+        try:
+            with pytest.raises(ValueError):
+                rr.write_record(record, {'wrong': True})
+            assert Path(record).read_text() == 'replacement'
+            assert original.read_text() == ''
+        finally:
+            Path(record).unlink()
+            original.rename(record)
+
+
+def test_ordinary_parent_replacement(monkeypatch):
+    monkeypatch.delenv('REVIEW_GATE_RECORD', raising=False)
+    with rr.record_path(True) as record:
+        parent = Path(record).parent
+        moved = parent.with_name(parent.name + '-moved')
+        parent.rename(moved)
+        parent.mkdir(mode=0o700)
+        Path(record).write_text('replacement')
+        Path(record).chmod(0o600)
+        try:
+            with pytest.raises(ValueError):
+                rr.write_record(record, {'wrong': True})
+            assert Path(record).read_text() == 'replacement'
+            assert (moved/'record.json').read_text() == ''
+        finally:
+            Path(record).unlink()
+            parent.rmdir()
+            moved.rename(parent)
+
+
+@pytest.mark.parametrize('when', ['before', 'after'])
+@pytest.mark.parametrize('replacement', ['link', 'file', 'directory'])
+def test_read_replacement_is_error(tmp_path, monkeypatch, when, replacement):
+    monkeypatch.delenv('REVIEW_GATE_RECORD', raising=False)
+    state = tmp_path/'state'
+    state.mkdir()
+    prompt = tmp_path/'prompt'
+    prompt.write_text('')
+    victim = tmp_path/'victim'
+    victim.write_text('victim')
+    victim.chmod(0o600)
+    monkeypatch.setattr(rr, 'generate', lambda *args: ({'ok': True}, []))
+    with rr.record_path(True) as record:
+        parent = Path(record).parent
+        moved = parent.with_name(parent.name+'-moved')
+        saved = parent/'saved'
+        def replace():
+            if replacement == 'directory':
+                parent.rename(moved)
+                parent.mkdir(mode=0o700)
+                Path(record).write_text('replacement')
+                Path(record).chmod(0o600)
+            else:
+                Path(record).rename(saved)
+                if replacement == 'link':
+                    Path(record).symlink_to(victim)
+                else:
+                    Path(record).write_text('replacement')
+                    Path(record).chmod(0o600)
+        writes = rr.write_record
+        reads = []
+        def write(*args):
+            writes(*args)
+            if when == 'before':
+                replace()
+        def evaluate(*args):
+            reads.append(True)
+            if when == 'after':
+                replace()
+            return 'pass', None, ['全段通過']
+        monkeypatch.setattr(rr, 'write_record', write)
+        monkeypatch.setattr(rw, 'evaluate', evaluate)
+        try:
+            rw.observe(str(state), 'next', 'none:test', '設計', str(tmp_path), str(prompt), record)
+            assert json.loads((state/'routing-warn.jsonl').read_text())['verdict'] == 'error'
+            assert bool(reads) == (when == 'after')
+            assert victim.read_text() == 'victim'
+            assert json.loads(((moved/'record.json') if replacement == 'directory' else saved).read_text()) == {'ok': True}
+        finally:
+            Path(record).unlink()
+            if replacement == 'directory':
+                parent.rmdir()
+                moved.rename(parent)
+            else:
+                saved.rename(record)
+
+
+@pytest.mark.parametrize('value', [
+    'team family_tags=x', 'team predecessor_ids=[]', 'team " family_tags=x',
+    'team \\" family_tags=x', 'team [family_tags=x]',
+])
+def test_structured_quoted_keys(value):
+    text = 'routing-record: series_id='+json.dumps(value)+' predecessor_ids=[]'
+    assert rr.structured(text) == {'series_id': value, 'predecessor_ids': []}
+    assert rr.declared_keys(text) == {'series_id', 'predecessor_ids'}
+
+
+def test_structured_quoted_array():
+    text = 'routing-record: predecessor_ids=["team family_tags=x", "series_id=y"] series_id=team'
+    assert rr.structured(text) == {'predecessor_ids': ['team family_tags=x', 'series_id=y'], 'series_id': 'team'}
+    assert rr.declared_keys(text) == {'predecessor_ids', 'series_id'}
+
+
+@pytest.mark.parametrize('value', ['"team', '"team family_tags=x', '["team family_tags=x"'])
+def test_structured_unclosed(value):
+    assert 'series_id' not in rr.structured('routing-record: series_id='+value)

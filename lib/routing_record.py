@@ -34,6 +34,29 @@ def valid(key, value):
     return present(value)
 
 
+def fields(tail):
+    """Find assignments only outside JSON strings and arrays/objects."""
+    quoted = False
+    depth = 0
+    for match in re.finditer(r'"|\\|[\[\]{}]|(?:^|\s)([a-z_]+)=', tail):
+        token = match[0]
+        # Include intervening ordinary characters when deciding escape parity.
+        if quoted:
+            if token == '"':
+                preceding = len(tail[:match.start()]) - len(tail[:match.start()].rstrip('\\'))
+                if preceding % 2 == 0:
+                    quoted = False
+            continue
+        if token == '"':
+            quoted = True
+        elif token in ('[', '{'):
+            depth += 1
+        elif token in (']', '}'):
+            depth = max(0, depth - 1)
+        elif match[1] is not None and depth == 0:
+            yield match
+
+
 def structured(text):
     """Unknown keys are ignored; duplicate or malformed known keys remain absent."""
     values = {}
@@ -41,7 +64,7 @@ def structured(text):
         if not line.startswith('routing-record:'):
             continue
         tail = line[len('routing-record:'):]
-        matches = list(re.finditer(r'(?:^|\s)([a-z_]+)=', tail))
+        matches = list(fields(tail))
         for i, match in enumerate(matches):
             key = match[1]
             if key not in KEYS:
@@ -50,7 +73,7 @@ def structured(text):
             try:
                 value = json.loads(raw)
             except ValueError:
-                value = raw if key in ('series_id', 'base_sha') and not any(c.isspace() for c in raw) else None
+                value = raw if key in ('series_id', 'base_sha') and not raw.startswith(('\"', '[', '{')) and not any(c.isspace() for c in raw) else None
             if key in values:
                 values[key] = None
             else:
@@ -60,7 +83,7 @@ def structured(text):
 
 def declared_keys(text):
     return {m[1] for line in text.splitlines() if line.startswith('routing-record:')
-            for m in re.finditer(r'(?:^|\s)([a-z_]+)=', line[len('routing-record:'):])}
+            for m in fields(line[len('routing-record:'):])}
 
 
 def history(body, state_dir, target, run_id):
@@ -221,23 +244,45 @@ def checked_parent(path):
     return parent
 
 
-def write_record(path, record):
-    parent = checked_parent(path)
-    fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        out = os.open(Path(path).name, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+class OwnedRecord(str):
+    """A path plus the supervisor's still-open directory and file identity."""
+    def __new__(cls, path, dir_fd, file_dev, file_ino):
+        value = super().__new__(cls, path)
+        value.dir_fd = int(dir_fd)
+        value.file_identity = (int(file_dev), int(file_ino))
+        parent = os.fstat(value.dir_fd)
+        value.parent_identity = (parent.st_dev, parent.st_ino)
+        return value
+
+
+def check_record(path, out=None):
+    parent = checked_parent(path).lstat()
+    if (parent.st_dev, parent.st_ino) != path.parent_identity:
+        raise ValueError('temporary directory replaced')
+    if out is None:
+        fd = os.open(Path(path).name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=path.dir_fd)
         try:
-            info = os.fstat(out)
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1:
-                raise ValueError('temporary file ownership')
-            data = json.dumps(record, ensure_ascii=True).encode()
-            os.ftruncate(out, 0)
-            with os.fdopen(out, 'wb', closefd=False) as stream:
-                stream.write(data)
+            check_record(path, fd)
         finally:
-            os.close(out)
+            os.close(fd)
+        return
+    info = os.fstat(out)
+    if ((info.st_dev, info.st_ino) != path.file_identity
+            or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+        raise ValueError('temporary file replaced')
+
+
+def write_record(path, record):
+    out = os.open(Path(path).name, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=path.dir_fd)
+    try:
+        check_record(path, out)
+        data = json.dumps(record, ensure_ascii=True).encode()
+        os.ftruncate(out, 0)
+        with os.fdopen(out, 'wb', closefd=False) as stream:
+            stream.write(data)
     finally:
-        os.close(fd)
+        os.close(out)
 
 
 @contextmanager
@@ -250,15 +295,18 @@ def record_path(enabled):
     checked_parent(directory / 'record.json')
     fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     owned = os.fstat(fd)
+    out = None
     try:
         out = os.open('record.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fd)
-        os.close(out)
-        yield str(directory / 'record.json')
+        info = os.fstat(out)
+        yield OwnedRecord(str(directory / 'record.json'), fd, info.st_dev, info.st_ino)
     finally:
         try:
             os.unlink('record.json', dir_fd=fd)
         except FileNotFoundError:
             pass
+        if out is not None:
+            os.close(out)
         os.close(fd)
         try:
             now = directory.lstat()

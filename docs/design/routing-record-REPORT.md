@@ -103,3 +103,73 @@ PY
 共有先 `/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/` は書込許可範囲外。指定2ファイルは作業場所内の `_work/notes/codex-queue/` へ保存する。次回は頭によるcommit、当時の入力資料の復元可否の判断と比較測定。独立レビューは今回の指示どおり頭の手番であり実施していない。
 
 === CODEX QUEUE DONE ===
+
+## routing-record-fix1（2026-11-15、レビューc1のMust/Should修正）
+
+基点HEADは `4777982ab387c305cebc75821ed710093a30f33c`。今回の個別指示どおりcommitは試行せず変更を残す（名義hookで拒否される既知条件、頭がcommitする）。枝・アカウント操作、LLM呼出し、レビュー、実発注、本物のstateへの書込はしていない。部品・点数・設定は変更していない。
+
+### 読んだもの・参照が無い欄
+
+- 段取り表の該当行: 無し（依頼の欄が空）。選択肢は追加参照を待つ／今回のMust/Shouldだけを直す。個別指示の既定案として後者で進めた。
+- 本人の決定の出所: 今回の依頼の受領①〜③と作業1〜5。追加の本人判断は推定していない。
+- 見本HTML: 無し（CLI処理で画面の変更なし）。
+- 前身の設計と巡の履歴: `docs/design/routing-record.md`、本報告の既存節、`docs/design/routing-record-test-design.md`、指定レビュー `~/.codex-watch/routing-record-c1-20261115-185706-49676.report`。レビューのread_shaは上記HEAD、対象内容hashは依頼の `e4e3a07742266d6d445777432434aaa8513e9081cabdbb8f75c645ead1b13f8c` と一致する記載を確認。レビュー全体ファイルのSHA256は `source-versions.log` に別記（対象内容hashとは別）。
+- 実装参照: `lib/routing_record.py`、`lib/routing_warn.py`、`tests/test_routing_record.py`、`tests/check_routing_record_mutations.py`、旧入口互換確認の `tests/test_routing_warn.py`。
+- test-design: 作業場所の `.claude/skills/test-design/` は無し。既存報告が指す `/Users/matsukaze-takashi/updater/updater-index/_wt.noindex/2023-impl/.claude/skills/test-design/SKILL.md` を読み、試験追加前に既存区分表へfix1節を追記した。
+
+### 修正したことと限界
+
+`record_path` は作成したディレクトリFD、ファイルのst_dev/st_inoを保持する `OwnedRecord`（既存の文字列パスと互換）を返す。元ファイルFDも回収まで保持し、削除後のinode再利用を防ぐ。監督から子への `pass_fds` と引数で同じディレクトリFDとファイル同一性を渡す。`write_record` は保持FD相対で開き、元のinode・所有者・0600・通常ファイル・リンク数1を確認してから切り詰める。親パスの0700・所有者・inodeも保持FDの対象と照合し、通常ディレクトリへの置換も拒否する。
+`observe` はadapter呼出し直前・直後に同じ照合を行う。読込側の検査openも保持FD相対・O_NOFOLLOWで行い、失敗は固定分類「処理失敗」に倒す。明示された外部記録と旧5引数APIは従来どおり。書込後のリンク・別ファイル・通常ディレクトリ置換は判定へ渡す前に拒否し、判定中に残った置換もpassを破棄する。
+
+**残る範囲:** 部品adapterがパスを開く契約は変更していない。直前照合からadapterのopenまでの間、およびadapterが開いてから直後照合までに置換して元へ戻す競合は防ぎきれない。照合後に置換された対象をadapterが一時的に読む可能性は残る。同inodeへの内容変更もinode比較だけでは検出しない。外部指定パスは今回作成物ではないためこの所有照合の対象外。完全に閉じるには部品側のFD入力等の別契約が必要で、今回の範囲では追加しない。
+
+構造化行は共通 `fields` でJSON引用符と配列（オブジェクトも含む）の深さを追い、文字列内の `キー=` を境界にも宣言キーにも数えない。未閉鎖引用符・配列を裸トークンとして救済しない。レビュー例、エスケープ引用符、配列内の偽キー、未閉鎖値を固定した。
+
+### 7段と呼出し元
+
+追加前の検索全文: `git grep -n -E 'record_path|write_record|checked_parent|declared_keys|structured\(|_run_bounded\(|st_ino|dir_fd' -- lib tests`。35行を `.tmp/routing-record-fix1/reuse.log` に保存。既存一時記録・JSON検査・監督・FD回収を再利用した。
+
+| 項目 | 止めた段と理由 |
+|---|---|
+| 対象保持・照合・継承 | ㋐Mustの明示依頼、㋑既存record_path/write_record/監督、㋒os.fstat・dir_fd・pass_fdsとstrで足りる |
+| 構造化項目境界・未閉鎖値 | ㋐Shouldの明示依頼、㋑既存structured/declared_keysを共通化、㋒re/jsonで足りる |
+| 試験・変異 | ㋐明示依頼、㋑既存pytest/隔離コピー/traceを再利用、㋒標準ライブラリで証跡を残す |
+| 文書・キュー | ㋐明示依頼、㋑既存設計・報告へ追記 |
+| 新しい依存・サービス・台帳 | ㋐今回不要なので作らない |
+
+全呼出し元検索: `git grep -n -E 'fields\(|OwnedRecord|check_record|record_path|write_record|declared_keys|structured\(|_run_bounded\(|rw.observe\(' -- lib tests`（72行、`callers.log`）。`fields`はstructured/declared_keys、両者はgenerate。`OwnedRecord`はrecord_pathとobserveの子側復元、型判定はobserve/_run_bounded。`check_record`はwrite_record・自身のFD読込・observeの前後。`record_path`はrun_bounded、`write_record`はobserve、`_run_bounded`はrun_bounded。残りは記録/警告試験内の直接呼出しと変異文字列で、保存ログに全件を記載。正常通し・子FD継承・並行・回収・外部指定・旧入口・異常分類を既存/追加試験で確認した。
+
+| 環境 | 経路・設定・データの差 |
+|---|---|
+| dev | 接続・読書きなし、実データ差は未調査 |
+| stg | 接続・読書きなし、実データ差は未調査 |
+| prod | 接続・読書きなし、口座682251233834へ未接触 |
+
+今回変更したコードに環境ごとの差は無し。全試験は一時データ・偽gh・偽送り手を使い、部品は読取判定のみ。実DB試験は対象外・未実行。
+
+### 変異・再現
+
+`.tmp/routing-record-fix1/` に全検証出力を`.log`で保存。陰性15件赤、陽性1件緑（記録試験48件成功）、生存0件。F1〜F4は今回指定①inode比較削除、②パス再open、③読込前照合削除、④空白境界の分割へ戻す、に対応する。F2は安全検査の多重防御が残っていてもFD相対書込という要求自体を外したことを実open引数で検出する。F3は直後検査がerrorへ倒しても、adapterを呼んでしまったことを検出する。
+追加の別種はF5通常ディレクトリ照合削除、F6読込後照合削除、F7未閉鎖値の裸値救済、F8文字列内の偽キー宣言。従来のN1履歴省略、N2別hash、N3系列/前身入替、N4常時valid、N5正本fallback、N7外部消去、N8対象省略も再実行した。従来N6のO_NOFOLLOW単独削除は新しいinode照合で拒否できるため今回の欠陥変異から外し、リンク置換自体は前後検査の試験で引き続き確認する。P1は等価なbool表現への書換えで、陰性に混ぜていない。
+探索入力クラス: 元inode/別inode、元親/リンク親/通常別親、書込前/書込後・読込前/読込中、空/外部記録、JSON文字列/配列/escape/未閉鎖/偽キー、既存履歴・対象同一性。変換: 条件削除、パス再open、境界の退行、入力救済、偽宣言、項目省略、別レシピ、入替、常時成功、等価表現。
+各隔離コピーについて、置換対象が1箇所であること・非空差分・変換前後文字列の一致を機械で要求し、仕様を壊す指定差分を `mutations/*.diff.log` へ保存。別のsys.settraceで変更行の実行を `*.executed.log` へ保存し、両方の存在とpytestの期待終了値を機械で要求する。pytest結果は `*.test.log`、一覧は`results.log`。不変条件の根拠は上の区分表とF1〜F8の固定変換であり、任意差分の意味を一般判定する仕組みは追加しない。原本は全件SHA256一致（`restored.log`）。HEADは変えておらず、git diffには依頼どおり実装・試験・文書の変更が残る。変異差分は原本に残っていない。
+
+再現コマンド全文（cwdと基点HEADを固定、変更後ファイルのSHA256は`source-versions.log`、隔離原本全件は`mutations/baseline.log`）:
+
+```sh
+cd /Users/matsukaze-takashi/matsukaze-utils/codex-watch/_wt.noindex/routing-record
+python3 -m pytest tests/test_routing_record.py tests/test_routing_warn.py -q > .tmp/routing-record-fix1/targeted.log 2>&1
+python3 tests/check_routing_record_mutations.py > .tmp/routing-record-fix1/mutations.log 2>&1
+python3 -m pytest tests -q > .tmp/routing-record-fix1/full-tests.log 2>&1
+git diff --check > .tmp/routing-record-fix1/diff-check.log 2>&1
+```
+
+Python3.14.7 / Node v24.22.1 / Git2.50.1。部品route.mjs SHA256 `a1c0d3cb272bf28fc21313cdc85271b0c5f126cfb5edfe5c8dd7af4fa1a56909`、adapter.py SHA256 `44ccbf61a0d4a5c6c5b300c5459463ae788b8e03cf5e4848ea3824097b917d63`。
+
+### 最終試験と引継ぎ
+
+記録＋警告の対象試験は `100 passed in 154.83s`（`targeted.log`）。パッケージ全体 `python3 -m pytest tests -q` は **866 passed, 5 skipped in 463.60s**（`full-tests.log`）、失敗0。5 skipは既存のopt-in実gh/keychainと対象外起動口で、成功件数へ含めない。新しい試験18件を追加した。origin/mainでの比較試験は未実行であり、「前からある赤」という判断はしていない。`git diff --check` 成功。実装・試験・adapter・レビューのSHA256が検証版と同じことを最後に再確認した（`source-final-check.log`）。
+指定共有キュー `/Users/matsukaze-takashi/updater/updater-index/_work/notes/codex-queue/` はsandbox書込許可範囲外で、今回の承認方針では拡張もできない。そこへの書込は試さず、指定2ファイルを作業場所の `_work/notes/codex-queue/` に保存した。頭が共有先へ転記し、変更をcommitして独立レビューへ渡す。次の実装修正依頼は現時点で無し（nextファイルは「なし」）。全体試験緑・今回実施の変異生存0という終わりの条件は満たした。adapter契約に由来する競合窓の制約は上記のとおり残る。
+
+=== CODEX QUEUE DONE ===

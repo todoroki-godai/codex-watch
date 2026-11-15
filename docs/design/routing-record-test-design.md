@@ -19,3 +19,19 @@
 
 6問: 数字は締切と巡欠落、継ぎ目は同一性とadapter、時刻はUTC、できない操作は外部削除と拒否後発注、文字は構造化行、合図は正本取得と全員受領。画面・DBは対象外。
 構造化値は標準JSONを既定とし、series_id/base_shaの単一非空トークンも許す。配列はJSONのみ。項目別の行または同一行の複数キーを受ける。本人指定が無い既存履歴の受領・対象別ハッシュを推測する形式は足さない。
+
+## routing-record-fix1 入力区分表（試験追加前）
+期待の出所: 2026-11-15 の今回依頼 Must/Should とレビュー c1（読んだ版4777982）。
+
+| 入力 | 区分・境目 | 置く値 | 期待 | 期待の出所 | 大きさ | 試験名 |
+|---|---|---|---|---|---|---|
+| 正常通し | 作成→生成→書込→判定→回収 | 専用FD・元inode | 正常判定、別対象を変更しない | Must 1 | 結合 | 既存 observe_generated / cli_wires |
+| ファイル | 同権限・別inode | 元を退避して0600別ファイル | 切詰め前に拒否、退避元も保存 | Must 1 | 関数 | inode_replacement |
+| 親 | 通常ディレクトリへ置換 | 元を退避して0700別親 | パス再open禁止・FD経由、判定拒否 | Must 1 | 関数/結合 | ordinary_parent / fd_write |
+| 読込の前 | 書込後のリンク・通常ファイル・親置換 | evaluate前に差替え | evaluateを呼ばずerror | Must 1 | 結合 | before_read_replacement |
+| 読込の後 | evaluate中のリンク・親置換 | 偽判定をpassとする | passを破棄しerror | Must 1 | 結合 | after_read_replacement |
+| JSON文字 | 引用符・配列内のキー表記、escape | series_id="team family_tags=x" | 文字列・配列を分割しない、偽キー未宣言 | Should 2 | 関数 | structured_quoted |
+| JSON文字 | 閉じていない引用符・配列 | series_id="team 等 | その項目は欠落、裸トークンに救済しない | Should 2 | 関数 | structured_unclosed |
+| 外部指定/旧入口 | 明示パス・空文字・5引数 | 既存fixture | 所有対象の照合を適用しない | 今回範囲/既存契約 | 結合 | 既存 external / routing_warn |
+
+6問: 数字は新しい閾値無し（inodeの同値/別値）、継ぎ目はFD継承とadapterパス、時刻は書込前/読込前/読込後、できない操作は別対象の切詰めと判定、文字と欠けは引用・配列・escape・未閉鎖、合図は照合成功。DB・画面は対象外。
