@@ -38,7 +38,72 @@ class ConflictingHistory(ValueError):
     """A dispatch identity has contradictory source rows; approval cannot waive it."""
 
 
-def history(body: str, state_dir: Path, target: str, *, strict: bool) -> int:
+def history(body: str, state_dir: Path, target: str, *, strict: bool,
+            kind_label: str = 'コード', pending_head: str | None = None) -> int:
+    """Reconcile dispatch identities before counting same-kind distinct HEADs."""
+    from round_gate import read_state_file, ROUND_ROW_HEADER
+    text = section(body, '巡の履歴')
+    rows_by_id: dict[str, list[str]] = {}
+    records: dict[str, tuple[str, str]] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        has_id = 'dispatch_id=' in line
+        match = re.search(r'<!-- dispatch_id=([A-Za-z0-9_.:-]+) -->$', line)
+        if not has_id and (not line or line == ROUND_ROW_HEADER or
+                re.fullmatch(r'\|(?:\s*:?-{3,}:?\s*\|)+', line) or not line.startswith('|')):
+            continue
+        if not re.match(r'^\|\s*[0-9]+\s*\|', line) or not match:
+            raise ValueError('履歴行が不正または dispatch_id の補完が必要です')
+        if line.count('dispatch_id=') != 1 or not line[:match.start()].rstrip().endswith('|') or not RE_ID.fullmatch(match[1]):
+            raise ValueError('履歴行の発注IDが不正です')
+        cells = [cell.strip() for cell in line[:match.start()].split('|')[1:-1]]
+        if len(cells) != 7 or cells[1] not in ('設計', 'コード') or not re.fullmatch(r'[0-9a-f]{7,40}', cells[3]):
+            raise ValueError('履歴行の種別・HEAD・列が不正です')
+        fingerprint = cells[:5]
+        if match[1] in rows_by_id and rows_by_id[match[1]] != fingerprint:
+            raise ConflictingHistory('同じ発注IDの履歴内容が矛盾しています')
+        rows_by_id[match[1]] = fingerprint
+    for path in sorted(state_dir.iterdir()):
+        if path.suffix not in ('.state', '.reservation'):
+            continue
+        lines = path.read_text().splitlines()
+        keys = [line.partition('=')[0] for line in lines]
+        if any('=' not in line for line in lines) or len(keys) != len(set(keys)):
+            raise ValueError('stateが破損またはキー重複です')
+        data = read_state_file(path, strict=True)
+        if data.get('review_target') != target:
+            continue
+        run_id = data.get('run_id', '')
+        if not RE_ID.fullmatch(run_id):
+            raise ValueError('stateに発注IDがありません')
+        evidence = json.loads(data.get('prerelease_evidence') or '{}').get('record', {})
+        kind = data.get('kind_label', evidence.get('kind', 'コード'))
+        head = data.get('head_sha') or evidence.get('head_sha', '')
+        if kind not in ('設計', 'コード') or not re.fullmatch(r'[0-9a-f]{40}', head):
+            raise ValueError('stateの種別・完全HEADが不正です')
+        if run_id in records and records[run_id] != (kind, head):
+            raise ConflictingHistory('同じ発注IDのstateが矛盾しています')
+        records[run_id] = (kind, head)
+    full_heads = {head for _, head in records.values()}
+    full_heads.update(row[3] for row in rows_by_id.values() if len(row[3]) == 40)
+    for run_id, row in rows_by_id.items():
+        kind, short = row[1], row[3]
+        if run_id in records:
+            saved_kind, head = records[run_id]
+            if kind != saved_kind or not head.startswith(short):
+                raise ConflictingHistory('履歴とstateの種別・HEADが矛盾しています')
+        else:
+            candidates = {head for head in full_heads if head.startswith(short)}
+            if len(candidates) != 1:
+                raise ValueError('履歴の短縮HEADを一意に照合できません')
+            records[run_id] = (kind, next(iter(candidates)))
+    heads = {head for kind, head in records.values() if kind == kind_label}
+    if pending_head is not None:
+        heads.add(pending_head)
+    return len(heads)
+
+
+def _legacy_history(body: str, state_dir: Path, target: str, *, strict: bool) -> int:
     """Union by dispatch id; unidentified legacy rows only increase the count.
 
     A does not implement C's kind/series/predecessor migration. All kinds consume
@@ -147,7 +212,7 @@ def validate_record(data: dict, target: str, total: int, now: dt.datetime) -> No
 
 def evaluate(target, workdir: str, state_dir: Path, body: str, total: int,
              record_id: str, kind: str, *, registry: Path = REGISTRY,
-             now: dt.datetime | None = None) -> dict:
+             now: dt.datetime | None = None, legacy_rounds: bool = False) -> dict:
     from round_gate import git_content_hash, parse_inherited_pr_numbers
     now = now or dt.datetime.now(dt.timezone.utc)
     rows = json.loads(registry.read_text())
@@ -175,7 +240,10 @@ def evaluate(target, workdir: str, state_dir: Path, body: str, total: int,
     validate_record(data, target.key(), total, now)
     if data['kind'] != kind or parse_inherited_pr_numbers(body):
         raise ValueError('種別不一致・前身系列はAの特例対象外です')
-    if history(body, state_dir, target.key(), strict=True) + 1 != total:
+    history_round = (_legacy_history(body, state_dir, target.key(), strict=True) + 1
+                     if legacy_rounds else history(body, state_dir, target.key(), strict=True,
+                         kind_label=kind, pending_head=git(workdir, 'rev-parse', 'HEAD')))
+    if history_round != total:
         raise ValueError('正本履歴と判定巡が一致しません')
     # A supports the original bundled cap, not an implicit per-round increase.
     from round_gate import read_state_file

@@ -89,7 +89,7 @@ def test_real_history_gate(sample, case):
     evidence = pre.evaluate(rg.parse_target(TARGET), str(c['work']), c['state'], body,
                             3, 'decision-1', '設計', registry=c['registry'])
     assert evidence['authority'] == 'project_prerelease'
-    assert pre.history(result.stdout, c['state'], TARGET, strict=True) == 2
+    assert pre.history(result.stdout, c['state'], TARGET, strict=True, kind_label='設計') == 2
 
 
 @pytest.mark.parametrize('mode', ['missing', 'duplicate-state', 'duplicate-row', 'duplicate-id',

@@ -603,30 +603,47 @@ def none_dispatch_count(state_dir: Path, workdir: str) -> int:
 # 前身チェーンの合算 / 総巡数
 # ---------------------------------------------------------------------------
 #
-# 「本文の巡数」は本文の表やコードブロックを数えるのではなく、承認行が宣言する巡番号
-# （RE_APPROVAL）を読む。実データで確認したとおり（design-gate-v3.md §3・#563）、承認行の
-# 「巡N」は target 自身のローカル巡数ではなく、前身からの継承分を含む**総巡数**である
-# （#563: 前身 #559 の2巡 + #563 ローカル1巡目 = 「巡3の人間承認」）。ゆえに
-# `target_total_rounds()` は「台帳（ledger）由来の総巡数」と「本文の承認行が示す総巡数」の
-# 大きい方を返す（§2 ★「本文の巡数と台帳の巡数、大きい方を採る」の実装）。
+# 種別ごとのdistinct HEADを数え、旧承認Nは保存済み種別と同種実績で検証する。
 
-
-def ledger_own_round_for_predecessor(state_dir: Path, target_key: str) -> int:
+def ledger_own_round_for_predecessor(state_dir: Path, target_key: str, *, kind_label: str | None = "コード") -> int:
     """target が過去に消化した巡数（台帳のみ。distinct HEAD 数。新規 HEAD の加算はしない）。"""
     distinct: list[str] = []
-    for _started, head in ledger_head_shas_for_target(state_dir, target_key):
+    for _started, head in ledger_head_shas_for_target(state_dir, target_key, kind_label=kind_label):
         if head not in distinct:
             distinct.append(head)
     return len(distinct)
 
 
-def target_total_rounds(
+class _UnsupportedApproval(Indeterminate):
+    """Saved approval evidence cannot support kind-specific counting."""
+
+
+def _selected_rounds(target, state_dir, fetch_body, env_predecessors=None,
+                     pending_new_head=None, *, kind_label="コード", **kwargs):
+    try:
+        return _target_total_rounds(target, state_dir, fetch_body, env_predecessors,
+                                    pending_new_head, kind_label=kind_label, **kwargs), False
+    except _UnsupportedApproval:
+        # Restart the entire chain: never mix legacy and kind-specific nodes.
+        return _target_total_rounds(target, state_dir, fetch_body, env_predecessors,
+                                    pending_new_head, kind_label=None), True
+
+
+def target_total_rounds(target, state_dir, fetch_body, env_predecessors=None,
+                        pending_new_head=None, *, kind_label="コード", **kwargs) -> int:
+    return _selected_rounds(target, state_dir, fetch_body, env_predecessors,
+                            pending_new_head, kind_label=kind_label, **kwargs)[0]
+
+
+def _target_total_rounds(
     target: Target,
     state_dir: Path,
     fetch_body,
     env_predecessors: list[Target] | None = None,
     pending_new_head: str | None = None,
     *,
+    kind_label: str | None = "コード",
+    _validate_approvals: bool = True,
     _visited: set[str] | None = None,
     _depth: int = 0,
 ) -> int:
@@ -638,6 +655,8 @@ def target_total_rounds(
     - 前身は ①env_predecessors（depth 0 の target にのみ適用） ②本文の継承行（PR番号のみ）の
       和集合を辿る。孫以降は本文の継承行のみで辿る。循環・深さ5超は Indeterminate。
     """
+    if kind_label not in (None, "設計", "コード"):
+        raise Indeterminate("不正なレビュー種別です")
     visited = _visited if _visited is not None else set()
     key = target.key()
     if key in visited:
@@ -648,9 +667,12 @@ def target_total_rounds(
 
     body = fetch_body(target)
 
-    own_count = ledger_own_round_for_predecessor(state_dir, key)
+    if kind_label is None:
+        # Keep trust-boundary failures even when approval evidence is incomplete.
+        ledger_head_shas_for_target(state_dir, key, kind_label="コード")
+    own_count = ledger_own_round_for_predecessor(state_dir, key, kind_label=kind_label)
     if pending_new_head is not None:
-        heads = [h for _s, h in ledger_head_shas_for_target(state_dir, key)]
+        heads = [h for _s, h in ledger_head_shas_for_target(state_dir, key, kind_label=kind_label)]
         distinct: list[str] = []
         for h in heads:
             if h not in distinct:
@@ -663,13 +685,41 @@ def target_total_rounds(
 
     pred_total = 0
     for pred in predecessors:
-        pred_total += target_total_rounds(
-            pred, state_dir, fetch_body, None, None, _visited=visited, _depth=_depth + 1
+        pred_total += _target_total_rounds(
+            pred, state_dir, fetch_body, None, None, kind_label=kind_label,
+            _validate_approvals=_validate_approvals, _visited=visited, _depth=_depth + 1
         )
 
     ledger_total = own_count + pred_total
-    body_total = body_own_round(body)
-    return max(ledger_total, body_total)
+    if kind_label is None:
+        return max(ledger_total, body_own_round(body))
+    if _validate_approvals:
+        for n in sorted(set(parse_approval_rounds(body))):
+            kinds = set()
+            for path in sorted(state_dir.glob("*.state")):
+                saved = read_state_file(path, strict=True)
+                if saved.get("review_target") != key:
+                    continue
+                recorded = saved.get("round", "")
+                kind = saved.get("kind_label", "コード")
+                if kind not in ("設計", "コード"):
+                    raise Indeterminate(f"{key}: 保存済み種別が不正です")
+                if not re.fullmatch(r"[0-9]+", recorded) or int(recorded) < 1:
+                    raise _UnsupportedApproval(f"{key}: 承認N={n}の保存済みroundが不正です")
+                if int(recorded) == n:
+                    if not saved.get("head_sha"):
+                        raise _UnsupportedApproval(f"{key}: 承認N={n}の候補HEADがありません")
+                    kinds.add(kind)
+            if len(kinds) != 1:
+                raise _UnsupportedApproval(f"{key}: 承認N={n}を一意に帰属できません（候補種別{len(kinds)}）")
+            attributed = next(iter(kinds))
+            completed = _target_total_rounds(
+                target, state_dir, fetch_body, env_predecessors, None,
+                kind_label=attributed, _validate_approvals=False,
+            )
+            if completed < n:
+                raise _UnsupportedApproval(f"{key}: 承認N={n}の{attributed}実績{completed}が不足しています")
+    return ledger_total
 
 
 # ---------------------------------------------------------------------------
@@ -1266,10 +1316,11 @@ def run_gate(
             "goal_cut_status": "ok",
         }
 
-    total = target_total_rounds(target, state_dir, fetch_body, env_predecessors, pending_head)
+    total, legacy_rounds = _selected_rounds(target, state_dir, fetch_body, env_predecessors, pending_head,
+                                kind_label=kind_label or "コード")
 
     body = fetch_body(target)
-    # Ordinary rounds follow the original ledger/body approval calculation.
+    # Ordinary rounds use the same kind-specific count as the prompt and state.
     # Strict dispatch history belongs only to the prerelease exception.
     decision = decide(total, body)
     evidence = {}
@@ -1278,7 +1329,7 @@ def run_gate(
         try:
             from prerelease import evaluate
             evidence = evaluate(target, workdir, state_dir, body, total,
-                                prerelease_record, kind_label)
+                                prerelease_record, kind_label, legacy_rounds=legacy_rounds)
             decision = decide(total, body, evidence)
         except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, Indeterminate) as error:
             decision.message += "。公開前特例不成立: " + str(error)
@@ -1409,6 +1460,15 @@ def main(argv: list[str] | None = None) -> int:
                     raise Indeterminate("予約IDが不正です")
                 lock = (state_dir / '.prerelease.lock').open('a')
                 fcntl.flock(lock, fcntl.LOCK_EX)
+                # Distinct HEAD counting must not allow concurrent reservations
+                # to reuse the same send snapshot. Completed state/ID pairs are
+                # historical evidence; only an outstanding reservation blocks.
+                for pending in state_dir.glob('*.reservation'):
+                    if pending.with_suffix('.state').exists():
+                        continue
+                    saved = read_state_file(pending, strict=True)
+                    if saved.get('review_target') == args.target:
+                        raise Indeterminate("送信前の正本再照合: 未完了の予約があります")
             result = run_gate(
                 args.target,
                 args.workdir,

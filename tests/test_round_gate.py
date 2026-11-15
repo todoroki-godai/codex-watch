@@ -188,7 +188,7 @@ def test_none_dispatch_count(tmp_path: Path):
 
 
 # ---------------------------------------------------------------------------
-# target_total_rounds: 前身合算・循環・過深・本文優先（大きい方）
+# target_total_rounds: 種別別前身合算・循環・過深・承認帰属
 # ---------------------------------------------------------------------------
 
 
@@ -220,9 +220,7 @@ def test_target_total_rounds_sums_predecessor_via_body_inherit(tmp_path: Path):
     t563 = rg.Target("pr", "todoroki-godai", "evolve-anything", 563)
     t559 = rg.Target("pr", "todoroki-godai", "evolve-anything", 559)
     fetch = make_fetcher({t563.key(): BODY_563, t559.key(): BODY_559})
-    total = rg.target_total_rounds(t563, tmp_path, fetch, [], pending_new_head=None)
-    # body_own_round(#563) = 3 (「巡3の人間承認」) が ledger(0)+predecessor(0) より大きいので採用される
-    assert total == 3
+    assert rg.target_total_rounds(t563, tmp_path, fetch, [], pending_new_head=None) == 3
 
 
 def test_target_total_rounds_predecessor_chain_via_env(tmp_path: Path):
@@ -236,12 +234,11 @@ def test_target_total_rounds_predecessor_chain_via_env(tmp_path: Path):
     assert total == 1 + 2  # b 自身の新規1巡 + a の2巡
 
 
-def test_target_total_rounds_body_wins_when_ledger_lost(tmp_path: Path):
+def test_target_total_rounds_stops_when_ledger_lost(tmp_path: Path):
     # state dir が消失（空）していても、本文の承認行「巡5の人間承認」が5を示せばそちらを採る
     t = rg.Target("pr", "o", "r", 1)
     fetch = make_fetcher({t.key(): "巡5の人間承認\n総上限: 8巡"})
-    total = rg.target_total_rounds(t, tmp_path, fetch, [], pending_new_head="shaX")
-    assert total == 5  # ledger は1（新規1巡）だが body の5が大きいので5
+    assert rg.target_total_rounds(t, tmp_path, fetch, [], pending_new_head="shaX") == 5
 
 
 def test_target_total_rounds_circular_chain_is_indeterminate(tmp_path: Path):
@@ -1116,6 +1113,10 @@ def test_run_gate_pass_and_block_using_real_body(tmp_path: Path, monkeypatch):
             "pr:todoroki-godai/evolve-anything#559": BODY_559,
         }
     )
+    for i in (1, 2, 3):
+        p = tmp_path / f"prior-{i}.state"
+        p.write_text(f"review_target=pr:todoroki-godai/evolve-anything#563\nround={i}\nhead_sha=sha{i}\n")
+    monkeypatch.setattr(rg, "git_head_sha", lambda workdir: "sha3")
     result = rg.run_gate(
         "pr:todoroki-godai/evolve-anything#563",
         "/tmp",

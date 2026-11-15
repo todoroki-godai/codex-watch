@@ -64,7 +64,7 @@ def test_cli_followup_scope_from_ledger(tmp_path, fake_bin, round_no):
         (state / f'prior{i}.state').write_text(
             f'review_target=issue:example-org/example-repo#1\nhead_sha=prior{i}\nstarted_at={i}\nround={i+1}\n')
     (tmp_path / 'fake_gh_body.txt').write_text(
-        '巡3の人間承認 総上限:5' if round_no >= 3 else '')
+        '巡2の人間承認 総上限:5' if round_no >= 3 else '')
     result = cli._run_in_git_workdir(fake_bin, tmp_path, repo,
         review_target='issue:example-org/example-repo#1', review_goal_cut=VALID_GOAL_CUT)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -104,8 +104,8 @@ def test_scope_separates_kinds(tmp_path, fake_bin, prior_kinds, current_kind, ex
     text = next(state.glob('*.prompt.*')).read_text()
     assert text.count(SCOPE) == int(expected)
     run_id = result.stdout.strip().splitlines()[-1]
-    # 総上限の巡数は種別を問わず2のまま。
-    assert 'round=2\n' in (state / f'{run_id}.state').read_text()
+    # 保存も前置きと同じ種別別巡数。
+    assert f'round={2 if expected else 1}\n' in (state / f'{run_id}.state').read_text()
 
 
 @pytest.mark.parametrize('failure', ['unreadable', 'invalid-kind'])
@@ -121,7 +121,7 @@ def test_uncountable_ledger_stops(launcher, tmp_path, fake_bin, failure):
     result = cli._run(fake_bin, tmp_path,
         review_target='issue:example-org/example-repo#1',
         review_goal_cut=VALID_GOAL_CUT, gate_check=False)
-    assert result.returncode == 2, result.stdout + result.stderr
+    assert result.returncode == 5, result.stdout + result.stderr
     assert not (tmp_path / 'argv.txt').exists()
     assert list(state.glob('*.state')) == [prior]
 

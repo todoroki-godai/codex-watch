@@ -33,6 +33,7 @@ def test_ordinary_prose_round2(case):
 @pytest.mark.parametrize('record', ['', 'decision-1'])
 @pytest.mark.parametrize('bad', ['prose', 'conflict', 'malformed'])
 def test_human_approval_with_bad_history(case, monkeypatch, record, bad):
+    (case['state'] / 'third.state').write_text(f'run_id=third\nreview_target={TARGET}\nround=3\nhead_sha={case["data"]["head_sha"]}\n')
     body = case['body'](suffix='\n巡3の人間承認\n総上限: 3巡\n')
     if bad == 'prose':
         body = body.replace('## 巡の履歴', '## 巡の履歴\n受領の説明文')
@@ -53,19 +54,22 @@ def test_human_approval_with_bad_history(case, monkeypatch, record, bad):
 def test_exception_bad_history_falls_back(case, monkeypatch, bad):
     body = case['body']()
     if bad == 'prose':
-        body = body.replace('## 巡の履歴', '## 巡の履歴\n説明文')
+        body = body.replace('## 巡の履歴', '## 巡の履歴\n説明文', 1)
     elif bad == 'conflict':
         body = body.replace('dispatch_id=agent-2', 'dispatch_id=agent-1')
     elif bad == 'malformed':
         body = body.replace('| 2 |', 'unreadable')
     else:
         body = body.replace('## 公開前裁定', rg.render_round_row(
-            3, 'コード', '2026-11-12', '3333333', 'Agent') +
+            3, 'コード', '2026-11-12', '3'*40, 'Agent') +
             ' <!-- dispatch_id=extra -->\n\n## 公開前裁定')
     original = pre.evaluate
     monkeypatch.setattr(pre, 'evaluate', lambda *args, **kwargs:
                         original(*args, **kwargs, registry=case['registry']))
     result = gate(case, body, 'decision-1')
+    if bad == 'prose':
+        assert result['status'] == 'pass' and result['total_round'] == 3, result['message']
+        return
     assert result['status'] == 'blocked' and result['total_round'] == 3
     assert result['prerelease_evidence'] == {} and result['history_round'] is None
     assert '公開前特例不成立' in result['message']
@@ -73,7 +77,7 @@ def test_exception_bad_history_falls_back(case, monkeypatch, bad):
 
 def test_exception_extra_dispatch(case):
     body = case['body']().replace('## 公開前裁定', rg.render_round_row(
-        3, 'コード', '2026-11-12', '3333333', 'Agent') +
+        3, 'コード', '2026-11-12', '3'*40, 'Agent') +
         ' <!-- dispatch_id=extra -->\n\n## 公開前裁定')
     with pytest.raises(ValueError, match='正本履歴と判定巡'):
         evaluate(case, body=body)
