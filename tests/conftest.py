@@ -11,3 +11,9 @@ def offline_aws(tmp_path, monkeypatch):
     aws.write_text('#!/bin/sh\nexit 1\n')
     aws.chmod(0o755)
     monkeypatch.setenv('PATH', str(folder) + os.pathsep + os.environ['PATH'])
+
+
+@pytest.fixture(autouse=True)
+def offline_routing_adapter(tmp_path, monkeypatch):
+    """Existing CLI tests must not execute a user's installed routing adapter."""
+    monkeypatch.setenv('CODEX_REVIEW_ADAPTER', str(tmp_path / 'missing-routing-adapter.py'))

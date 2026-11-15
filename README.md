@@ -163,7 +163,7 @@ GitHubの既定枝commitとローカルorigin/mainの両方でblobを照合し�
 説明文は移動しません。提案を確認してから本文の更新を判断してください。
 
 特例には両方の正本が読めることと全データ行のIDが必要です。ID照合後に同種のdistinct HEADを数え、説明文は読み飛ばします。ID付きの偽区切り・壊れた表は拒否します。本文だけの短縮SHAは完全SHAへ一意に照合できる場合だけ使います。
-保存済みの系列ID・固定総上限は途中で変更できません。前身系列やIDの無い旧行は補完を要求して停止します。Dの振り分け接続は未実装です。
+保存済みの系列ID・固定総上限は途中で変更できません。前身系列やIDの無い旧行は補完を要求して停止します。Dの振り分けは警告のみで接続し、発注を止めません（末尾の計数手順を参照）。
 
 裁定JSONの必須欄は次のとおりです（`tests/test_prerelease.py` に実際に通る一式があります）。
 
@@ -185,3 +185,53 @@ GitHubの既定枝commitとローカルorigin/mainの両方でblobを照合し�
 state・本文行と同じIDなので予約と実績を二重計数しません。予約が残って止まる場合は消さず、発注履歴を確認してください。
 送信後の本線更新まで原子的に止める保証はありません。`CODEX_REVIEW_NO_GATE` との併用は拒否します。
 既存の別系統レビュー・受領照合・Must解消・変異確認・人間によるマージ判断は省略しません。
+
+## D の振り分けを1週間、警告だけで数える
+
+`codex-review` は既存の点検・A/C・公開前特例の再照合と予約の後、発注直前に
+`lib/routing_warn.py` を呼びます。判定が停止相当でも、部品・出力・実行の異常でも発注を続けます。
+標準エラーの `routing警告:` は正常通過を含め1発注1行です。既存ゲートの拒否はそのままです。
+公開前特例の予約は作成・削除せず、既存処理の結果を保持します。
+
+adapter の指定は `CODEX_REVIEW_ADAPTER=/absolute/path/adapter.py`、既定は
+`$HOME/.claude/skills/review-gate/adapter.py` です。`REVIEW_GATE_RECORD` は既存adapterが読む
+発注記録JSONのパスで、未設定でも止めません。別PJも同じ警告経路です。
+adapterへの引数は記録パス、作業場所の順。全体の判定待ちは固定30秒で、超過時はプロセス群を打ち切り、
+`時間切れ` と記録します。先に割込みで後始末を最大0.2秒待ち、それでも残るプロセス群を強制終了します。
+判定・記録のopen/write・stderr全体には呼出し側から31秒の上限を掛けます。待ちで打ち切った記録・警告は欠落する場合があります。外部のtimeoutコマンドは使いません。
+adapter起動前にSIGINTの無視継承を解除します。adapterが別sessionへ切り離した子はそのadapter側の終了処理にも依存します。
+
+`$CODEX_WATCH_DIR/routing-warn.jsonl`（未設定なら `~/.codex-watch/routing-warn.jsonl`）へ1発注1行追記します。
+欄は `dispatch_id / target / kind / time(UTC) / verdict / stopped_at / reasons`。
+verdictは `pass / would_block / error / invalid / timeout / missing`、段は `A / 1 / 2 / 3 / B / null`。
+理由は固定分類のみで、adapterの生出力・本文・資格情報は書きません。未知の理由は「その他の判定理由」です。
+記録先へ書けない場合も発注は続け、同じ警告行に `記録失敗` を添えます。その場合は件数に欠落があります。
+以下は直近7日分を理由ごとに数える読取専用のコマンド（破損行は件数を表示して飛ばす）です。
+
+```sh
+python3 - <<'PY'
+import collections, datetime, json, os, pathlib
+now = datetime.datetime.now(datetime.timezone.utc)
+counts, broken = collections.Counter(), 0
+path = pathlib.Path(os.environ.get("CODEX_WATCH_DIR", str(pathlib.Path.home()/".codex-watch")))/"routing-warn.jsonl"
+for line in path.read_text().splitlines():
+    try:
+        row = json.loads(line)
+        when = datetime.datetime.fromisoformat(row["time"])
+        reasons = row["reasons"]
+        if (not isinstance(reasons, list) or not all(isinstance(r, str) for r in reasons)
+                or row["verdict"] not in ("pass", "would_block", "error", "invalid", "timeout", "missing")
+                or row["stopped_at"] not in (None, "A", "1", "2", "3", "B")):
+            raise ValueError("invalid row")
+        if now-datetime.timedelta(days=7) <= when <= now:
+            counts.update((row["verdict"], row["stopped_at"], reason) for reason in reasons)
+    except (ValueError, TypeError, KeyError):
+        broken += 1
+print(counts)
+print("破損行:", broken)
+PY
+```
+
+戻す場合は `bin/codex-review` の `# D: observation only...` とその直後の `routing_warn.py` 呼出し行を消します。
+これで接続は外れます。未使用となるhelper・専用試験・本節は今回の差分とともに削除可能です。
+既存JSONLと予約を消す必要はありません。停止型への切替は1週間の件数と記録自動化を見て別途判断します。
