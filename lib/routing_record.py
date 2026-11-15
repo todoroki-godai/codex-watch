@@ -208,7 +208,7 @@ def history(body, state_dir, target, run_id, reasons=None):
         if all('family_tags' in e for e in entries):
             event['family_tags'] = sorted({t for e in entries for t in e['family_tags']})
         hashes = {e.get('content_hash') for e in entries}
-        if (all(e['status'] == 'received' for e in entries)
+        if (all(e['status'] == 'received' and 'family_tags' in e for e in entries)
                 and len(heads) == 1 and len(hashes) == 1):
             event.update(status='received', content_hash=next(iter(hashes)),
                          finding_family_tags=sorted({t for e in entries for t in e['finding_family_tags']}))

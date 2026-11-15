@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'lib'))
 import routing_record as rr
 import routing_warn as rw
 from test_routing_record import case, build, PARTS
-from round_gate import EMPTY_SHA256
+from round_gate import EMPTY_SHA256, check_receipt
 
 TARGET = 'issue:org/repo#1'
 SHA = 'a' * 40
@@ -114,6 +114,8 @@ def test_invalid_receipt_json(case, raw):
 def test_receipt_failure_is_fixed_and_private(case, monkeypatch, capsys):
     body, receipts=evidence(case)
     (case[1]/'second.report').write_text('可\nMARKER_TWO\nMARKER_THREE\n')
+    reason=check_receipt(SHA,TREE,(case[1]/'second.report').read_text()).reason
+    assert 'MARKER_TWO' in reason and 'MARKER_THREE' in reason
     monkeypatch.setattr(rr,'gh_fetch_body',lambda _: body_with(body,receipts))
     monkeypatch.setenv('CODEX_REVIEW_ADAPTER',str(PARTS/'adapter.py'))
     monkeypatch.delenv('REVIEW_GATE_RECORD',raising=False)
@@ -173,3 +175,9 @@ def test_duplicate_json_id_cannot_overwrite(case):
     raw=json.dumps(receipts[1]).replace('{', '{"dispatch_id":"first",',1)
     events=rr.history(body_with(body,receipts[:1])+'routing-receipt: '+raw+'\n',case[1],TARGET,'next')
     assert all(e.get('status') != 'received' for e in events)
+
+
+def test_history_family_missing_cannot_be_received(case):
+    body, receipts=evidence(case)
+    body=body.replace('| family |', '| - |')
+    assert all(e.get('status') != 'received' for e in get(case,body,receipts))
