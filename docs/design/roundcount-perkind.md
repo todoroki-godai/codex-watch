@@ -42,9 +42,25 @@ run: roundcount-perkind。開始版 e88a922be2c6b7c90b5ac7ac9f98d647b04e5d35。
 |未発注承認の帰属|㋐明示依頼、㋑既存計数・候補集合を利用、㋒標準比較、㋓㋔追加不要、㋕条件と制限が必要、㋖最小の分岐|
 |回帰試験|㋑既存pytest/fixtureを再利用。再現stateは必要な5項目と承認行だけを固定|
 |変異・影響計測|㋑既存実行器を再利用、㋒trace/hash/diff/mock、㋓gh読取のみ|
+|実行コードの照合|㋐同文字数の変異が変異前キャッシュを読むことを実測、㋑既存traceへ統合、㋒標準compile/types.CodeTypeの構造比較で足りる。試験収集もpycを書かない|
 |新台帳・新依存・特例拡張|㋐不要、作らない|
 
 |環境|経路・設定・データの違い|
 |---|---|
 |dev / stg / prod|巡数処理の環境別分岐は無し。いずれも接続・操作なし|
 |ローカル|隔離stateで検査。実 `~/.codex-watch` と対象本文は読取だけで影響比較|
+
+## 呼出し元・確認範囲
+
+`git grep -n '_target_total_rounds(' -- lib bin tests` の全6行は `.tmp/roundcount-perkind/callers-final.log`。
+製品の呼出し元は `_selected_rounds` の通常計算と互換混算、`_target_total_rounds` 自身の前身再帰と同種実績検査の4箇所。残りは定義と変異文字列。
+通常計算は新しい設計4/コード3・各種別3〜5の境界、互換混算は既存invalid/deficit、前身は既存predecessor/循環/深さ、実績検査は既存pending_cannot_supportで検査する。
+公開API `target_total_rounds` と `run_gate` は `_selected_rounds` を呼ぶ。前置き・stateへ渡す `total_round` の形は同じ。既存CLIのdesign3_code1/predecessor/fallbackと全パッケージ試験を実行する。
+
+## 原因の箇所
+
+開始版の `lib/round_gate.py:697-715` は本文の各承認Nを保存済みround=Nだけで帰属する。
+#2078には未発注のN4のstateが無く、714-715行の候補0で例外となり、626-629行の互換混算へ戻る。設計3の `authority=project_prerelease` はこの分岐の条件にない。
+修正後は716-719行で未発注の1巡だけを扱う。既存候補の不足をpendingで補うことは認めない。
+特例の固定上限照合 `lib/prerelease.py:257-258` は維持する。再現本文の特例JSONはcap3のままなので、開始版の両経路の再実行では混算6の時点で先に「公開前裁定は巡3〜5」の拒否になった。
+cap3の既存特例からcap4へ上げる拒否自体は、隔離fixtureの実 `evaluate` で別に検証する。
