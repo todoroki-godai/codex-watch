@@ -133,7 +133,7 @@ def test_completed_history_round3_dispatch(case):
     c = case
     result = run_cli(c)
     assert result.returncode == 0, result.stdout + result.stderr
-    states = list(c['state'].glob('fixture-*.state'))
+    states = list(c['state'].glob('0-fixture-*.state'))
     assert len(states) == 1
     saved = rg.read_state_file(states[0])
     assert saved['round'] == '3'
@@ -154,7 +154,7 @@ def test_human_approval_ignores_policy_failure(case, monkeypatch):
     monkeypatch.setenv('POLICY_FAIL', '1')
     result = run_cli(c)
     assert result.returncode == 0, result.stdout + result.stderr
-    saved = rg.read_state_file(next(c['state'].glob('fixture-*.state')))
+    saved = rg.read_state_file(next(c['state'].glob('0-fixture-*.state')))
     assert saved['round'] == '3' and saved['authority'] == 'human'
     assert not list(c['state'].glob('*.reservation'))
 
@@ -178,7 +178,7 @@ def test_authority_boundaries(case, mode, monkeypatch):
         c['git']('remote', 'set-url', 'origin', 'https://github.com/other/repo.git')
     result = run_cli(c)
     assert result.returncode != 0, result.stdout + result.stderr
-    assert not list(c['state'].glob('fixture-*.state'))
+    assert not list(c['state'].glob('0-fixture-*.state'))
     assert not (c['tmp'] / 'sent').exists()
 
 

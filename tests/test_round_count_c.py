@@ -21,7 +21,7 @@ def test_design3_code1(case, monkeypatch):
     monkeypatch.delenv('REVIEW_PRERELEASE_RECORD')
     result = run_cli(case)
     assert result.returncode == 0, result.stdout + result.stderr
-    state = rg.read_state_file(next(case['state'].glob('fixture-*.state')))
+    state = rg.read_state_file(next(case['state'].glob('0-fixture-*.state')))
     assert state['round'] == '1'
     assert '今回のレビュー: 巡1（種別: コード）' in open(state['effective_prompt']).read()
     assert '| 1 | コード |' in case['body_file'].read_text()
@@ -114,7 +114,7 @@ def test_cli_predecessor(case, monkeypatch):
     gh.write_text(text)
     result = run_cli(case)
     assert result.returncode == 0, result.stdout + result.stderr
-    state = rg.read_state_file(next(case['state'].glob('fixture-*.state')))
+    state = rg.read_state_file(next(case['state'].glob('0-fixture-*.state')))
     assert state['round'] == '3'
     assert '今回のレビュー: 巡3（種別: コード）' in open(state['effective_prompt']).read()
 
@@ -184,7 +184,7 @@ def test_fallback_cli(case, monkeypatch):
     monkeypatch.delenv('REVIEW_PRERELEASE_RECORD')
     result = run_cli(case)
     assert result.returncode == 0, result.stdout + result.stderr
-    state = rg.read_state_file(next(case['state'].glob('fixture-*.state')))
+    state = rg.read_state_file(next(case['state'].glob('0-fixture-*.state')))
     assert state['round'] == '4'
     assert '今回のレビュー: 巡4（種別: コード）' in open(state['effective_prompt']).read()
     assert '| 4 | コード |' in case['body_file'].read_text()

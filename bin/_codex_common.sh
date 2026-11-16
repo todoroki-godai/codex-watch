@@ -65,8 +65,11 @@ try:
     value = sys.argv[1].strip()
     value.encode("utf-8")
     summary = value[:60]
-    if sys.argv[2] == "issue":
-        status = 0 if any(m.end() <= len(summary) for m in re.finditer(r"#[0-9]+", value)) else 1
+    if sys.argv[2] in ("issue", "issue_value"):
+        match = next((m for m in re.finditer(r"#[0-9]+", value) if m.end() <= len(summary)), None)
+        status = 0 if match else 1
+        if match and sys.argv[2] == "issue_value":
+            print(match.group()[1:])
     else:
         print(summary)
         status = 0
@@ -85,6 +88,18 @@ check_codex_summary_issue() {
     return 2
   fi
   return 0
+}
+
+# 起動名だけに番号を補う。正規化異常も起動は止めず #0 として扱う。
+# label 自体は変換せず、ASCII 数字の境界で同じ番号があるかを見る。
+codex_label_with_issue() {
+  local label="$1" issue
+  issue="$(_codex_summary_normalized issue_value)" || issue=0
+  if [[ "$label" =~ (^|[^0-9])${issue}([^0-9]|$) ]]; then
+    printf '%s\n' "$label"
+  else
+    printf '%s-%s\n' "$issue" "$label"
+  fi
 }
 
 # 任意の説明は既存の単一行化を通し、空なら state にキー自体を書かない。

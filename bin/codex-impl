@@ -173,7 +173,7 @@ PYESTIMATE
 )"
 
 
-RUN_ID="${LABEL}-$(date +%Y%m%d-%H%M%S)-$$"
+RUN_ID="$(codex_label_with_issue "$LABEL")-$(date +%Y%m%d-%H%M%S)-$$"
 LOG_FILE="$STATE_DIR/$RUN_ID.log"
 STATE_FILE="$STATE_DIR/$RUN_ID.state"
 # 最終メッセージだけを別ファイルへ落とす（log 全文を読まずに結論だけ取るため）。
