@@ -140,11 +140,11 @@ if [[ "${CODEX_IMPL_ALLOW_MISSING_NODE_MODULES:-0}" != "1" ]]; then
 fi
 
 # AWS の接続先（AWS_PROFILE / --profile）は依頼文に書かれていてもよい。
-# templates/codex-dev.aws-config が dev・stg 用の名前を同じ dev の一時鍵へ向く別名として
-# 定義しているため、指定されてもそのまま dev（669126230735）へつながる。
-# 本番の名前は定義していないので、指定されれば失敗する（安全側）。
+# PJ の宣言で dev または docs 読み取り専用の1組だけを渡す。
 # 2026-11-06 までは依頼文を文字列で検査して拒否していたが、説明文や削除指示まで止める一方で
 # 行を分けた書き方は通ってしまい、文字列検査では両立しないため撤去した。
+
+prepare_codex_aws_account
 
 # Fail closed before credential preparation or Codex launch; output never includes values.
 python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_impl_aws.py" --check-config "$WORKDIR"
@@ -197,7 +197,7 @@ PYFS
 )"
 SANDBOX_ARGS+=(-c "$FILESYSTEM")
 # Capture only in process memory. Failure to run the helper stops launch, never inherits keys.
-AWS_ENV_UPDATES="$(python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_impl_aws.py")"
+AWS_ENV_UPDATES="$(python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_impl_aws.py" "$CODEX_AWS_ACCOUNT")"
 eval "$AWS_ENV_UPDATES"
 unset AWS_ENV_UPDATES
 

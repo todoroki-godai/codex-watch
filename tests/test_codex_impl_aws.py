@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import time
 import tomllib
@@ -9,6 +10,7 @@ import tomllib
 import pytest
 
 ROOT = Path(os.environ.get('CODEX_AWS_TEST_ROOT', Path(__file__).resolve().parents[1]))
+REAL_AWS = shutil.which('aws')  # Resolve before autouse offline PATH shielding.
 SECRETS = ['AKIA_FAKE_SENTINEL', 'secret_FAKE_SENTINEL', 'token_FAKE_SENTINEL']
 
 
@@ -30,11 +32,41 @@ def launch(tmp_path):
     executable(fake / 'git', '''import os,sys
 if '--absolute-git-dir' in sys.argv: print(os.environ['TEST_GITDIR'])
 elif '--git-common-dir' in sys.argv: print(os.environ['TEST_COMMON'])
+elif '--show-toplevel' in sys.argv: print(os.environ['TEST_WORK'])
 else: sys.exit(128)
 ''')
     executable(fake / 'aws', '''import json,os,sys
 from pathlib import Path
 with Path(os.environ['TEST_CALLS']).open('a') as f: f.write(json.dumps(sys.argv[1:])+'\\n')
+docs=os.environ.get('TEST_DOCS_MODE','assume-fail')
+if 'export-credentials' in sys.argv and 'aws-updater-bc-dev' in sys.argv:
+    Path(os.environ['TEST_DOCS_PROBE']).write_text('true')
+    print(json.dumps({'AccessKeyId':'admin_DUMMY_key','SecretAccessKey':'admin_DUMMY_secret','SessionToken':'admin_DUMMY_token','Expiration':'2099-01-02T03:04:05Z'})); sys.exit(0)
+if 'get-caller-identity' in sys.argv and os.environ.get('AWS_ACCESS_KEY_ID')=='admin_DUMMY_key':
+    print(json.dumps({'Account':'670352692792','Arn':'arn:aws:sts::670352692792:assumed-role/AWSReservedSSO_AdministratorAccess_x/admin'})); sys.exit(0)
+if 'assume-role' in sys.argv or ('get-caller-identity' in sys.argv and os.environ.get('AWS_ACCESS_KEY_ID')=='DOCS_FAKE_KEY'):
+    Path(os.environ['TEST_DOCS_PROBE']).write_text(json.dumps(not any(k.startswith('CODEX_AWS_DOCS_') for k in os.environ)))
+    assert not any(k.startswith('CODEX_AWS_DOCS_') for k in os.environ)
+    if 'assume-role' in sys.argv:
+        assert sys.argv[sys.argv.index('--profile')+1]=='aws-updater-bc-dev'
+        assert sys.argv[sys.argv.index('--role-arn')+1]=='arn:aws:iam::670352692792:role/codex-readonly'
+        if docs=='assume-fail': sys.exit(1)
+        v={'AccessKeyId':'DOCS_FAKE_KEY','SecretAccessKey':'DOCS_FAKE_SECRET','SessionToken':'DOCS_FAKE_TOKEN','Expiration':'2099-01-02T03:04:05Z'}
+        if docs=='expired': v['Expiration']='2000-01-01T00:00:00Z'
+        if docs=='missing': del v['SessionToken']
+        if docs=='quoted': v['SecretAccessKey']='quote"'+chr(92)+'back$(touch${IFS}'+os.environ['TEST_MARKER']+')'
+        print(json.dumps({'Credentials':v})); sys.exit(0)
+    assert '--profile' not in sys.argv and 'AWS_PROFILE' not in os.environ
+    assert os.environ['AWS_SHARED_CREDENTIALS_FILE']=='/dev/null'
+    assert os.environ['AWS_SESSION_TOKEN']=='DOCS_FAKE_TOKEN'
+    account=docs if docs in ('669126230735','682251233834') else '670352692792'
+    arn='arn:aws:sts::670352692792:assumed-role/codex-readonly/codex-impl'
+    if docs=='admin': arn='arn:aws:sts::670352692792:assumed-role/AWSReservedSSO_AdministratorAccess_x/admin'
+    if docs=='prefix': arn='arn:aws:sts::670352692792:assumed-role/codex-readonly-evil/probe'
+    if docs=='partition': arn=arn.replace('arn:aws:', 'arn:aws-cn:')
+    if docs=='arn-account': arn=arn.replace('670352692792', '682251233834')
+    if docs=='sts-fail': sys.exit(1)
+    print(json.dumps({'Account':account,'Arn':arn})); sys.exit(0)
 if sys.argv[1] != 'sts': assert sys.argv[-2:] == ['--profile','aws-updater-index-stg']
 assert 'AWS_ENDPOINT_URL_STS' not in os.environ
 mode=os.environ.get('TEST_MODE','ok')
@@ -64,6 +96,9 @@ sys.stdin.read()
 expected=['AKIA_FAKE_SENTINEL','secret_FAKE_SENTINEL','token_FAKE_SENTINEL']
 if os.environ.get('TEST_MODE')=='injection': expected[1]="quote$(touch${IFS}" + os.environ['TEST_MARKER'] + ")"
 names=['AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','AWS_SESSION_TOKEN']
+doc_names=['CODEX_AWS_DOCS_'+n for n in ('ACCESS_KEY_ID','SECRET_ACCESS_KEY','SESSION_TOKEN')]
+doc_values=['DOCS_FAKE_KEY','DOCS_FAKE_SECRET','DOCS_FAKE_TOKEN']
+if os.environ.get('TEST_DOCS_MODE')=='quoted': doc_values[1]='quote"'+chr(92)+'back$(touch${IFS}'+os.environ['TEST_MARKER']+')'
 # Offline model of documented inherit -> default exclude -> exclude -> set -> include.
 policy={'inherit':'all','ignore_default_excludes':True,'set':{}}
 user_config=Path(os.environ['HOME'])/'.codex/config.toml'
@@ -85,22 +120,51 @@ if policy.get('include_only'): shell={k:v for k,v in shell.items() if matches(k,
 r={'argv':sys.argv[1:], 'shell_keys_match':all(shell.get(k)==v for k,v in zip(names,expected)), 'shell_keys_absent':all(k not in shell for k in names), 'shell_prod_absent':not any(v.startswith('prod_DUMMY_') for v in shell.values()), 'keys_match':all(os.environ.get(k)==v for k,v in zip(names,expected)),
    'keys_absent':all(k not in os.environ for k in names),
    'env':{k:v for k,v in os.environ.items() if k.startswith('AWS_') and k not in names}}
+r.update(docs_match=all(shell.get(k)==v for k,v in zip(names,doc_values)),
+         docs_absent=all(k not in shell for k in doc_names))
+# Only boolean observations persist; real CLI coverage is tested separately.
+if os.environ.get('TEST_REAL_AWS'):
+    import subprocess
+    r['real_exports'] = {}
+    want = doc_values if os.environ.get('TEST_DOCS_MODE') == 'ok' else expected
+    for form in ('env','flag'):
+        for alias in ('codex-dev','codex-docs-ro','aws-updater-bc-dev','aws-updater-index-stg'):
+            env = {k:v for k,v in os.environ.items() if k.startswith('AWS_')}
+            env.update(PATH='/nonexistent', HOME='/nonexistent')
+            cmd = [os.environ['TEST_REAL_AWS'], 'configure', 'export-credentials', '--format', 'process']
+            env.pop('AWS_PROFILE', None)
+            if form == 'env': env['AWS_PROFILE'] = alias
+            else: cmd += ['--profile',alias]
+            result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            try: match = all(json.loads(result.stdout).get(k)==v for k,v in zip(('AccessKeyId','SecretAccessKey','SessionToken'),want))
+            except ValueError: match = False
+            r['real_exports'][form+':'+alias] = result.returncode != 0 if alias=='aws-updater-index-stg' else result.returncode==0 and match
 p=Path(os.environ['TEST_CAPTURE'])
 p.write_text(json.dumps(r))
 Path(os.environ['TEST_DONE']).touch()
 ''')
-    def run(mode='ok', extra=None, *, config_text=None, config_at='home', reject=False, unreadable=False):
+    def run(mode='ok', extra=None, *, config_text=None, config_at='home', reject=False, unreadable=False, declaration=None):
+        if declaration is not None:
+            target = work / '.claude/codex-aws-account'
+            target.parent.mkdir(exist_ok=True)
+            if declaration == 'directory': target.mkdir()
+            elif declaration == 'dangling': target.symlink_to(work / 'missing')
+            elif isinstance(declaration, bytes): target.write_bytes(declaration)
+            else: target.write_text(declaration)
         state = tmp_path / 'state'
         env = {k:v for k,v in os.environ.items() if not k.startswith(('AWS_', 'CODEX_', 'GH_', 'GITHUB_'))}
         env.update(PATH=f'{fake}:{env["PATH"]}', HOME=str(tmp_path / 'home'),
                    CODEX_WATCH_DIR=str(state), CODEX_SUMMARY='#0', CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1',
-                   TEST_GITDIR=gitdir, TEST_COMMON=common, TEST_MODE=mode,
+                   TEST_WORK=str(work), TEST_GITDIR=gitdir, TEST_COMMON=common, TEST_MODE=mode,
                    TEST_CAPTURE=str(tmp_path / 'capture'), TEST_CALLS=str(tmp_path / 'calls'),
+                   TEST_DOCS_PROBE=str(tmp_path / 'docs-probe'),
                    TEST_MARKER=str(tmp_path / 'injected'), TEST_DONE=str(tmp_path / 'done'),
                    AWS_ACCESS_KEY_ID='parent_key', AWS_SECRET_ACCESS_KEY='parent_secret',
                    AWS_SESSION_TOKEN='parent_token', AWS_PROFILE='wrong-profile',
                    AWS_DEFAULT_PROFILE='prod', AWS_CONTAINER_CREDENTIALS_FULL_URI='http://unwanted',
                    AWS_ENDPOINT_URL_STS='http://unwanted')
+        if os.environ.get('CODEX_MUTATION_TRACE'):
+            env['CODEX_MUTATION_TRACE'] = os.environ['CODEX_MUTATION_TRACE']
         env.update(extra or {})
         if extra and extra.get('TEST_EXISTING_SET'):
             config_text = '[shell_environment_policy.set]\nAWS_ACCESS_KEY_ID="prod_DUMMY_key"\nAWS_SECRET_ACCESS_KEY="prod_DUMMY_secret"\nAWS_SESSION_TOKEN="prod_DUMMY_token"\nAWS_ENDPOINT_URL="prod_DUMMY_endpoint"\n'
@@ -136,15 +200,18 @@ Path(os.environ['TEST_DONE']).touch()
             time.sleep(.02)
         assert (tmp_path / 'done').exists(), result.stderr
         child = json.loads((tmp_path / 'capture').read_text())
+        if declaration == 'docs-ro':
+            assert (tmp_path / 'docs-probe').exists(), 'docs verification was not attempted'
+            assert json.loads((tmp_path / 'docs-probe').read_text()), 'docs parent keys reached AWS probe'
         fields = dict(line.split('=',1) for line in next(state.glob('*.state')).read_text().splitlines())
         emitted = (result.stdout + result.stderr).encode() + b''.join(p.read_bytes() for p in state.rglob('*') if p.is_file())
-        for secret in SECRETS + ['parent_key','parent_secret','parent_token']:
+        for secret in SECRETS + ['parent_key','parent_secret','parent_token', 'DOCS_FAKE_KEY', 'DOCS_FAKE_SECRET', 'DOCS_FAKE_TOKEN', 'admin_DUMMY_key', 'admin_DUMMY_secret', 'admin_DUMMY_token']:
             assert secret.encode() not in emitted
             assert secret not in json.dumps(child['argv'])
         assert not (tmp_path / 'injected').exists()
         calls = [json.loads(line) for line in (tmp_path / 'calls').read_text().splitlines()]
         return child, fields, calls
-    run.common, run.gitdir = common, gitdir
+    run.common, run.gitdir, run.work = common, gitdir, work
     return run
 
 
@@ -161,6 +228,7 @@ def settings(child):
 def test_positive_permissions_environment(launch):
     child, fields, calls = launch()
     assert child['keys_match']
+    assert child['docs_absent']
     assert fields['aws'] == 'dev-669126230735'
     assert fields['aws_expiration'] == '2099-01-02T03:04:05+00:00'
     assert len(calls) == 2
@@ -190,7 +258,7 @@ def test_positive_permissions_environment(launch):
                                       'profile aws-updater-bc-dev'}
     assert all(config[section]['region'] == 'ap-northeast-1' for section in config.sections())
     assert 'credential_process' not in config['profile codex-dev']
-    for alias in ('aws-updater-index-stg', 'aws-updater-bc-dev'):
+    for alias in ('aws-updater-index-stg',):
         process = config['profile ' + alias]['credential_process']
         assert all(key in process for key in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'))
         assert '--profile' not in process
@@ -250,7 +318,136 @@ def test_unreadable_config_rejected(launch):
 
 
 def test_safe_set_launches(launch):
-    child, fields, _ = launch(config_text='[shell_environment_policy.set]\nAWS_PROFILE="other-profile"\nPATH="/safe/path"')
+    child, fields, _ = launch(config_text='[shell_environment_policy.set]\nAWS_PROFILE="other-profile"\nLANG="C"')
     assert fields['aws'] == 'dev-669126230735'
     assert child['keys_match']
     assert 'shell_environment_policy.set.AWS_PROFILE="codex-dev"' in child['argv']
+
+
+@pytest.mark.parametrize('docs', ['ok', 'quoted'])
+def test_docs_verified_credentials_and_aliases(launch, docs):
+    child, fields, calls = launch(extra={'TEST_DOCS_MODE': docs}, declaration='docs-ro')
+    assert not child['keys_match'] and child['docs_match'] and child['docs_absent']
+    assert fields['aws'] == 'docs-ro-670352692792'
+    assert fields['aws_expiration'] == '2099-01-02T03:04:05+00:00'
+    assert len(calls) == 2  # No dev export is even attempted.
+    assert calls[0][1] == 'assume-role'
+    assert calls[1] == ['sts', 'get-caller-identity', '--output', 'json']
+
+
+@pytest.mark.parametrize('docs', ['assume-fail', '669126230735', '682251233834',
+                                 'admin', 'prefix', 'partition', 'arn-account',
+                                 'expired', 'missing', 'sts-fail'])
+def test_docs_failure_never_falls_back(launch, docs):
+    child, fields, calls = launch(extra={'TEST_DOCS_MODE': docs,
+        'CODEX_AWS_DOCS_ACCESS_KEY_ID': 'admin_DUMMY_key',
+        'CODEX_AWS_DOCS_SECRET_ACCESS_KEY': 'admin_DUMMY_secret',
+        'CODEX_AWS_DOCS_SESSION_TOKEN': 'admin_DUMMY_token'}, declaration='docs-ro')
+    assert child['keys_absent'] and child['docs_absent']
+    assert fields['aws'] == 'none' and fields['aws_expiration'] == ''
+    assert all(call[0] == 'sts' for call in calls)
+
+
+@pytest.mark.parametrize('declaration', ['', 'dev', 'docs-ro\ndev', 'directory', 'dangling', b'\xff', b'docs-ro\xff'])
+def test_invalid_declaration_rejected(launch, declaration):
+    launch(declaration=declaration, reject=True)
+
+
+@pytest.mark.parametrize('parent_exists', [False, True])
+def test_absent_declaration_uses_dev(launch, parent_exists):
+    if parent_exists:
+        (launch.work / '.claude').mkdir()
+    child, fields, calls = launch()
+    assert child['keys_match'] and child['docs_absent']
+    assert fields['aws'] == 'dev-669126230735'
+    assert len(calls) == 2
+
+
+def test_unsearchable_declaration_parent_rejected(launch):
+    assert os.geteuid() != 0, 'permission test requires non-root'
+    parent = launch.work / '.claude'
+    parent.mkdir()
+    target = parent / 'codex-aws-account'
+    target.write_text('docs-ro')
+    parent.chmod(0o000)
+    try:
+        with pytest.raises(PermissionError):
+            target.lstat()
+        result = launch(reject=True)
+        assert 'AWS 名義' in result.stderr
+    finally:
+        parent.chmod(0o700)
+
+
+def test_nondirectory_declaration_parent_rejected(launch):
+    (launch.work / '.claude').write_text('docs-ro')
+    result = launch(reject=True)
+    assert 'AWS 名義' in result.stderr
+
+
+def test_symlink_cycle_declaration_rejected(launch):
+    # Cycle in an ancestor defeats both -e and -L on the declaration path.
+    (launch.work / '.claude').symlink_to('.claude')
+    result = launch(reject=True)
+    assert 'AWS 名義' in result.stderr
+
+
+def test_nul_declaration_rejected(launch):
+    launch(declaration=b'docs-ro\x00', reject=True)
+
+
+def test_dev_template_matches_baseline():
+    baseline = subprocess.check_output(
+        ['git', 'show', '381a490:templates/codex-dev.aws-config'],
+        cwd=Path(__file__).resolve().parents[1])
+    assert (ROOT / 'templates/codex-dev.aws-config').read_bytes() == baseline
+
+
+@pytest.mark.parametrize('scope', ['', 'profiles.unselected.'])
+@pytest.mark.parametrize('key', ['ACCESS_KEY_ID', 'SECRET_ACCESS_KEY', 'SESSION_TOKEN', 'UNKNOWN'])
+def test_docs_config_reinjection_rejected(launch, scope, key):
+    launch(config_text=f'[{scope}shell_environment_policy.set]\nCODEX_AWS_DOCS_{key}="admin_DUMMY_key"', reject=True)
+
+
+def test_docs_independent_of_dev_failure(launch):
+    child, fields, _ = launch('export-fail', {'TEST_DOCS_MODE': 'ok'}, declaration='docs-ro')
+    assert not child['keys_match'] and child['docs_match']
+    assert fields['aws'] == 'docs-ro-670352692792'
+
+
+@pytest.mark.parametrize('docs,names', [
+    (False, ('codex-dev', 'aws-updater-index-stg', 'aws-updater-bc-dev')),
+    (True, ('codex-dev', 'codex-docs-ro', 'aws-updater-bc-dev', 'aws-updater-index-stg')),
+])
+@pytest.mark.parametrize('form', ['env', 'flag'])
+def test_real_export_credentials(tmp_path, docs, names, form):
+    aws = REAL_AWS
+    assert aws, 'real AWS CLI is required; do not skip'
+    config = ROOT / ('templates/codex-docs-ro.aws-config' if docs else 'templates/codex-dev.aws-config')
+    for name in names:
+        env = dict(PATH='/nonexistent', HOME='/nonexistent',
+                   AWS_CONFIG_FILE=str(config), AWS_SHARED_CREDENTIALS_FILE='/dev/null',
+                   AWS_EC2_METADATA_DISABLED='true',
+                   AWS_ACCESS_KEY_ID='DOCSFAKEKEY' if docs else 'DEVFAKEKEY',
+                   AWS_SECRET_ACCESS_KEY='quote"\\secret' if docs else 'devsecret',
+                   AWS_SESSION_TOKEN='docstok' if docs else 'devtok')
+        if os.environ.get('CODEX_MUTATION_TRACE'):
+            env['CODEX_MUTATION_TRACE'] = os.environ['CODEX_MUTATION_TRACE']
+        cmd = [aws, 'configure', 'export-credentials', '--format', 'process']
+        if form == 'env': env['AWS_PROFILE'] = name
+        else: cmd += ['--profile', name]
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=10)
+        if (docs and name == 'aws-updater-index-stg') or (not docs and form == 'flag' and name == 'codex-dev'):
+            assert result.returncode != 0
+        else:
+            assert result.returncode == 0, (name, form, result.stderr)
+            data = json.loads(result.stdout)
+            assert data['AccessKeyId'] == env['AWS_ACCESS_KEY_ID']
+            assert data['SecretAccessKey'] == env['AWS_SECRET_ACCESS_KEY']
+            assert data['SessionToken'] == env['AWS_SESSION_TOKEN']
+
+
+def test_docs_launch_real_export(launch):
+    assert REAL_AWS, 'real AWS CLI required'
+    child, fields, calls = launch(extra={'TEST_DOCS_MODE':'ok', 'TEST_REAL_AWS':REAL_AWS}, declaration='docs-ro')
+    assert all(child['real_exports'].values()), child['real_exports']

@@ -38,13 +38,14 @@ def check_codex_config(workdir):
                 overrides = policy.get('set', {})
                 if not isinstance(overrides, dict):
                     raise ValueError('invalid set')
-                if any(key.startswith('AWS_') and key != 'AWS_PROFILE' for key in overrides):
-                    sys.exit('拒否: Codex 設定の set に AWS_PROFILE 以外の AWS_ キーがあります')
+                if any((key.startswith('AWS_') and key != 'AWS_PROFILE') or
+                       key.startswith('CODEX_AWS_DOCS_') for key in overrides):
+                    sys.exit('拒否: Codex 設定の set に AWS_PROFILE 以外の AWS_ または CODEX_AWS_DOCS_ キーがあります')
         except (OSError, ValueError):
             sys.exit('拒否: Codex 設定を読み取り・解析できず判定不能です')
 
 
-def prepare(config):
+def prepare(config, docs=False):
     updates = {
         'AWS_CONFIG_FILE': config, 'AWS_SHARED_CREDENTIALS_FILE': '/dev/null',
         'AWS_REGION': 'ap-northeast-1', 'AWS_DEFAULT_REGION': 'ap-northeast-1',
@@ -56,10 +57,17 @@ def prepare(config):
         probe_env = {k: v for k, v in os.environ.items()
                      if not k.startswith('AWS_ENDPOINT_URL')}
         probe_env['AWS_IGNORE_CONFIGURED_ENDPOINT_URLS'] = 'true'
+        command = (['aws', 'sts', 'assume-role', '--profile', 'aws-updater-bc-dev',
+                    '--role-arn', 'arn:aws:iam::670352692792:role/codex-readonly',
+                    '--role-session-name', 'codex-impl', '--duration-seconds', '3600',
+                    '--output', 'json'] if docs else
+                   ['aws', 'configure', 'export-credentials', '--format', 'process',
+                    '--profile', 'aws-updater-index-stg'])
         data = json.loads(subprocess.run(
-            ['aws', 'configure', 'export-credentials', '--format', 'process',
-             '--profile', 'aws-updater-index-stg'], env=probe_env,
+            command, env=probe_env,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30, check=True).stdout)
+        if docs:
+            data = data['Credentials']
         keys = {'AWS_ACCESS_KEY_ID': 'AccessKeyId',
                 'AWS_SECRET_ACCESS_KEY': 'SecretAccessKey', 'AWS_SESSION_TOKEN': 'SessionToken'}
         credentials = {name: data[field] for name, field in keys.items()}
@@ -72,21 +80,27 @@ def prepare(config):
         # Freeze one export. STS must authenticate precisely these credentials;
         # no profile, parent AWS variable, endpoint, or on-disk credential source.
         identity_env = {k: v for k, v in os.environ.items() if not k.startswith('AWS_')}
-        identity_env.update(updates)
-        identity_env.pop('AWS_PROFILE')
+        identity_env.update(AWS_CONFIG_FILE=config, AWS_SHARED_CREDENTIALS_FILE='/dev/null',
+                            AWS_EC2_METADATA_DISABLED='true', AWS_REGION='ap-northeast-1')
         identity_env.update(credentials)
         identity_env['AWS_IGNORE_CONFIGURED_ENDPOINT_URLS'] = 'true'
         account = subprocess.run(
-            ['aws', 'sts', 'get-caller-identity', '--query', 'Account', '--output', 'text'],
+            ['aws', 'sts', 'get-caller-identity', *(['--output', 'json'] if docs else
+             ['--query', 'Account', '--output', 'text'])],
             env=identity_env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             timeout=30, check=True).stdout
-        if account.decode().strip() == '669126230735':
+        identity = json.loads(account) if docs else {}
+        verified = (identity['Account'] == '670352692792' and
+                    identity['Arn'].startswith('arn:aws:sts::670352692792:assumed-role/codex-readonly/')
+                    if docs else account.decode().strip() == '669126230735')
+        if verified:
             # STS may take time; do not publish credentials that expired during it.
             if expiration <= dt.datetime.now(dt.timezone.utc):
                 raise ValueError('invalid expiration')
             updates.update(credentials)
-            updates['CODEX_IMPL_AWS_STATE'] = 'dev-669126230735'
-            updates['CODEX_IMPL_AWS_EXPIRATION'] = expiration.isoformat()
+            state = 'CODEX_IMPL_AWS'
+            updates[state + '_STATE'] = 'docs-ro-670352692792' if docs else 'dev-669126230735'
+            updates[state + '_EXPIRATION'] = expiration.isoformat()
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, AttributeError):
         pass  # No raw exception/output: either can contain credentials.
     return updates
@@ -96,11 +110,17 @@ if __name__ == '__main__':
     if len(sys.argv) == 3 and sys.argv[1] == '--check-config':
         check_codex_config(sys.argv[2])
         sys.exit(0)
-    config = str(Path(__file__).resolve().parents[1] / 'templates/codex-dev.aws-config')
-    updates = prepare(config)
+    docs = sys.argv[1:] == ['docs-ro']
+    config = str(Path(__file__).resolve().parents[1] /
+                 ('templates/codex-docs-ro.aws-config' if docs else 'templates/codex-dev.aws-config'))
+    inherited_names = list(os.environ)
+    for name in inherited_names:
+        if name.startswith('CODEX_AWS_DOCS_'):
+            del os.environ[name]
+    updates = prepare(config, docs=docs)
     # The only eval input is generated statements with shlex-quoted values.
-    for name in os.environ:
-        if name.startswith('AWS_') and name.isidentifier() and name.isascii():
+    for name in inherited_names:
+        if name.startswith(('AWS_', 'CODEX_AWS_DOCS_')) and name.isidentifier() and name.isascii():
             print('unset ' + name)
     for name, value in updates.items():
         print('export ' + name + '=' + shlex.quote(value))

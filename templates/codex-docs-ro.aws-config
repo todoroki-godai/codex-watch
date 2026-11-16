@@ -1,0 +1,12 @@
+# PJ 宣言 docs-ro 専用。照合済みの環境鍵1組だけを使う。stg は定義しない。
+[profile codex-dev]
+region = ap-northeast-1
+credential_process = /bin/sh -c 'escape() { printf '"'"'%s'"'"' "$1" | /usr/bin/sed '"'"'s/\\/\\\\/g; s/"/\\"/g'"'"'; }; [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_SESSION_TOKEN" ] || exit 1; printf '"'"'{"Version":1,"AccessKeyId":"%s","SecretAccessKey":"%s","SessionToken":"%s"}'"'"' "$(escape "$AWS_ACCESS_KEY_ID")" "$(escape "$AWS_SECRET_ACCESS_KEY")" "$(escape "$AWS_SESSION_TOKEN")"'
+
+[profile codex-docs-ro]
+region = ap-northeast-1
+credential_process = /bin/sh -c 'escape() { printf '"'"'%s'"'"' "$1" | /usr/bin/sed '"'"'s/\\/\\\\/g; s/"/\\"/g'"'"'; }; [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_SESSION_TOKEN" ] || exit 1; printf '"'"'{"Version":1,"AccessKeyId":"%s","SecretAccessKey":"%s","SessionToken":"%s"}'"'"' "$(escape "$AWS_ACCESS_KEY_ID")" "$(escape "$AWS_SECRET_ACCESS_KEY")" "$(escape "$AWS_SESSION_TOKEN")"'
+
+[profile aws-updater-bc-dev]
+region = ap-northeast-1
+credential_process = /bin/sh -c 'escape() { printf '"'"'%s'"'"' "$1" | /usr/bin/sed '"'"'s/\\/\\\\/g; s/"/\\"/g'"'"'; }; [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$AWS_SESSION_TOKEN" ] || exit 1; printf '"'"'{"Version":1,"AccessKeyId":"%s","SecretAccessKey":"%s","SessionToken":"%s"}'"'"' "$(escape "$AWS_ACCESS_KEY_ID")" "$(escape "$AWS_SECRET_ACCESS_KEY")" "$(escape "$AWS_SESSION_TOKEN")"'
