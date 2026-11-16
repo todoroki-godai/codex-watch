@@ -201,6 +201,7 @@ Path(os.environ['TEST_DONE']).touch()
         assert (tmp_path / 'done').exists(), result.stderr
         child = json.loads((tmp_path / 'capture').read_text())
         if declaration == 'docs-ro':
+            assert (tmp_path / 'docs-probe').exists(), 'docs verification was not attempted'
             assert json.loads((tmp_path / 'docs-probe').read_text()), 'docs parent keys reached AWS probe'
         fields = dict(line.split('=',1) for line in next(state.glob('*.state')).read_text().splitlines())
         emitted = (result.stdout + result.stderr).encode() + b''.join(p.read_bytes() for p in state.rglob('*') if p.is_file())

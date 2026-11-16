@@ -83,7 +83,7 @@ for name, filename, old, new, select in cases:
     for sub in ('bin', 'lib', 'templates'):
         shutil.copytree(ROOT / sub, folder / sub, ignore=shutil.ignore_patterns('__pycache__'))
     original = (folder / filename).read_text()
-    assert original.count(old) == (2 if name == 'accept-expired' else 3 if filename == 'templates/codex-docs-ro.aws-config' else 1), (name, old)
+    assert original.count(old) == (2 if name == 'accept-expired' else 6 if name == 'docs-template-dev-key' else 3 if filename == 'templates/codex-docs-ro.aws-config' else 1), (name, old)
     mutated = original.replace(old, new)
     if name == 'docs-export-head-profile':
         mutated = mutated.replace("data = data['Credentials']", "data = data.get('Credentials', data)")
