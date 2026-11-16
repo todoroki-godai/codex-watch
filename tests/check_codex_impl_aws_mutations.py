@@ -125,6 +125,14 @@ for name, filename, old, new, select in cases:
                   changed_lines=sorted(changed), executed_changed_lines=hit, command=command, exit=result.returncode, ok=ok,
                   transformation={'file':filename,'old':old,'new':new},
                   summary=result.stdout.strip().splitlines()[-1])
+    # Restore the isolated copy too; preserve only diff/trace/test evidence.
+    restored = []
+    for relative in dict.fromkeys((filename, 'bin/codex-impl')):
+        target = folder / relative
+        target.write_bytes((ROOT / relative).read_bytes())
+        restored.append(target.read_bytes() == (ROOT / relative).read_bytes())
+    record['restored'] = all(restored)
+    record['ok'] = record['ok'] and record['restored']
     results.append(record)
     print(json.dumps(record, ensure_ascii=False), flush=True)
     (OUT / 'results.json').write_text(json.dumps(results, ensure_ascii=False, indent=2))
