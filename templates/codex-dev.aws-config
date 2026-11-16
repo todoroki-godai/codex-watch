@@ -1,8 +1,18 @@
-# codex-impl 専用。dev/stg は dev 鍵、docs の2別名は照合済み assume-role 鍵だけを使う。
-# docs は --profile を明示する。AWS_PROFILE だけでは dev の標準環境変数が優先される。
-# 本番の名前は定義しない。~/.aws は読めない。鍵を引数へ展開しない。
+# codex-impl が Codex へ渡す唯一の AWS 設定（~/.aws は読めない）。
+# 鍵は codex_impl_aws.py が環境変数で渡す dev（669126230735）の一時鍵だけ。
+#
+# codex-dev 以外の2つは、依頼文や手順書によく書かれる dev・stg 用の名前の別名。
+# 同じ dev の一時鍵へ向く。これが無いと、依頼文が接続先を指定した時点で
+# "The config profile (...) could not be found" で必ず失敗する（同型の空振りが4回）。
+# 本番の名前（aws-updater-index-prod）は意図的に定義しない＝指定されたら失敗する。
+#
+# AWS_PROFILE= で指定された場合は環境変数の鍵がそのまま使われるが、
+# --profile で指定された場合はコマンド行が優先して環境変数の鍵を見ないため、
+# credential_process で環境変数から取り出し直す（鍵の値は引数に出さない）。
+# 鍵が1つでも空なら、空の鍵を返さずに非ゼロで終える（原因が分からない認証失敗を作らない）。
 [profile codex-dev]
 region = ap-northeast-1
+credential_process = /bin/sh -c 'if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_SESSION_TOKEN" ]; then echo "codex-impl: dev の一時鍵が環境にありません（頭の aws-updater-index-stg が切れている可能性）" >&2; exit 1; fi; printf "{\"Version\":1,\"AccessKeyId\":\"%s\",\"SecretAccessKey\":\"%s\",\"SessionToken\":\"%s\"}" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$AWS_SESSION_TOKEN"'
 
 [profile aws-updater-index-stg]
 region = ap-northeast-1
@@ -10,8 +20,4 @@ credential_process = /bin/sh -c 'if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SE
 
 [profile aws-updater-bc-dev]
 region = ap-northeast-1
-credential_process = python3 -c 'import json,os,sys; names=("ACCESS_KEY_ID","SECRET_ACCESS_KEY","SESSION_TOKEN"); values=[os.environ.get("CODEX_AWS_DOCS_"+n,"") for n in names]; all(values) or sys.exit("docs-platform の読み取り鍵がありません"); print(json.dumps(dict(zip(("Version","AccessKeyId","SecretAccessKey","SessionToken"),(1,*values)))))'
-
-[profile codex-docs-ro]
-region = ap-northeast-1
-credential_process = python3 -c 'import json,os,sys; names=("ACCESS_KEY_ID","SECRET_ACCESS_KEY","SESSION_TOKEN"); values=[os.environ.get("CODEX_AWS_DOCS_"+n,"") for n in names]; all(values) or sys.exit("docs-platform の読み取り鍵がありません"); print(json.dumps(dict(zip(("Version","AccessKeyId","SecretAccessKey","SessionToken"),(1,*values)))))'
+credential_process = /bin/sh -c 'if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_SESSION_TOKEN" ]; then echo "codex-impl: dev の一時鍵が環境にありません（頭の aws-updater-index-stg が切れている可能性）" >&2; exit 1; fi; printf "{\"Version\":1,\"AccessKeyId\":\"%s\",\"SecretAccessKey\":\"%s\",\"SessionToken\":\"%s\"}" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$AWS_SESSION_TOKEN"'

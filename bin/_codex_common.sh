@@ -265,3 +265,27 @@ codex_github_account_state() {
   [[ -n "$CODEX_GITHUB_ACCOUNT" ]] && printf 'github_account=%s\n' "$CODEX_GITHUB_ACCOUNT"
   return 0
 }
+
+# GitHub 名義と同じ PJ 宣言境界。未宣言だけが従来の dev 動作。
+prepare_codex_aws_account() {
+  CODEX_AWS_ACCOUNT=""
+  local root declaration
+  root="$(git -C "$WORKDIR" rev-parse --show-toplevel 2>/dev/null || true)"
+  [[ -n "$root" ]] || return 0
+  declaration="$root/.claude/codex-aws-account"
+  [[ -e "$declaration" || -L "$declaration" ]] || return 0
+  if ! CODEX_AWS_ACCOUNT="$(python3 - "$declaration" <<'PYAWSACCOUNT'
+import pathlib, sys
+try:
+    account = pathlib.Path(sys.argv[1]).read_text().strip()
+except (OSError, UnicodeError):
+    sys.exit(1)
+if account != 'docs-ro':
+    sys.exit(1)
+print(account)
+PYAWSACCOUNT
+)"; then
+    echo '拒否: AWS 名義の宣言が不正です（読取可能な docs-ro の1行が必要）' >&2
+    return 5
+  fi
+}

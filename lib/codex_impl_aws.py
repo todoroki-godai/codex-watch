@@ -52,8 +52,6 @@ def prepare(config, docs=False):
         'AWS_PROFILE': 'codex-dev', 'AWS_EC2_METADATA_DISABLED': 'true',
         'CODEX_IMPL_AWS_STATE': 'none', 'CODEX_IMPL_AWS_EXPIRATION': '',
     }
-    if docs:
-        updates = {'CODEX_IMPL_AWS_DOCS_STATE': 'none', 'CODEX_IMPL_AWS_DOCS_EXPIRATION': ''}
     try:
         # Disallow inherited endpoint redirection for the account check/export.
         probe_env = {k: v for k, v in os.environ.items()
@@ -99,11 +97,8 @@ def prepare(config, docs=False):
             # STS may take time; do not publish credentials that expired during it.
             if expiration <= dt.datetime.now(dt.timezone.utc):
                 raise ValueError('invalid expiration')
-            if docs:
-                credentials = {k.replace('AWS_', 'CODEX_AWS_DOCS_', 1): v
-                               for k, v in credentials.items()}
             updates.update(credentials)
-            state = 'CODEX_IMPL_AWS_DOCS' if docs else 'CODEX_IMPL_AWS'
+            state = 'CODEX_IMPL_AWS'
             updates[state + '_STATE'] = 'docs-ro-670352692792' if docs else 'dev-669126230735'
             updates[state + '_EXPIRATION'] = expiration.isoformat()
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, AttributeError):
@@ -115,13 +110,14 @@ if __name__ == '__main__':
     if len(sys.argv) == 3 and sys.argv[1] == '--check-config':
         check_codex_config(sys.argv[2])
         sys.exit(0)
-    config = str(Path(__file__).resolve().parents[1] / 'templates/codex-dev.aws-config')
+    docs = sys.argv[1:] == ['docs-ro']
+    config = str(Path(__file__).resolve().parents[1] /
+                 ('templates/codex-docs-ro.aws-config' if docs else 'templates/codex-dev.aws-config'))
     inherited_names = list(os.environ)
     for name in inherited_names:
         if name.startswith('CODEX_AWS_DOCS_'):
             del os.environ[name]
-    updates = prepare(config)
-    updates.update(prepare(config, docs=True))
+    updates = prepare(config, docs=docs)
     # The only eval input is generated statements with shlex-quoted values.
     for name in inherited_names:
         if name.startswith(('AWS_', 'CODEX_AWS_DOCS_')) and name.isidentifier() and name.isascii():

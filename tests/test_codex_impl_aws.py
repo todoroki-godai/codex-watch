@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import time
 import tomllib
@@ -9,6 +10,7 @@ import tomllib
 import pytest
 
 ROOT = Path(os.environ.get('CODEX_AWS_TEST_ROOT', Path(__file__).resolve().parents[1]))
+REAL_AWS = shutil.which('aws')  # Resolve before autouse offline PATH shielding.
 SECRETS = ['AKIA_FAKE_SENTINEL', 'secret_FAKE_SENTINEL', 'token_FAKE_SENTINEL']
 
 
@@ -30,6 +32,7 @@ def launch(tmp_path):
     executable(fake / 'git', '''import os,sys
 if '--absolute-git-dir' in sys.argv: print(os.environ['TEST_GITDIR'])
 elif '--git-common-dir' in sys.argv: print(os.environ['TEST_COMMON'])
+elif '--show-toplevel' in sys.argv: print(os.environ['TEST_WORK'])
 else: sys.exit(128)
 ''')
     executable(fake / 'aws', '''import json,os,sys
@@ -117,30 +120,42 @@ if policy.get('include_only'): shell={k:v for k,v in shell.items() if matches(k,
 r={'argv':sys.argv[1:], 'shell_keys_match':all(shell.get(k)==v for k,v in zip(names,expected)), 'shell_keys_absent':all(k not in shell for k in names), 'shell_prod_absent':not any(v.startswith('prod_DUMMY_') for v in shell.values()), 'keys_match':all(os.environ.get(k)==v for k,v in zip(names,expected)),
    'keys_absent':all(k not in os.environ for k in names),
    'env':{k:v for k,v in os.environ.items() if k.startswith('AWS_') and k not in names}}
-r.update(docs_match=all(shell.get(k)==v for k,v in zip(doc_names,doc_values)),
+r.update(docs_match=all(shell.get(k)==v for k,v in zip(names,doc_values)),
          docs_absent=all(k not in shell for k in doc_names))
-# Execute the actual credential_process commands; only boolean observations persist.
-import configparser,shlex,subprocess
-cfg=configparser.ConfigParser(interpolation=None)
-cfg.read(os.environ['AWS_CONFIG_FILE'])
-r['aliases']={}
-for alias in ('aws-updater-bc-dev','codex-docs-ro'):
-    process=cfg['profile '+alias]['credential_process']
-    result=subprocess.run(shlex.split(process),env=shell,capture_output=True,text=True)
-    want=dict(zip(('AccessKeyId','SecretAccessKey','SessionToken'),doc_values))
-    try: match=all(json.loads(result.stdout).get(k)==v for k,v in want.items())
-    except ValueError: match=False
-    r['aliases'][alias]={'match':match,'absent':result.returncode!=0 and not result.stdout and 'docs-platform の読み取り鍵がありません' in result.stderr}
+# Only boolean observations persist; real CLI coverage is tested separately.
+if os.environ.get('TEST_REAL_AWS'):
+    import subprocess
+    r['real_exports'] = {}
+    want = doc_values if os.environ.get('TEST_DOCS_MODE') == 'ok' else expected
+    for form in ('env','flag'):
+        for alias in ('codex-dev','codex-docs-ro','aws-updater-bc-dev','aws-updater-index-stg'):
+            env = {k:v for k,v in os.environ.items() if k.startswith('AWS_')}
+            env.update(PATH='/nonexistent', HOME='/nonexistent')
+            cmd = [os.environ['TEST_REAL_AWS'], 'configure', 'export-credentials', '--format', 'process']
+            env.pop('AWS_PROFILE', None)
+            if form == 'env': env['AWS_PROFILE'] = alias
+            else: cmd += ['--profile',alias]
+            result = subprocess.run(cmd, env=env, capture_output=True, text=True)
+            try: match = all(json.loads(result.stdout).get(k)==v for k,v in zip(('AccessKeyId','SecretAccessKey','SessionToken'),want))
+            except ValueError: match = False
+            r['real_exports'][form+':'+alias] = result.returncode != 0 if alias=='aws-updater-index-stg' else result.returncode==0 and match
 p=Path(os.environ['TEST_CAPTURE'])
 p.write_text(json.dumps(r))
 Path(os.environ['TEST_DONE']).touch()
 ''')
-    def run(mode='ok', extra=None, *, config_text=None, config_at='home', reject=False, unreadable=False):
+    def run(mode='ok', extra=None, *, config_text=None, config_at='home', reject=False, unreadable=False, declaration=None):
+        if declaration is not None:
+            target = work / '.claude/codex-aws-account'
+            target.parent.mkdir(exist_ok=True)
+            if declaration == 'directory': target.mkdir()
+            elif declaration == 'dangling': target.symlink_to(work / 'missing')
+            elif isinstance(declaration, bytes): target.write_bytes(declaration)
+            else: target.write_text(declaration)
         state = tmp_path / 'state'
         env = {k:v for k,v in os.environ.items() if not k.startswith(('AWS_', 'CODEX_', 'GH_', 'GITHUB_'))}
         env.update(PATH=f'{fake}:{env["PATH"]}', HOME=str(tmp_path / 'home'),
                    CODEX_WATCH_DIR=str(state), CODEX_SUMMARY='#0', CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1',
-                   TEST_GITDIR=gitdir, TEST_COMMON=common, TEST_MODE=mode,
+                   TEST_WORK=str(work), TEST_GITDIR=gitdir, TEST_COMMON=common, TEST_MODE=mode,
                    TEST_CAPTURE=str(tmp_path / 'capture'), TEST_CALLS=str(tmp_path / 'calls'),
                    TEST_DOCS_PROBE=str(tmp_path / 'docs-probe'),
                    TEST_MARKER=str(tmp_path / 'injected'), TEST_DONE=str(tmp_path / 'done'),
@@ -185,7 +200,8 @@ Path(os.environ['TEST_DONE']).touch()
             time.sleep(.02)
         assert (tmp_path / 'done').exists(), result.stderr
         child = json.loads((tmp_path / 'capture').read_text())
-        assert json.loads((tmp_path / 'docs-probe').read_text()), 'docs parent keys reached AWS probe'
+        if declaration == 'docs-ro':
+            assert json.loads((tmp_path / 'docs-probe').read_text()), 'docs parent keys reached AWS probe'
         fields = dict(line.split('=',1) for line in next(state.glob('*.state')).read_text().splitlines())
         emitted = (result.stdout + result.stderr).encode() + b''.join(p.read_bytes() for p in state.rglob('*') if p.is_file())
         for secret in SECRETS + ['parent_key','parent_secret','parent_token', 'DOCS_FAKE_KEY', 'DOCS_FAKE_SECRET', 'DOCS_FAKE_TOKEN', 'admin_DUMMY_key', 'admin_DUMMY_secret', 'admin_DUMMY_token']:
@@ -211,9 +227,10 @@ def settings(child):
 def test_positive_permissions_environment(launch):
     child, fields, calls = launch()
     assert child['keys_match']
+    assert child['docs_absent']
     assert fields['aws'] == 'dev-669126230735'
     assert fields['aws_expiration'] == '2099-01-02T03:04:05+00:00'
-    assert len(calls) == 3
+    assert len(calls) == 2
     argv = child['argv']
     assert '-s' not in argv and '--sandbox' not in argv
     assert not any('sandbox_workspace_write' in a for a in argv)
@@ -237,9 +254,9 @@ def test_positive_permissions_environment(launch):
     config = ConfigParser(interpolation=None)
     config.read(env['AWS_CONFIG_FILE'])
     assert set(config.sections()) == {'profile codex-dev', 'profile aws-updater-index-stg',
-                                      'profile aws-updater-bc-dev', 'profile codex-docs-ro'}
+                                      'profile aws-updater-bc-dev'}
     assert all(config[section]['region'] == 'ap-northeast-1' for section in config.sections())
-    assert 'credential_process' not in config['profile codex-dev']
+    assert 'credential_process' in config['profile codex-dev']
     for alias in ('aws-updater-index-stg',):
         process = config['profile ' + alias]['credential_process']
         assert all(key in process for key in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'))
@@ -257,7 +274,7 @@ def test_failure_has_no_credentials(launch, mode):
     assert fields['aws'] == 'none' and fields['aws_expiration'] == ''
     assert child['env']['AWS_PROFILE'] == 'codex-dev'
     assert 'AWS_DEFAULT_PROFILE' not in child['env']
-    assert len(calls) == (3 if mode in ('wrong','sts-fail') else 2)
+    assert len(calls) == (2 if mode in ('wrong','sts-fail') else 1)
 
 
 def test_export_is_data_not_shell(launch):
@@ -272,7 +289,7 @@ def test_rotated_profile_is_not_trusted(launch):
     child, fields, calls = launch('rotated')
     assert child['keys_absent']
     assert fields['aws'] == 'none' and fields['aws_expiration'] == ''
-    assert [call[0] for call in calls] == ['configure', 'sts', 'sts']
+    assert [call[0] for call in calls] == ['configure', 'sts']
 
 
 @pytest.mark.parametrize('mode', ['ok','wrong'])
@@ -308,28 +325,31 @@ def test_safe_set_launches(launch):
 
 @pytest.mark.parametrize('docs', ['ok', 'quoted'])
 def test_docs_verified_credentials_and_aliases(launch, docs):
-    child, fields, calls = launch(extra={'TEST_DOCS_MODE': docs})
-    assert child['keys_match'] and child['docs_match']
-    assert fields['aws_docs'] == 'docs-ro-670352692792'
-    assert fields['aws_docs_expiration'] == '2099-01-02T03:04:05+00:00'
-    assert all(v['match'] for v in child['aliases'].values())
-    assert len(calls) == 4
-    assert calls[2][1] == 'assume-role'
-    assert calls[3] == ['sts', 'get-caller-identity', '--output', 'json']
+    child, fields, calls = launch(extra={'TEST_DOCS_MODE': docs}, declaration='docs-ro')
+    assert not child['keys_match'] and child['docs_match'] and child['docs_absent']
+    assert fields['aws'] == 'docs-ro-670352692792'
+    assert fields['aws_expiration'] == '2099-01-02T03:04:05+00:00'
+    assert len(calls) == 2  # No dev export is even attempted.
+    assert calls[0][1] == 'assume-role'
+    assert calls[1] == ['sts', 'get-caller-identity', '--output', 'json']
 
 
 @pytest.mark.parametrize('docs', ['assume-fail', '669126230735', '682251233834',
                                  'admin', 'prefix', 'partition', 'arn-account',
                                  'expired', 'missing', 'sts-fail'])
 def test_docs_failure_never_falls_back(launch, docs):
-    child, fields, _ = launch(extra={'TEST_DOCS_MODE': docs,
+    child, fields, calls = launch(extra={'TEST_DOCS_MODE': docs,
         'CODEX_AWS_DOCS_ACCESS_KEY_ID': 'admin_DUMMY_key',
         'CODEX_AWS_DOCS_SECRET_ACCESS_KEY': 'admin_DUMMY_secret',
-        'CODEX_AWS_DOCS_SESSION_TOKEN': 'admin_DUMMY_token'})
-    assert child['keys_match'] and child['docs_absent']
-    assert fields['aws'] == 'dev-669126230735'
-    assert fields['aws_docs'] == 'none' and fields['aws_docs_expiration'] == ''
-    assert all(v['absent'] for v in child['aliases'].values())
+        'CODEX_AWS_DOCS_SESSION_TOKEN': 'admin_DUMMY_token'}, declaration='docs-ro')
+    assert child['keys_absent'] and child['docs_absent']
+    assert fields['aws'] == 'none' and fields['aws_expiration'] == ''
+    assert all(call[0] == 'sts' for call in calls)
+
+
+@pytest.mark.parametrize('declaration', ['', 'dev', 'docs-ro\ndev', 'directory', 'dangling', b'\xff', b'docs-ro\xff'])
+def test_invalid_declaration_rejected(launch, declaration):
+    launch(declaration=declaration, reject=True)
 
 
 @pytest.mark.parametrize('scope', ['', 'profiles.unselected.'])
@@ -339,6 +359,44 @@ def test_docs_config_reinjection_rejected(launch, scope, key):
 
 
 def test_docs_independent_of_dev_failure(launch):
-    child, fields, _ = launch('export-fail', {'TEST_DOCS_MODE': 'ok'})
-    assert child['keys_absent'] and child['docs_match']
-    assert fields['aws'] == 'none' and fields['aws_docs'] == 'docs-ro-670352692792'
+    child, fields, _ = launch('export-fail', {'TEST_DOCS_MODE': 'ok'}, declaration='docs-ro')
+    assert not child['keys_match'] and child['docs_match']
+    assert fields['aws'] == 'docs-ro-670352692792'
+
+
+@pytest.mark.parametrize('docs,names', [
+    (False, ('codex-dev', 'aws-updater-index-stg', 'aws-updater-bc-dev')),
+    (True, ('codex-dev', 'codex-docs-ro', 'aws-updater-bc-dev', 'aws-updater-index-stg')),
+])
+@pytest.mark.parametrize('form', ['env', 'flag'])
+def test_real_export_credentials(tmp_path, docs, names, form):
+    aws = REAL_AWS
+    assert aws, 'real AWS CLI is required; do not skip'
+    config = ROOT / ('templates/codex-docs-ro.aws-config' if docs else 'templates/codex-dev.aws-config')
+    for name in names:
+        env = dict(PATH='/nonexistent', HOME='/nonexistent',
+                   AWS_CONFIG_FILE=str(config), AWS_SHARED_CREDENTIALS_FILE='/dev/null',
+                   AWS_EC2_METADATA_DISABLED='true',
+                   AWS_ACCESS_KEY_ID='DOCSFAKEKEY' if docs else 'DEVFAKEKEY',
+                   AWS_SECRET_ACCESS_KEY='quote"\\secret' if docs else 'devsecret',
+                   AWS_SESSION_TOKEN='docstok' if docs else 'devtok')
+        if os.environ.get('CODEX_MUTATION_TRACE'):
+            env['CODEX_MUTATION_TRACE'] = os.environ['CODEX_MUTATION_TRACE']
+        cmd = [aws, 'configure', 'export-credentials', '--format', 'process']
+        if form == 'env': env['AWS_PROFILE'] = name
+        else: cmd += ['--profile', name]
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=10)
+        if docs and name == 'aws-updater-index-stg':
+            assert result.returncode != 0
+        else:
+            assert result.returncode == 0, (name, form, result.stderr)
+            data = json.loads(result.stdout)
+            assert data['AccessKeyId'] == env['AWS_ACCESS_KEY_ID']
+            assert data['SecretAccessKey'] == env['AWS_SECRET_ACCESS_KEY']
+            assert data['SessionToken'] == env['AWS_SESSION_TOKEN']
+
+
+def test_docs_launch_real_export(launch):
+    assert REAL_AWS, 'real AWS CLI required'
+    child, fields, calls = launch(extra={'TEST_DOCS_MODE':'ok', 'TEST_REAL_AWS':REAL_AWS}, declaration='docs-ro')
+    assert all(child['real_exports'].values()), child['real_exports']

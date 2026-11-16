@@ -36,13 +36,22 @@ cases = [
     ('docs-remove-account', 'lib/codex_impl_aws.py', "identity['Account'] == '670352692792'", 'True', 'docs_failure_never_falls_back and (669126230735 or 682251233834)'),
     ('docs-remove-arn', 'lib/codex_impl_aws.py', "identity['Arn'].startswith('arn:aws:sts::670352692792:assumed-role/codex-readonly/')", 'True', 'docs_failure_never_falls_back and admin'),
     ('docs-export-head-profile', 'lib/codex_impl_aws.py', "['aws', 'sts', 'assume-role', '--profile', 'aws-updater-bc-dev',\n                    '--role-arn', 'arn:aws:iam::670352692792:role/codex-readonly',\n                    '--role-session-name', 'codex-impl', '--duration-seconds', '3600',\n                    '--output', 'json']", "['aws', 'configure', 'export-credentials', '--profile', 'aws-updater-bc-dev', '--format', 'process']", 'docs_verified_credentials_and_aliases and ok'),
-    ('docs-dev-template', 'templates/codex-dev.aws-config', 'os.environ.get("CODEX_AWS_DOCS_"+n,"")', 'os.environ.get("AWS_"+n,"")', 'docs_verified_credentials_and_aliases and ok'),
     ('docs-retain-parent', 'lib/codex_impl_aws.py', 'del os.environ[name]', 'pass', 'docs_failure_never_falls_back and assume-fail'),
     ('docs-set-reinjection', 'lib/codex_impl_aws.py', "key.startswith('CODEX_AWS_DOCS_')", 'False', 'docs_config_reinjection_rejected'),
     # Independently explored input classes: namespace confusion and code/data confusion.
     ('docs-prefix-collision', 'lib/codex_impl_aws.py', "assumed-role/codex-readonly/'", "assumed-role/codex-readonly'", 'docs_failure_never_falls_back and prefix'),
     ('docs-partition-confusion', 'lib/codex_impl_aws.py', "identity['Arn'].startswith('arn:aws:sts::670352692792:assumed-role/codex-readonly/')", "'assumed-role/codex-readonly/' in identity['Arn']", 'docs_failure_never_falls_back and (partition or arn-account)'),
-    ('docs-json-interpolation', 'templates/codex-dev.aws-config', 'print(json.dumps(dict(zip(("Version","AccessKeyId","SecretAccessKey","SessionToken"),(1,*values)))))', 'print(chr(123)+chr(34)+"Version"+chr(34)+":1,"+",".join(chr(34)+k+chr(34)+":"+chr(34)+v+chr(34) for k,v in zip(("AccessKeyId","SecretAccessKey","SessionToken"),values))+chr(125))', 'docs_verified_credentials_and_aliases and quoted'),
+
+    ('docs-also-get-dev', 'lib/codex_impl_aws.py', '    updates = prepare(config, docs=docs)', '    prepare(config)\n    updates = prepare(config, docs=docs)', 'docs_verified_credentials_and_aliases and ok'),
+    ('docs-fallback-dev', 'lib/codex_impl_aws.py', '    updates = prepare(config, docs=docs)', "    updates = prepare(config, docs=docs)\n    if 'AWS_ACCESS_KEY_ID' not in updates: updates.update(prepare(config))", 'docs_failure_never_falls_back and assume-fail'),
+    ('docs-invalid-declaration', 'bin/_codex_common.sh', "if account != 'docs-ro':", 'if False:', 'invalid_declaration_rejected and dev'),
+    ('docs-select-dev', 'lib/codex_impl_aws.py', "    docs = sys.argv[1:] == ['docs-ro']", '    docs = False', 'docs_verified_credentials_and_aliases and ok'),
+    ('docs-standard-dev-credentials', 'lib/codex_impl_aws.py', '    updates = prepare(config, docs=docs)', "    updates = prepare(config, docs=docs)\n    if docs: updates.update(AWS_ACCESS_KEY_ID='DEVFAKEKEY', AWS_SECRET_ACCESS_KEY='devsecret', AWS_SESSION_TOKEN='devtok')", 'docs_launch_real_export'),
+    # Additional bypass classes: declaration filesystem type and byte decoding.
+    ('docs-unreadable-declaration', 'bin/_codex_common.sh', 'except (OSError, UnicodeError):\n    sys.exit(1)\nif account', "except (OSError, UnicodeError):\n    account = 'docs-ro'\nif account", 'invalid_declaration_rejected and (directory or dangling)'),
+    ('docs-invalid-encoding', 'bin/_codex_common.sh', 'read_text().strip()\nexcept (OSError, UnicodeError):\n    sys.exit(1)\nif account', "read_text(errors='ignore').strip()\nexcept (OSError, UnicodeError):\n    sys.exit(1)\nif account", 'invalid_declaration_rejected'),
+    ('docs-template-dev-key', 'templates/codex-docs-ro.aws-config', '$AWS_ACCESS_KEY_ID', '${DEV_KEY:-DEVFAKEKEY}', 'real_export_credentials and flag and True'),
+    ('positive-docs-json-space', 'templates/codex-docs-ro.aws-config', '{"Version":1,', '{"Version": 1, ', 'real_export_credentials and flag and True'),
 
 ]
 TRACE_WRAPPER = r'''import json,os,runpy,sys
@@ -74,7 +83,7 @@ for name, filename, old, new, select in cases:
     for sub in ('bin', 'lib', 'templates'):
         shutil.copytree(ROOT / sub, folder / sub, ignore=shutil.ignore_patterns('__pycache__'))
     original = (folder / filename).read_text()
-    assert original.count(old) == (2 if name in ('accept-expired', 'docs-dev-template', 'docs-json-interpolation') else 1), (name, old)
+    assert original.count(old) == (2 if name == 'accept-expired' else 3 if filename == 'templates/codex-docs-ro.aws-config' else 1), (name, old)
     mutated = original.replace(old, new)
     if name == 'docs-export-head-profile':
         mutated = mutated.replace("data = data['Credentials']", "data = data.get('Credentials', data)")
@@ -85,6 +94,18 @@ for name, filename, old, new, select in cases:
     (folder / filename).write_text(mutated)
     trace_dir = folder / 'trace'
     trace_dir.mkdir()
+    if filename.startswith('templates/'):
+        # Absolute /bin/sh bypasses PATH wrappers. A line marker inside each
+        # actually executed credential_process observes that exact shell line.
+        import configparser, shlex
+        cfg = configparser.ConfigParser(interpolation=None)
+        cfg.read(folder / filename)
+        for section in cfg.sections():
+            command = shlex.split(cfg[section]['credential_process'])
+            line = next(i+1 for i,l in enumerate(mutated.splitlines()) if cfg[section]['credential_process'] in l)
+            command[2] = 'printf "%s\\n" ' + str(line) + ' >> "$CODEX_MUTATION_TRACE/template-lines"; ' + command[2]
+            cfg[section]['credential_process'] = shlex.join(command)
+        with (folder / filename).open('w') as stream: cfg.write(stream)
     wrapper_dir = folder / 'trace-bin'
     wrapper_dir.mkdir()
     # Trace code lines without recording locals, environment values, or AWS output.
@@ -102,7 +123,7 @@ for name, filename, old, new, select in cases:
     (folder / 'pytest.log').write_text(result.stdout + result.stderr)
     expected = 0 if name.startswith('positive-') else 1
     # Require assertion failure, not a setup/import/collection failure.
-    ok = result.returncode == expected and ((('AssertionError' in result.stdout or 'E   assert' in result.stdout) and 'TOMLDecodeError' not in result.stdout and 'ERROR ' not in result.stdout) if expected else '1 passed' in result.stdout)
+    ok = result.returncode == expected and ((('AssertionError' in result.stdout or 'E   assert' in result.stdout) and 'TOMLDecodeError' not in result.stdout and 'ERROR ' not in result.stdout) if expected else 'passed' in result.stdout)
     reached = set()
     for trace_file in trace_dir.glob('*.json'):
         trace = json.loads(trace_file.read_text())
@@ -119,6 +140,8 @@ for name, filename, old, new, select in cases:
     if filename.startswith('bin/') and (trace_dir / 'bash-lines').exists():
         # Instrumentation inserted exactly one line after set -euo pipefail.
         reached.update(int(line)-1 for line in (trace_dir / 'bash-lines').read_text().splitlines())
+    if (trace_dir / 'template-lines').exists():
+        reached.update(int(line) for line in (trace_dir / 'template-lines').read_text().splitlines())
     hit = sorted(changed & reached)
     ok = ok and bool(hit)
     record = dict(name=name, baseline=BASE, diff_sha256=hashlib.sha256(diff.encode()).hexdigest(),

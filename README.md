@@ -88,12 +88,12 @@ git revert --no-commit $(git rev-list --first-parent efe4aad..HEAD)
 
 - **`codex-impl` は共有 checkout への書き込みを拒否する**（未レビューのコードがそのまま動く状態を作らないため）。
   例外口は `CODEX_IMPL_ALLOW_MAIN=1`。
-- AWS は stg プロファイルで口座 `669126230735` を照合した場合だけ一時鍵を環境へ渡し、失敗時は `aws=none`。
-  `~/.aws` を拒否し、秘密なしの `codex-dev` 設定と空の credentials を指定するため、共有設定の prod プロファイルへ届かない。
-  鍵は更新せず、`aws_expiration` の期限で長い作業は途中から AWS を使えなくなる。
-  docs-platform は頭の `aws-updater-bc-dev` で `codex-readonly` を assume し、口座 `670352692792` とロール ARN を照合した鍵だけを別環境変数で渡す（失敗時 `aws_docs=none`、期限 `aws_docs_expiration`）。
-  docs 接続は `aws --profile codex-docs-ro …` または `aws --profile aws-updater-bc-dev …` と明示する。`AWS_PROFILE` だけでは dev 鍵が優先される。
-- `codex-impl` は起動前に Python 3.11 以上の `tomllib` で `~/.codex/config.toml`、設定時の `$CODEX_HOME/config.toml`、作業場所と祖先の `.codex/config.toml` を検査する。
+- AWS は PJ の git 最上位にある `.claude/codex-aws-account`（1行 `docs-ro`）で切り替える。宣言の不正値・読取不能は起動を拒否する。
+  宣言なしの PJ は従来どおり dev（`669126230735`）の照合済み一時鍵だけを渡す。
+  宣言した PJ は `codex-readonly` を assume し、口座 `670352692792` とロール ARN を照合した docs-platform の読み取り専用鍵1組だけを標準 `AWS_*` へ渡す。dev 鍵は取得しない。
+  `AWS_PROFILE=…` と `--profile …` のどちらも `codex-dev`・`codex-docs-ro`・`aws-updater-bc-dev` は docs 鍵へ向き、`aws-updater-index-stg` は失敗する。
+  照合失敗は `aws=none` で起動し、dev にフォールバックしない。期限は `aws_expiration`。鍵の更新は行わない。
+  `~/.aws` は拒否し、専用設定と空の credentials を指定する。親環境の `AWS_*` と `CODEX_AWS_DOCS_*` は除去する。
   トップレベルと全 profiles の `shell_environment_policy.set` に `AWS_PROFILE` 以外の `AWS_` キーまたは `CODEX_AWS_DOCS_` キーがあれば拒否する。読取・解析不能も拒否し、値は表示しない。存在しない任意設定は許容する。
   `AWS_PROFILE` は CLI で `codex-dev` に上書きする。継承の絞り込み（Should）は既存の環境継承契約への影響があるため今回は範囲外。
 - **`codex-impl` の既定モデルは `gpt-6.1-sol`。** `CODEX_IMPL_MODEL` で上書きできる。
