@@ -94,23 +94,23 @@ git apply --reverse --check .tmp/run-name-code.patch
 M9は新しい起動で既存reportを壊す変異。X1はlabelの非ASCII文字削除、
 X2は番号を整数化して先頭ゼロを失わせる変換、X3は番号の出所をREVIEW_TARGETへ変える変換。
 
-圧縮した実測（差分ハッシュ、到達証跡、assertion件数）:
+圧縮した実測（変異を当てた後のファイル全体のハッシュ、到達証跡、assertion件数）:
 
 ```text
-M1 omit prefix: RED; diff sha256=9d0fb08af00e; shell "printf '%s\\n' tally" hits=1; ================= 20 failed, 4 passed, 14 deselected in 2.13s ==================
-M2 double prefix: RED; diff sha256=19f82fcf346e; shell '== __never_equal__' hits=24; ================= 4 failed, 20 passed, 14 deselected in 1.93s ==================
-M3 substring match: RED; diff sha256=0f3c43a90027; shell '== *\\1\\9\\8\\7*' hits=13; ================= 3 failed, 21 passed, 14 deselected in 1.91s ==================
-M4 ignore 60 boundary: RED; diff sha256=5fa028471598; Python issue_value line=7 hits=23; ================= 2 failed, 22 passed, 14 deselected in 1.93s ==================
-M5a disconnect impl: RED; diff sha256=bbdb646541b5; offline child read numberless report path hits=1; ================= 5 failed, 7 passed, 26 deselected in 12.10s ==================
-M5b disconnect review: RED; diff sha256=f31714b36fb2; offline child read numberless report path hits=1; ================= 5 failed, 7 passed, 26 deselected in 12.24s ==================
-M6 remove abnormal fallback: RED; diff sha256=fac5a00e12be; shell 'issue=' hits=12; ================= 7 failed, 39 passed, 91 deselected in 30.03s =================
-M7 search truncated text: RED; diff sha256=a592212828b4; Python issue_value line=7 hits=23; ================= 1 failed, 23 passed, 14 deselected in 1.95s ==================
-M8 select second number: RED; diff sha256=b424247d9f80; Python issue_value line=8 hits=47; ================= 2 failed, 22 passed, 14 deselected in 1.89s ==================
-M9 corrupt existing live report: RED; diff sha256=ebf39a95f8b6; shell "printf 'corrupted\\n'" hits=1; ================== 1 failed, 1 passed, 36 deselected in 3.96s ==================
-X1 strip non ASCII label: RED; diff sha256=2d8e79d28f53; shell "tr -cd '\\000-\\177'" hits=24; ================= 2 failed, 22 passed, 14 deselected in 2.10s ==================
-X2 normalize leading zeros: RED; diff sha256=38afebbd4217; Python issue_value line=10 hits=23; ================= 1 failed, 23 passed, 14 deselected in 1.96s ==================
-X3 use review target as authority: RED; diff sha256=526b29f82b98; shell 'issue=53' hits=24; ====================== 24 failed, 14 deselected in 2.04s =======================
-P equivalent rewrite: GREEN; diff sha256=d048a59c1af9; Python issue_value line=10 hits=37; ============================= 38 passed in 17.43s ==============================
+M1 omit prefix: RED; file sha256=9d0fb08af00e; shell "printf '%s\\n' tally" hits=1; ================= 20 failed, 4 passed, 14 deselected in 2.13s ==================
+M2 double prefix: RED; file sha256=19f82fcf346e; shell '== __never_equal__' hits=24; ================= 4 failed, 20 passed, 14 deselected in 1.93s ==================
+M3 substring match: RED; file sha256=0f3c43a90027; shell '== *\\1\\9\\8\\7*' hits=13; ================= 3 failed, 21 passed, 14 deselected in 1.91s ==================
+M4 ignore 60 boundary: RED; file sha256=5fa028471598; Python issue_value line=7 hits=23; ================= 2 failed, 22 passed, 14 deselected in 1.93s ==================
+M5a disconnect impl: RED; file sha256=bbdb646541b5; offline child read numberless report path hits=1; ================= 5 failed, 7 passed, 26 deselected in 12.10s ==================
+M5b disconnect review: RED; file sha256=f31714b36fb2; offline child read numberless report path hits=1; ================= 5 failed, 7 passed, 26 deselected in 12.24s ==================
+M6 remove abnormal fallback: RED; file sha256=fac5a00e12be; shell 'issue=' hits=12; ================= 7 failed, 39 passed, 91 deselected in 30.03s =================
+M7 search truncated text: RED; file sha256=a592212828b4; Python issue_value line=7 hits=23; ================= 1 failed, 23 passed, 14 deselected in 1.95s ==================
+M8 select second number: RED; file sha256=b424247d9f80; Python issue_value line=8 hits=47; ================= 2 failed, 22 passed, 14 deselected in 1.89s ==================
+M9 corrupt existing live report: RED; file sha256=ebf39a95f8b6; shell "printf 'corrupted\\n'" hits=1; ================== 1 failed, 1 passed, 36 deselected in 3.96s ==================
+X1 strip non ASCII label: RED; file sha256=2d8e79d28f53; shell "tr -cd '\\000-\\177'" hits=24; ================= 2 failed, 22 passed, 14 deselected in 2.10s ==================
+X2 normalize leading zeros: RED; file sha256=38afebbd4217; Python issue_value line=10 hits=23; ================= 1 failed, 23 passed, 14 deselected in 1.96s ==================
+X3 use review target as authority: RED; file sha256=526b29f82b98; shell 'issue=53' hits=24; ====================== 24 failed, 14 deselected in 2.04s =======================
+P equivalent rewrite: GREEN; file sha256=d048a59c1af9; Python issue_value line=10 hits=37; ============================= 38 passed in 17.43s ==============================
 ```
 
 完全な差分・トレース・pytest出力・JUnitは `.tmp/<M1〜M9・M5a/M5b・X1〜X3・P>-{diff,trace,pytest,junit}.log`。
