@@ -1,0 +1,41 @@
+{
+  "target": "issue:min-sys/updater-index#2078",
+  "states": [
+    {
+      "review_target": "issue:min-sys/updater-index#2078",
+      "round": "1",
+      "kind_label": "コード",
+      "head_sha": "def0e651c6d464e7e435e2be2c817a3020a87cd7",
+      "authority": "ordinary"
+    },
+    {
+      "review_target": "issue:min-sys/updater-index#2078",
+      "round": "2",
+      "kind_label": "コード",
+      "head_sha": "7b6132275f2611077e12d041b5f3a303b4174e90",
+      "authority": "ordinary"
+    },
+    {
+      "review_target": "issue:min-sys/updater-index#2078",
+      "round": "1",
+      "kind_label": "設計",
+      "head_sha": "19acf530f03637388df845775d0dacb25fa703b3",
+      "authority": "ordinary"
+    },
+    {
+      "review_target": "issue:min-sys/updater-index#2078",
+      "round": "2",
+      "kind_label": "設計",
+      "head_sha": "7c9f7b3099371eb488cb219d3d6556218ba500bf",
+      "authority": "ordinary"
+    },
+    {
+      "review_target": "issue:min-sys/updater-index#2078",
+      "round": "3",
+      "kind_label": "設計",
+      "head_sha": "49cfa42b956bfa15b1a1ac15a6508224f8a35dc0",
+      "authority": "project_prerelease"
+    }
+  ],
+  "body": "巡4の人間承認: 2026-11-16 10:53:06 JST 受領（調整役 main-index 中継・本人がその窓へ直接入力）。問い「段4 #2078（本番の再算定を「読む→計算」の1本にする）の設計レビュー3回目で、「合格の条件が、本番と同じメモリ上限での完走を必須にしていない」という直しが要る指摘1件が出ました。直した設計を確かめる4回目のレビュー（同じレビュアー・上限を4回に）を出してよいですか？（先ほどの「上限を6GBに上げる」も合格の条件に反映してから出します）」→ 本人の原文「4回目を出す・上限4回 (Recommended)」（選ばれなかった案「出さずに進む」）。\n- 総上限: 4\n"
+}

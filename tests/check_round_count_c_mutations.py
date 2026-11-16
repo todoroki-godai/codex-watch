@@ -11,6 +11,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / '.tmp/round-count-c-impl2-mutations'
+TEST_FILES = ['tests/test_round_count_c.py', 'tests/test_prerelease.py']
 CASES = [
  ('N1-filter-removed','lib/round_gate.py',
   'ledger_head_shas_for_target(state_dir, target_key, kind_label=kind_label):',
@@ -81,7 +82,7 @@ def main():
             destination.chmod((ROOT/filename).stat().st_mode)
         # Files are copied before mutation; no stash or working-tree mutation.
 
-        collect_command=[sys.executable,'-m','pytest','--collect-only','-q','tests/test_round_count_c.py','tests/test_prerelease.py','-k',selection]
+        collect_command=[sys.executable,'-m','pytest','--collect-only','-q',*TEST_FILES,'-k',selection]
         collected=subprocess.run(collect_command,cwd=folder,capture_output=True,text=True,timeout=60)
         (OUT/(name+'.collection.log')).write_text(collected.stdout+collected.stderr)
         expected_ids={line.strip() for line in collected.stdout.splitlines() if line.startswith('tests/') and '::' in line}
@@ -116,7 +117,7 @@ sys.settrace(witness)
         if reports.exists(): reports.unlink()
         (folder/'c_mutation_reports.py').write_text("import json,os\ndef pytest_runtest_logreport(report):\n    if report.when == 'call':\n        with open(os.environ['C_REPORT'],'a') as out: out.write(json.dumps(dict(nodeid=report.nodeid,outcome=report.outcome))+'\\n')\n")
         env=dict(os.environ,PYTHONPATH=os.pathsep.join([str(folder), str(Path(pytest.__file__).resolve().parents[1]), os.environ.get("PYTHONPATH", "")]),PYTHONDONTWRITEBYTECODE='1',C_FILE=relative,C_ANCHOR=anchor,C_TRACE=str(trace),C_REPORT=str(reports),PYTEST_PLUGINS='c_mutation_reports',GIT_CEILING_DIRECTORIES=str(folder))
-        command=[sys.executable,'-m','pytest','-q','-rA','-p','no:cacheprovider','tests/test_round_count_c.py','tests/test_prerelease.py','-k',selection,'--basetemp='+str(folder/'temp')]
+        command=[sys.executable,'-m','pytest','-q','-rA','-p','no:cacheprovider',*TEST_FILES,'-k',selection,'--basetemp='+str(folder/'temp')]
         run=subprocess.run(command,cwd=folder,env=env,capture_output=True,text=True,timeout=180)
         output=run.stdout+run.stderr;(OUT/(name+'.pytest.log')).write_text(output)
         hits=trace.read_text().splitlines() if trace.exists() else []
