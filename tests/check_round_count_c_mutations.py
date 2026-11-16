@@ -11,6 +11,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / '.tmp/round-count-c-impl2-mutations'
+TEST_FILES = ['tests/test_round_count_c.py', 'tests/test_prerelease.py']
 CASES = [
  ('N1-filter-removed','lib/round_gate.py',
   'ledger_head_shas_for_target(state_dir, target_key, kind_label=kind_label):',
@@ -81,8 +82,9 @@ def main():
             destination.chmod((ROOT/filename).stat().st_mode)
         # Files are copied before mutation; no stash or working-tree mutation.
 
-        collect_command=[sys.executable,'-m','pytest','--collect-only','-q','tests/test_round_count_c.py','tests/test_prerelease.py','-k',selection]
-        collected=subprocess.run(collect_command,cwd=folder,capture_output=True,text=True,timeout=60)
+        collect_command=[sys.executable,'-m','pytest','--collect-only','-q',*TEST_FILES,'-k',selection]
+        collected=subprocess.run(collect_command,cwd=folder,capture_output=True,text=True,timeout=60,
+                                 env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'))
         (OUT/(name+'.collection.log')).write_text(collected.stdout+collected.stderr)
         expected_ids={line.strip() for line in collected.stdout.splitlines() if line.startswith('tests/') and '::' in line}
         assert collected.returncode==0 and expected_ids,(name,'no baseline tests collected')
@@ -100,15 +102,25 @@ def main():
         (OUT/(name+'.diff.log')).write_text(delta)
         trace=OUT/(name+'.executed.log')
         if trace.exists():trace.unlink()
-        (folder/'sitecustomize.py').write_text('''import sys,os,linecache,json
+        (folder/'sitecustomize.py').write_text('''import sys,os,linecache,json,types
 seen=set()
+compiled={}
+def code_objects(code):
+    yield code
+    for value in code.co_consts:
+        if isinstance(value,types.CodeType): yield from code_objects(value)
 def witness(frame,event,arg):
     if event=='line' and frame.f_code.co_filename.endswith(os.environ['C_FILE']):
         source=linecache.getline(frame.f_code.co_filename,frame.f_lineno).strip()
         if os.environ['C_ANCHOR'] in source and (frame.f_code.co_filename,frame.f_lineno) not in seen:
             seen.add((frame.f_code.co_filename,frame.f_lineno))
             values={k:repr(frame.f_locals[k]) for k in ('kind_label','n','completed','line','kinds','recorded','pending_new_head','ledger_total') if k in frame.f_locals}
-            with open(os.environ['C_TRACE'],'a') as out:out.write(json.dumps(dict(file=frame.f_code.co_filename,line=frame.f_lineno,source=source,values=values))+'\\n')
+            filename=frame.f_code.co_filename
+            if filename not in compiled:
+                with open(filename) as source_file:
+                    compiled[filename]=list(code_objects(compile(source_file.read(),filename,'exec')))
+            matches=any(code == frame.f_code for code in compiled[filename])
+            with open(os.environ['C_TRACE'],'a') as out:out.write(json.dumps(dict(file=filename,line=frame.f_lineno,source=source,values=values,compiled_source_matches=matches))+'\\n')
     return witness
 sys.settrace(witness)
 ''')
@@ -116,14 +128,14 @@ sys.settrace(witness)
         if reports.exists(): reports.unlink()
         (folder/'c_mutation_reports.py').write_text("import json,os\ndef pytest_runtest_logreport(report):\n    if report.when == 'call':\n        with open(os.environ['C_REPORT'],'a') as out: out.write(json.dumps(dict(nodeid=report.nodeid,outcome=report.outcome))+'\\n')\n")
         env=dict(os.environ,PYTHONPATH=os.pathsep.join([str(folder), str(Path(pytest.__file__).resolve().parents[1]), os.environ.get("PYTHONPATH", "")]),PYTHONDONTWRITEBYTECODE='1',C_FILE=relative,C_ANCHOR=anchor,C_TRACE=str(trace),C_REPORT=str(reports),PYTEST_PLUGINS='c_mutation_reports',GIT_CEILING_DIRECTORIES=str(folder))
-        command=[sys.executable,'-m','pytest','-q','-rA','-p','no:cacheprovider','tests/test_round_count_c.py','tests/test_prerelease.py','-k',selection,'--basetemp='+str(folder/'temp')]
+        command=[sys.executable,'-m','pytest','-q','-rA','-p','no:cacheprovider',*TEST_FILES,'-k',selection,'--basetemp='+str(folder/'temp')]
         run=subprocess.run(command,cwd=folder,env=env,capture_output=True,text=True,timeout=180)
         output=run.stdout+run.stderr;(OUT/(name+'.pytest.log')).write_text(output)
         hits=trace.read_text().splitlines() if trace.exists() else []
         expected=0 if category=='positive' else 1
         outcomes=[json.loads(line) for line in reports.read_text().splitlines()] if reports.exists() else []
         observed_ids={r['nodeid'] for r in outcomes}
-        valid=expected_ids==observed_ids and len(outcomes)==len(expected_ids) and all(r['outcome']!='skipped' for r in outcomes) and bool(hits) and run.returncode==expected and ('passed' if expected==0 else 'failed') in output and 'ERROR at setup' not in output and 'ERROR collecting' not in output
+        valid=expected_ids==observed_ids and len(outcomes)==len(expected_ids) and all(r['outcome']!='skipped' for r in outcomes) and bool(hits) and all(json.loads(hit)['compiled_source_matches'] for hit in hits) and run.returncode==expected and ('passed' if expected==0 else 'failed') in output and 'ERROR at setup' not in output and 'ERROR collecting' not in output
         result=dict(name=name,category=category,base_sha=sha,before_sha256=hashlib.sha256(before.encode()).hexdigest(),after_sha256=hashlib.sha256(after.encode()).hexdigest(),expected_test_ids=sorted(expected_ids),observed_test_ids=sorted(observed_ids),exit=run.returncode,hits=len(hits),valid=valid,command=command,summary=output.strip().splitlines()[-1]);results.append(result)
         print(json.dumps(result),flush=True)
         path.write_text(before)

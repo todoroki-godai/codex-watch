@@ -710,6 +710,13 @@ def _target_total_rounds(
                     if not saved.get("head_sha"):
                         raise _UnsupportedApproval(f"{key}: 承認N={n}の候補HEADがありません")
                     kinds.add(kind)
+            # An approval for the next dispatch cannot have a saved round=N
+            # yet. Attribute only that one new HEAD to the requested kind;
+            # never use pending work to repair deficient existing evidence.
+            if (not kinds and pending_new_head is not None
+                    and pending_new_head not in distinct
+                    and 3 <= n <= 5 and ledger_total == n):
+                continue
             if len(kinds) != 1:
                 raise _UnsupportedApproval(f"{key}: 承認N={n}を一意に帰属できません（候補種別{len(kinds)}）")
             attributed = next(iter(kinds))
