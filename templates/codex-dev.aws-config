@@ -12,7 +12,6 @@
 # 鍵が1つでも空なら、空の鍵を返さずに非ゼロで終える（原因が分からない認証失敗を作らない）。
 [profile codex-dev]
 region = ap-northeast-1
-credential_process = /bin/sh -c 'if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ] || [ -z "$AWS_SESSION_TOKEN" ]; then echo "codex-impl: dev の一時鍵が環境にありません（頭の aws-updater-index-stg が切れている可能性）" >&2; exit 1; fi; printf "{\"Version\":1,\"AccessKeyId\":\"%s\",\"SecretAccessKey\":\"%s\",\"SessionToken\":\"%s\"}" "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$AWS_SESSION_TOKEN"'
 
 [profile aws-updater-index-stg]
 region = ap-northeast-1

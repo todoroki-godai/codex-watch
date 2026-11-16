@@ -211,7 +211,7 @@ Path(os.environ['TEST_DONE']).touch()
         assert not (tmp_path / 'injected').exists()
         calls = [json.loads(line) for line in (tmp_path / 'calls').read_text().splitlines()]
         return child, fields, calls
-    run.common, run.gitdir = common, gitdir
+    run.common, run.gitdir, run.work = common, gitdir, work
     return run
 
 
@@ -257,7 +257,7 @@ def test_positive_permissions_environment(launch):
     assert set(config.sections()) == {'profile codex-dev', 'profile aws-updater-index-stg',
                                       'profile aws-updater-bc-dev'}
     assert all(config[section]['region'] == 'ap-northeast-1' for section in config.sections())
-    assert 'credential_process' in config['profile codex-dev']
+    assert 'credential_process' not in config['profile codex-dev']
     for alias in ('aws-updater-index-stg',):
         process = config['profile ' + alias]['credential_process']
         assert all(key in process for key in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'))
@@ -353,6 +353,56 @@ def test_invalid_declaration_rejected(launch, declaration):
     launch(declaration=declaration, reject=True)
 
 
+@pytest.mark.parametrize('parent_exists', [False, True])
+def test_absent_declaration_uses_dev(launch, parent_exists):
+    if parent_exists:
+        (launch.work / '.claude').mkdir()
+    child, fields, calls = launch()
+    assert child['keys_match'] and child['docs_absent']
+    assert fields['aws'] == 'dev-669126230735'
+    assert len(calls) == 2
+
+
+def test_unsearchable_declaration_parent_rejected(launch):
+    assert os.geteuid() != 0, 'permission test requires non-root'
+    parent = launch.work / '.claude'
+    parent.mkdir()
+    target = parent / 'codex-aws-account'
+    target.write_text('docs-ro')
+    parent.chmod(0o000)
+    try:
+        with pytest.raises(PermissionError):
+            target.lstat()
+        result = launch(reject=True)
+        assert 'AWS 名義' in result.stderr
+    finally:
+        parent.chmod(0o700)
+
+
+def test_nondirectory_declaration_parent_rejected(launch):
+    (launch.work / '.claude').write_text('docs-ro')
+    result = launch(reject=True)
+    assert 'AWS 名義' in result.stderr
+
+
+def test_symlink_cycle_declaration_rejected(launch):
+    # Cycle in an ancestor defeats both -e and -L on the declaration path.
+    (launch.work / '.claude').symlink_to('.claude')
+    result = launch(reject=True)
+    assert 'AWS 名義' in result.stderr
+
+
+def test_nul_declaration_rejected(launch):
+    launch(declaration=b'docs-ro\x00', reject=True)
+
+
+def test_dev_template_matches_baseline():
+    baseline = subprocess.check_output(
+        ['git', 'show', '381a490:templates/codex-dev.aws-config'],
+        cwd=Path(__file__).resolve().parents[1])
+    assert (ROOT / 'templates/codex-dev.aws-config').read_bytes() == baseline
+
+
 @pytest.mark.parametrize('scope', ['', 'profiles.unselected.'])
 @pytest.mark.parametrize('key', ['ACCESS_KEY_ID', 'SECRET_ACCESS_KEY', 'SESSION_TOKEN', 'UNKNOWN'])
 def test_docs_config_reinjection_rejected(launch, scope, key):
@@ -387,7 +437,7 @@ def test_real_export_credentials(tmp_path, docs, names, form):
         if form == 'env': env['AWS_PROFILE'] = name
         else: cmd += ['--profile', name]
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=10)
-        if docs and name == 'aws-updater-index-stg':
+        if (docs and name == 'aws-updater-index-stg') or (not docs and form == 'flag' and name == 'codex-dev'):
             assert result.returncode != 0
         else:
             assert result.returncode == 0, (name, form, result.stderr)

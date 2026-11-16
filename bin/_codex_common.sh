@@ -273,9 +273,14 @@ prepare_codex_aws_account() {
   root="$(git -C "$WORKDIR" rev-parse --show-toplevel 2>/dev/null || true)"
   [[ -n "$root" ]] || return 0
   declaration="$root/.claude/codex-aws-account"
-  [[ -e "$declaration" || -L "$declaration" ]] || return 0
   if ! CODEX_AWS_ACCOUNT="$(python3 - "$declaration" <<'PYAWSACCOUNT'
-import pathlib, sys
+import os, pathlib, sys
+try:
+    os.lstat(sys.argv[1])
+except FileNotFoundError:
+    sys.exit(0)
+except OSError:
+    sys.exit(1)
 try:
     account = pathlib.Path(sys.argv[1]).read_text().strip()
 except (OSError, UnicodeError):
