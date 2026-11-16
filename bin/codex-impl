@@ -140,8 +140,8 @@ if [[ "${CODEX_IMPL_ALLOW_MISSING_NODE_MODULES:-0}" != "1" ]]; then
 fi
 
 # AWS の接続先（AWS_PROFILE / --profile）は依頼文に書かれていてもよい。
-# templates/codex-dev.aws-config が dev・stg 用の名前を同じ dev の一時鍵へ向く別名として
-# 定義しているため、指定されてもそのまま dev（669126230735）へつながる。
+# templates/codex-dev.aws-config は dev/stg と docs 読み取り専用の鍵を別名で分離する。
+# docs へは --profile codex-docs-ro または --profile aws-updater-bc-dev を明示する。
 # 本番の名前は定義していないので、指定されれば失敗する（安全側）。
 # 2026-11-06 までは依頼文を文字列で検査して拒否していたが、説明文や削除指示まで止める一方で
 # 行を分けた書き方は通ってしまい、文字列検査では両立しないため撤去した。
@@ -232,6 +232,8 @@ CODEX_PID=$!
   echo "writable_git_common=${GIT_COMMON_ABS:-}"
   echo "aws=$CODEX_IMPL_AWS_STATE"
   echo "aws_expiration=$CODEX_IMPL_AWS_EXPIRATION"
+  echo "aws_docs=$CODEX_IMPL_AWS_DOCS_STATE"
+  echo "aws_docs_expiration=$CODEX_IMPL_AWS_DOCS_EXPIRATION"
   codex_github_account_state
   codex_summary_state
   echo "requested_model=$REQUESTED_MODEL"

@@ -91,8 +91,10 @@ git revert --no-commit $(git rev-list --first-parent efe4aad..HEAD)
 - AWS は stg プロファイルで口座 `669126230735` を照合した場合だけ一時鍵を環境へ渡し、失敗時は `aws=none`。
   `~/.aws` を拒否し、秘密なしの `codex-dev` 設定と空の credentials を指定するため、共有設定の prod プロファイルへ届かない。
   鍵は更新せず、`aws_expiration` の期限で長い作業は途中から AWS を使えなくなる。
+  docs-platform は頭の `aws-updater-bc-dev` で `codex-readonly` を assume し、口座 `670352692792` とロール ARN を照合した鍵だけを別環境変数で渡す（失敗時 `aws_docs=none`、期限 `aws_docs_expiration`）。
+  docs 接続は `aws --profile codex-docs-ro …` または `aws --profile aws-updater-bc-dev …` と明示する。`AWS_PROFILE` だけでは dev 鍵が優先される。
 - `codex-impl` は起動前に Python 3.11 以上の `tomllib` で `~/.codex/config.toml`、設定時の `$CODEX_HOME/config.toml`、作業場所と祖先の `.codex/config.toml` を検査する。
-  トップレベルと全 profiles の `shell_environment_policy.set` に `AWS_PROFILE` 以外の `AWS_` キーがあれば拒否する。読取・解析不能も拒否し、値は表示しない。存在しない任意設定は許容する。
+  トップレベルと全 profiles の `shell_environment_policy.set` に `AWS_PROFILE` 以外の `AWS_` キーまたは `CODEX_AWS_DOCS_` キーがあれば拒否する。読取・解析不能も拒否し、値は表示しない。存在しない任意設定は許容する。
   `AWS_PROFILE` は CLI で `codex-dev` に上書きする。継承の絞り込み（Should）は既存の環境継承契約への影響があるため今回は範囲外。
 - **`codex-impl` の既定モデルは `gpt-6.1-sol`。** `CODEX_IMPL_MODEL` で上書きできる。
   `CODEX_IMPL_MODEL=` と空文字を明示すると `-m` を付けず、config.toml の既定に従う。
