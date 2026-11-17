@@ -315,9 +315,18 @@ RE_RECEIPT_CONTENT_HASH = re.compile(r"^content_hash=([0-9a-fA-F]{64})\s*$", re.
 # 1行目は既存の判定行契約。申告はプロンプトで指定する2・3行目だけを読む。
 
 
+def split_receipt_lines(text: str) -> list[str]:
+    """LF / CRLF だけを区切りにする。単独CRや他の制御文字は検査用に残す。"""
+    if not text:
+        return []
+    lines = text.split("\n")
+    return [line[:-1] if i < len(lines) - 1 and line.endswith("\r") else line
+            for i, line in enumerate(lines)]
+
+
 def parse_receipt_claim(report_text: str) -> tuple[str | None, str | None]:
     """2行目の read_sha と3行目の content_hash を読む。位置ずれは欠落扱い。"""
-    lines = (report_text or "").splitlines()
+    lines = split_receipt_lines(report_text or "")
     m_sha = RE_RECEIPT_READ_SHA.fullmatch(lines[1]) if len(lines) > 1 else None
     m_hash = RE_RECEIPT_CONTENT_HASH.fullmatch(lines[2]) if len(lines) > 2 else None
     sha = m_sha.group(1).lower() if m_sha else None
@@ -335,9 +344,12 @@ class ReceiptCheck:
 
 
 def check_verdict_line(report_text: str) -> ReceiptCheck:
-    """1行目の形式だけを検査する。検査自体の例外は受領を妨げない。"""
+    """1行目の形式と報告内の制御文字を検査する。検査自体の例外は受領を妨げない。"""
     try:
-        lines = report_text.splitlines()
+        lines = split_receipt_lines(report_text)
+        if any((ord(c) < 32 and c != "\t") or 0x7f <= ord(c) <= 0x9f
+               or c in "\u2028\u2029" for line in lines for c in line):
+            return ReceiptCheck("rejected", "LF / CRLF / 水平タブ以外の制御文字を除いて出し直してください。")
         first = lines[0] if lines else ""
         if first in ("実装着手可", "設計修正要"):
             return ReceiptCheck("ok", "")
@@ -370,7 +382,7 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
             return ReceiptCheck("rejected", "照合不能: 発注時の content_hash が空入力の値です（計算失敗または旧形式 state）。再発注してください。")
         claimed_sha, claimed_hash = parse_receipt_claim(report_text)
         if claimed_sha is None or claimed_hash is None:
-            lines = (report_text or "").splitlines()
+            lines = split_receipt_lines(report_text or "")
             previews = [
                 "".join(c if c.isprintable() else " " for c in lines[i][:60])
                 if len(lines) > i else "（行なし）"
@@ -1567,7 +1579,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "receipt":
         d = read_state_file(Path(args.state_file))
         try:
-            report_text = Path(args.report).read_text()
+            with Path(args.report).open(newline="") as report_file:
+                report_text = report_file.read()
         except OSError:
             report_text = ""  # ファイル不在も「申告なし」と同じ扱い（check_receipt が rejected にする）
         result = check_receipt(d.get("head_sha", ""), d.get("content_hash", ""), report_text)
