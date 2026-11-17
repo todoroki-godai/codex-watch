@@ -28,8 +28,9 @@ def rebuild(tmp_path, log_text, original):
 
 
 @pytest.mark.parametrize('verdict,preamble', [
-    ('マージ可', '修正要否は未判定です。対象コミットを確認してから判定を返します。'),
-    ('修正要', '修正要／マージ可の判定は差分を確認してから確定します。'),
+    ('実装着手可', '修正要否は未判定です。対象コミットを確認してから判定を返します。'),
+    ('設計修正要', '修正要／マージ可の判定は差分を確認してから確定します。'),
+    ('判定保留: 前の回と照合できないため', '対象を確認中'),
 ])
 @pytest.mark.parametrize('original_kind', ['preamble', 'combined', 'tail'])
 def test_rebuild_preamble_receipt(tmp_path, verdict, preamble, original_kind):

@@ -530,21 +530,21 @@ def test_git_content_hash_differs_for_fully_staged_content_with_no_working_tree_
 
 
 def test_parse_receipt_claim_extracts_from_head():
-    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: 実装着手可\n"
     sha, chash = rg.parse_receipt_claim(report)
     assert sha == SHA_A
     assert chash == HASH_A
 
 
 def test_parse_receipt_claim_uppercase_normalized_to_lowercase():
-    report = f"マージ可\nread_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
+    report = f"実装着手可\nread_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
     sha, chash = rg.parse_receipt_claim(report)
     assert sha == SHA_A
     assert chash == HASH_A
 
 
 def test_parse_receipt_claim_missing_returns_none():
-    sha, chash = rg.parse_receipt_claim("判定: マージ可\n本文のみ\n")
+    sha, chash = rg.parse_receipt_claim("判定: 実装着手可\n本文のみ\n")
     assert sha is None
     assert chash is None
 
@@ -568,46 +568,46 @@ def test_parse_receipt_claim_rejects_read_sha_on_verdict_line():
 
 
 def test_check_receipt_ok_on_match():
-    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: 実装着手可\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "ok"
 
 
 def test_check_receipt_ok_when_report_uses_uppercase_hex():
-    report = f"マージ可\nread_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
+    report = f"実装着手可\nread_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "ok"
 
 
 def test_check_receipt_rejects_legacy_state_missing_expected_sha():
-    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
     result = rg.check_receipt("", HASH_A, report)
     assert result.status == "rejected"
     assert "旧形式" in result.reason
 
 
 def test_check_receipt_rejects_legacy_state_missing_expected_hash():
-    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
+    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n"
     result = rg.check_receipt(SHA_A, "", report)
     assert result.status == "rejected"
     assert "旧形式" in result.reason
 
 
 def test_check_receipt_rejects_missing_claim():
-    result = rg.check_receipt(SHA_A, HASH_A, "判定: マージ可\n本文のみ\n")
+    result = rg.check_receipt(SHA_A, HASH_A, "判定: 実装着手可\n本文のみ\n")
     assert result.status == "rejected"
     assert "申告" in result.reason
 
 
 def test_check_receipt_rejects_sha_mismatch():
-    report = f"マージ可\nread_sha={SHA_B}\ncontent_hash={HASH_A}\n"
+    report = f"実装着手可\nread_sha={SHA_B}\ncontent_hash={HASH_A}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
     assert "read_sha" in result.reason
 
 
 def test_check_receipt_rejects_content_hash_mismatch():
-    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={HASH_B}\n"
+    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={HASH_B}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
     assert "content_hash" in result.reason
@@ -627,7 +627,7 @@ def test_check_receipt_rejects_read_sha_short_prefix_claim():
     # ちょうど40桁だが値の一部だけが一致する（先頭一致）ケースを試す。
     prefix_only = SHA_A[:7] + "0" * 33  # SHA_A と先頭7桁だけ一致・残りは不一致（40桁は保つ）
     assert prefix_only != SHA_A
-    report = f"マージ可\nread_sha={prefix_only}\ncontent_hash={HASH_A}\n"
+    report = f"実装着手可\nread_sha={prefix_only}\ncontent_hash={HASH_A}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
@@ -635,7 +635,7 @@ def test_check_receipt_rejects_read_sha_short_prefix_claim():
 def test_check_receipt_rejects_read_sha_truly_short_claim_as_missing():
     # regex が40桁固定のため、短い申告は「申告なし」として rejected になる
     # （前方一致に緩められた場合に real な脅威になるのは、次の empty/prefix ケース）。
-    report = "マージ可\nread_sha=aaaaaaa\ncontent_hash=" + HASH_A + "\n"
+    report = "実装着手可\nread_sha=aaaaaaa\ncontent_hash=" + HASH_A + "\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
@@ -643,7 +643,7 @@ def test_check_receipt_rejects_read_sha_truly_short_claim_as_missing():
 def test_check_receipt_rejects_empty_read_sha_claim():
     # `startswith("")` は常に True になるため、前方一致に緩めると空文字申告すら通ってしまう。
     # 完全一致の検査であることを固定する。
-    report = f"マージ可\nread_sha=\ncontent_hash={HASH_A}\n判定: マージ可\n"
+    report = f"実装着手可\nread_sha=\ncontent_hash={HASH_A}\n判定: 実装着手可\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
@@ -651,13 +651,13 @@ def test_check_receipt_rejects_empty_read_sha_claim():
 def test_check_receipt_rejects_content_hash_short_prefix_claim():
     prefix_only = HASH_A[:7] + "0" * 57  # HASH_A と先頭7桁だけ一致・残りは不一致（64桁は保つ）
     assert prefix_only != HASH_A
-    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash={prefix_only}\n"
+    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={prefix_only}\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
 
 def test_check_receipt_rejects_empty_content_hash_claim():
-    report = f"マージ可\nread_sha={SHA_A}\ncontent_hash=\n判定: マージ可\n"
+    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash=\n判定: 実装着手可\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "rejected"
 
@@ -672,12 +672,12 @@ def test_check_receipt_rejects_when_only_tail_character_differs():
     """
     tail_flip_sha = SHA_A[:-1] + ("b" if SHA_A[-1] != "b" else "c")
     assert len(tail_flip_sha) == 40 and tail_flip_sha != SHA_A
-    result = rg.check_receipt(SHA_A, HASH_A, f"マージ可\nread_sha={tail_flip_sha}\ncontent_hash={HASH_A}\n")
+    result = rg.check_receipt(SHA_A, HASH_A, f"実装着手可\nread_sha={tail_flip_sha}\ncontent_hash={HASH_A}\n")
     assert result.status == "rejected"
 
     tail_flip_hash = HASH_A[:-1] + ("b" if HASH_A[-1] != "b" else "c")
     assert len(tail_flip_hash) == 64 and tail_flip_hash != HASH_A
-    result2 = rg.check_receipt(SHA_A, HASH_A, f"マージ可\nread_sha={SHA_A}\ncontent_hash={tail_flip_hash}\n")
+    result2 = rg.check_receipt(SHA_A, HASH_A, f"実装着手可\nread_sha={SHA_A}\ncontent_hash={tail_flip_hash}\n")
     assert result2.status == "rejected"
 
 
@@ -1385,9 +1385,9 @@ def test_hash_failure_has_no_output(tmp_path, monkeypatch, failure):
 def test_receipt_rejects_misplaced_claims(transform):
     claims = [f"read_sha={SHA_A}", f"content_hash={HASH_A}"]
     lines = {
-        "quote": ["マージ可", "今回の申告なし", "過去の記録:", *claims],
-        "shift": ["マージ可", "", *claims],
-        "swap": ["マージ可", *reversed(claims)],
+        "quote": ["実装着手可", "今回の申告なし", "過去の記録:", *claims],
+        "shift": ["実装着手可", "", *claims],
+        "swap": ["実装着手可", *reversed(claims)],
         "no_verdict": claims,
     }[transform]
     result = rg.check_receipt(SHA_A, HASH_A, "\n".join(lines))
@@ -1409,13 +1409,13 @@ def test_receipt_positive_real_recipe(tmp_path, dirty):
     claim = subprocess.run(["/bin/sh", "-c", rg.CONTENT_HASH_RECIPE], cwd=tmp_path,
                            capture_output=True, check=True, text=True).stdout.strip()
     sha = rg.git_head_sha(str(tmp_path))
-    assert rg.check_receipt(sha, expected, f"マージ可\r\nread_sha={sha}\r\ncontent_hash={claim}\r\n").status == "ok"
+    assert rg.check_receipt(sha, expected, f"実装着手可\r\nread_sha={sha}\r\ncontent_hash={claim}\r\n").status == "ok"
 
 
 @pytest.mark.parametrize("lines", [
-    ["マージ可"],
-    ["マージ可", "x" * 80, "y" * 80],
-    ["マージ可", "read_sha=short\tbad", "content_hash=short\x1b[31m"],
+    ["実装着手可"],
+    ["実装着手可", "x" * 80, "y" * 80],
+    ["実装着手可", "read_sha=short\tbad", "content_hash=short\x1b[31m"],
 ])
 def test_missing_claim_reason_identifies_positions_and_actual_lines(lines):
     result = rg.check_receipt(SHA_A, HASH_A, "\n".join(lines))
@@ -1475,7 +1475,7 @@ def test_hash_receipt_matches_for_each_worktree_state(tmp_path, kind):
                            check=True, capture_output=True, text=True).stdout.strip()
     assert claim == expected != rg.EMPTY_SHA256
     sha = rg.git_head_sha(str(tmp_path))
-    assert rg.check_receipt(sha, expected, f"ok\nread_sha={sha}\ncontent_hash={claim}\n").status == "ok"
+    assert rg.check_receipt(sha, expected, f"実装着手可\nread_sha={sha}\ncontent_hash={claim}\n").status == "ok"
 
 
 @pytest.mark.parametrize("expected,claimed", [
@@ -1484,7 +1484,7 @@ def test_hash_receipt_matches_for_each_worktree_state(tmp_path, kind):
     (HASH_A, rg.EMPTY_SHA256.upper()),
 ])
 def test_receipt_rejects_empty_digest(expected, claimed):
-    result = rg.check_receipt(SHA_A, expected, f"ok\nread_sha={SHA_A}\ncontent_hash={claimed}\n")
+    result = rg.check_receipt(SHA_A, expected, f"実装着手可\nread_sha={SHA_A}\ncontent_hash={claimed}\n")
     assert result.status == "rejected"
     assert "空入力" in result.reason
 
