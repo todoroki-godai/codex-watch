@@ -1,0 +1,61 @@
+{
+  "originals_unchanged": true,
+  "results": [
+    {
+      "name": "disconnect-watch",
+      "source": "bin/codex-watch",
+      "old": "${MODEL_SUFFIX}${VERDICT_NOTICE}",
+      "new": "${MODEL_SUFFIX}",
+      "result": "red",
+      "summary": "22 failed, 16 deselected in 1.99s"
+    },
+    {
+      "name": "skip-reviews",
+      "source": "lib/watch_verdict.py",
+      "old": "== \"workspace-write\"",
+      "new": "!= \"workspace-write\"",
+      "result": "red",
+      "summary": "24 failed, 6 passed, 8 deselected in 2.17s"
+    },
+    {
+      "name": "check-impl-too",
+      "source": "lib/watch_verdict.py",
+      "old": "if read_state_file(state_file).get(\"mode\") == \"workspace-write\":",
+      "new": "if False:",
+      "result": "red",
+      "summary": "2 failed, 6 passed, 30 deselected in 0.53s"
+    },
+    {
+      "name": "erase-reason",
+      "source": "lib/watch_verdict.py",
+      "old": "{result.reason}",
+      "new": "",
+      "result": "red",
+      "summary": "22 failed, 16 deselected in 1.56s"
+    },
+    {
+      "name": "fold-newlines",
+      "source": "lib/watch_verdict.py",
+      "old": "report.open(newline=\"\")",
+      "new": "report.open()",
+      "result": "red",
+      "summary": "1 failed, 3 passed, 34 deselected in 0.33s"
+    },
+    {
+      "name": "helper-fail-closed",
+      "source": "lib/watch_verdict.py",
+      "old": "    except Exception:\n        pass",
+      "new": "    except Exception:\n        return \" / 判定行の受領不可: 検査障害\"",
+      "result": "red",
+      "summary": "2 failed, 1 passed, 35 deselected in 0.25s"
+    },
+    {
+      "name": "validator-fail-closed",
+      "source": "lib/round_gate.py",
+      "old": "except Exception:\n        return ReceiptCheck(\"ok\", \"\")",
+      "new": "except Exception:\n        return ReceiptCheck(\"rejected\", \"検査障害\")",
+      "result": "red",
+      "summary": "1 failed, 2 passed, 35 deselected in 0.21s"
+    }
+  ]
+}

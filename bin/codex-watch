@@ -88,6 +88,12 @@ while :; do
     # 1行目が判定行として妥当ならそのまま使い、そうでなければ log から結合して上書きする
     # （元の -o 出力は "$REPORT.raw" に温存。rebuild できなければ何もしない＝空のまま）。
     rebuild_report_if_needed "$LOG" "$REPORT" || true
+    # 再構築後、頭が直接読む本文を検査する。終了通知1通の中に理由を添える。
+    # Python自体が起動できない場合も既存の終了通知と報告は残す（fail-open）。
+    VERDICT_NOTICE=""
+    if [[ -s "$REPORT" ]]; then
+      VERDICT_NOTICE="$(python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/watch_verdict.py" "$STATE_FILE" "$REPORT" 2>/dev/null || true)"
+    fi
     # 正否は log の中身でなく -o の report（必要なら上で再構築済み）が非空かで判定する。
     # log の 'tokens used' は CLI バージョン差で出ないことがあり、
     # 正しい report があるのに「異常終了」と誤報する（2026-08-25 レビュー指摘）。
@@ -96,12 +102,12 @@ while :; do
     # それは「完了した分析」ではないので、通常の「報告あり」より遮断済みである旨を優先して出す。
     if [[ "$filtered_reported" -eq 1 ]]; then
       if [[ -s "$REPORT" ]]; then
-        echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（部分結果をreportへ復元: $(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）。全文は $(extract_partial_cmd "$LOG")${MODEL_SUFFIX}"
+        echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（部分結果をreportへ復元: $(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）。全文は $(extract_partial_cmd "$LOG")${MODEL_SUFFIX}${VERDICT_NOTICE}"
       else
         echo "EXIT: $RUN_ID プロセス終了・セキュリティフィルタで遮断済み（report空は想定内）。部分結果の抽出: $(extract_partial_cmd "$LOG")${MODEL_SUFFIX}"
       fi
     elif [[ -s "$REPORT" ]]; then
-      echo "EXIT: $RUN_ID プロセス終了・報告あり（$(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）${MODEL_SUFFIX}"
+      echo "EXIT: $RUN_ID プロセス終了・報告あり（$(wc -l < "$REPORT" | tr -d ' ') 行 / 判定: $(extract_verdict_line "$REPORT")）${MODEL_SUFFIX}${VERDICT_NOTICE}"
     else
       echo "EXIT: $RUN_ID プロセス終了・報告ファイルが空（異常終了の疑い。tail -200 \"$LOG\" を確認）${MODEL_SUFFIX}"
     fi
