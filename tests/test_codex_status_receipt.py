@@ -79,7 +79,7 @@ def test_status_shows_receipt_ok_line_on_matching_claim(tmp_path: Path):
         "run-ok",
         head_sha=SHA,
         content_hash=HASH,
-        report_body=f"マージ可\nread_sha={SHA}\ncontent_hash={HASH}\n本文...\n",
+        report_body=f"実装着手可\nread_sha={SHA}\ncontent_hash={HASH}\n本文...\n",
     )
     result = _run_status(state_dir, "run-ok")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -97,7 +97,7 @@ def test_status_shows_receipt_rejected_line_on_mismatched_claim(tmp_path: Path):
         "run-bad",
         head_sha=SHA,
         content_hash=HASH,
-        report_body=f"マージ可\nread_sha={other_sha}\ncontent_hash={HASH}\n本文...\n",
+        report_body=f"実装着手可\nread_sha={other_sha}\ncontent_hash={HASH}\n本文...\n",
     )
     result = _run_status(state_dir, "run-bad")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -111,7 +111,7 @@ def test_status_shows_receipt_rejected_line_on_mismatched_claim(tmp_path: Path):
 @pytest.mark.parametrize("log_kind", ["no_tokens", "missing"])
 def test_finished_receipt_without_tokens(tmp_path, report_kind, log_kind):
     _write_finished_run(tmp_path, "run", head_sha=SHA, content_hash=HASH,
-                        report_body=f"マージ可\nread_sha={SHA}\ncontent_hash={HASH}\n")
+                        report_body=f"実装着手可\nread_sha={SHA}\ncontent_hash={HASH}\n")
     log = tmp_path / "run.log"
     if log_kind == "missing":
         log.unlink()
@@ -140,7 +140,7 @@ def test_status_rebuilds_preamble_and_displays_receipt(tmp_path, claimed_sha, ex
                         report_body="判定はレビュー後に出します。")
     (tmp_path / "preamble.log").write_text(
         "codex\n判定はレビュー後に出します。\nhook: done\ncodex\n"
-        f"マージ可\nread_sha={claimed_sha}\ncontent_hash={HASH}\n本文\n"
+        f"実装着手可\nread_sha={claimed_sha}\ncontent_hash={HASH}\n本文\n"
         "tokens used\n"
     )
     result = _run_status(tmp_path, "preamble")
@@ -149,5 +149,5 @@ def test_status_rebuilds_preamble_and_displays_receipt(tmp_path, claimed_sha, ex
     assert expected_label in result.stdout
     assert "判定行を特定できず" not in result.stdout
     assert (tmp_path / "preamble.report").read_text().splitlines()[:3] == [
-        "マージ可", f"read_sha={claimed_sha}", f"content_hash={HASH}",
+        "実装着手可", f"read_sha={claimed_sha}", f"content_hash={HASH}",
     ]

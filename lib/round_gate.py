@@ -334,11 +334,30 @@ class ReceiptCheck:
     reason: str
 
 
+def check_verdict_line(report_text: str) -> ReceiptCheck:
+    """1行目の形式だけを検査する。検査自体の例外は受領を妨げない。"""
+    try:
+        lines = report_text.splitlines()
+        first = lines[0] if lines else ""
+        if first in ("実装着手可", "設計修正要"):
+            return ReceiptCheck("ok", "")
+        prefix = "判定保留: "
+        if first.startswith(prefix) and first[len(prefix):].strip():
+            return ReceiptCheck("ok", "")
+        return ReceiptCheck(
+            "rejected",
+            "1行目を「実装着手可」「設計修正要」「判定保留: <理由>」のいずれかにして"
+            "出し直してください（保留の理由は同じ行に必要です）。",
+        )
+    except Exception:
+        return ReceiptCheck("ok", "")
+
+
 def check_receipt(expected_head_sha: str, expected_content_hash: str, report_text: str) -> ReceiptCheck:
     """レビュー本文が申告した「読んだ版」を、発注時に固定した値と機械で突合する。
 
-    緑（"ok"）になるのは実体（SHA・内容ハッシュ）が一致したときだけ。それ以外は全て
-    "rejected"（fail-closed）: 期待値が欠落（旧形式 state）・申告が欠落・不一致・例外。
+    SHA・内容ハッシュは欠落・不一致・例外で rejected（従来の fail-closed）。
+    一致した報告には1行目の形式検査も行い、その検査だけの例外は fail-open とする。
     """
     try:
         if not expected_head_sha or not expected_content_hash:
@@ -374,6 +393,9 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
                 "rejected",
                 f"content_hash が発注時の値と不一致です（申告={claimed_hash} 期待={expected_content_hash}）。",
             )
+        verdict = check_verdict_line(report_text)
+        if verdict.status == "rejected":
+            return verdict
         return ReceiptCheck("ok", "受領可: read_sha/content_hash が発注時の値と一致しました。")
     except Exception as e:  # fail-closed: 想定外の例外も受領不可にする
         return ReceiptCheck("rejected", f"照合不能: {e}")

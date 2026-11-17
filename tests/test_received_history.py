@@ -23,7 +23,7 @@ def evidence(case, tags=('alpha', 'beta')):
     receipts = []
     for rid, tag in zip(('first', 'second'), tags):
         report = case[1] / (rid + '.report')
-        report.write_text(f'可\nread_sha={SHA}\ncontent_hash={TREE}\n')
+        report.write_text(f'実装着手可\nread_sha={SHA}\ncontent_hash={TREE}\n')
         (case[1] / (rid + '.state')).write_text(
             f'run_id={rid}\nreview_target={TARGET}\nround=1\nkind_label=設計\n'
             f'started_at_human=date\nhead_sha={SHA}\nreviewer={rid}\n'
@@ -69,9 +69,9 @@ def test_report_rejected(case, mode):
     if mode == 'absent': report.unlink()
     if mode == 'empty': report.write_text('')
     if mode == 'malformed': report.write_text('可\nMARKER_TWO\nMARKER_THREE\n')
-    if mode == 'sha': report.write_text(f'可\nread_sha={"d"*40}\ncontent_hash={TREE}\n')
-    if mode == 'tree': report.write_text(f'可\nread_sha={SHA}\ncontent_hash={"d"*64}\n')
-    if mode == 'empty_hash': report.write_text(f'可\nread_sha={SHA}\ncontent_hash={EMPTY_SHA256}\n')
+    if mode == 'sha': report.write_text(f'実装着手可\nread_sha={"d"*40}\ncontent_hash={TREE}\n')
+    if mode == 'tree': report.write_text(f'実装着手可\nread_sha={SHA}\ncontent_hash={"d"*64}\n')
+    if mode == 'empty_hash': report.write_text(f'実装着手可\nread_sha={SHA}\ncontent_hash={EMPTY_SHA256}\n')
     if mode == 'old':
         p=case[1]/'second.state'; p.write_text(p.read_text().replace(f'content_hash={TREE}\n',''))
     assert all(e.get('status') != 'received' for e in get(case, body, receipts))

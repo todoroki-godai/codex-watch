@@ -51,6 +51,9 @@ def test_reads_current_canonical_before_user_prompt(launcher, tmp_path, fake_bin
     text = prompts[0].read_text()
     assert text.count(conditions) == 1
     assert text.index(conditions) < text.index('dummy prompt')
+    assert '`実装着手可` / `設計修正要` / `判定保留: <理由>`' in text
+    assert '理由を必ず同じ行に書くこと' in text
+    assert 'この形式でなければ受領不可' in text
 
 
 @pytest.mark.parametrize('round_no', [1, 2, 3])
