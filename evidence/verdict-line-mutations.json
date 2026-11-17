@@ -1,0 +1,83 @@
+{
+  "original_sha256": "56e6fb08af5fabf2788b0299985260f4b4329399b363ad6b4f372162308119e7",
+  "original_unchanged": true,
+  "results": [
+    {
+      "name": "value",
+      "old": "prefix = \"判定保留: \"",
+      "new": "prefix = \"判定保留\"",
+      "returncode": 1,
+      "result": "red",
+      "expected": "red",
+      "passed": true,
+      "source_sha256": "7b701360652fb2a8a5d3f0edfd3977a9cd4683462269a27ba351c9e835a2a908",
+      "pytest_summary": "2 failed, 9 passed, 7 deselected in 0.94s"
+    },
+    {
+      "name": "condition",
+      "old": "first in (\"実装着手可\", \"設計修正要\")",
+      "new": "first in (\"実装着手可\", \"設計修正要\", \"マージ可\")",
+      "returncode": 1,
+      "result": "red",
+      "expected": "red",
+      "passed": true,
+      "source_sha256": "08c2c6b13195ec732ec20a05a0389ae389fce5a08f701c8c6ad3897048ee5c42",
+      "pytest_summary": "1 failed, 10 passed, 7 deselected in 1.23s"
+    },
+    {
+      "name": "branch",
+      "old": "first = lines[0] if lines else \"\"",
+      "new": "first = lines[0] if lines else \"実装着手可\"",
+      "returncode": 1,
+      "result": "red",
+      "expected": "red",
+      "passed": true,
+      "source_sha256": "cb4db6bf228317f2965abbba77134de1d2a8213e41a66c85f476ec47923653e8",
+      "pytest_summary": "2 failed, 9 passed, 7 deselected in 1.63s"
+    },
+    {
+      "name": "order",
+      "old": "first = lines[0] if lines else \"\"",
+      "new": "first = next((line for line in lines if line in (\"実装着手可\", \"設計修正要\")), lines[0] if lines else \"\")",
+      "returncode": 1,
+      "result": "red",
+      "expected": "red",
+      "passed": true,
+      "source_sha256": "a9ba7380be882b970d29cfabe66fdbe5701861e34597a61edceef0418fd7bd26",
+      "pytest_summary": "1 failed, 10 passed, 7 deselected in 1.44s"
+    },
+    {
+      "name": "extra-disconnect",
+      "old": "if verdict.status == \"rejected\":",
+      "new": "if False:",
+      "returncode": 1,
+      "result": "red",
+      "expected": "red",
+      "passed": true,
+      "source_sha256": "3c961eb2741aae3ac58f0ef551a86279948a1800e61c738c322c2b668ba1a939",
+      "pytest_summary": "9 failed, 3 passed, 6 deselected in 1.89s"
+    },
+    {
+      "name": "extra-fail-closed",
+      "old": "except Exception:\n        return ReceiptCheck(\"ok\", \"\")",
+      "new": "except Exception:\n        return ReceiptCheck(\"rejected\", \"validator error\")",
+      "returncode": 1,
+      "result": "red",
+      "expected": "red",
+      "passed": true,
+      "source_sha256": "42fe37a6b17fd8745f1191d91a02ca6945a6454136ff9bbcf90801e839a6c9d8",
+      "pytest_summary": "1 failed, 17 deselected in 0.12s"
+    },
+    {
+      "name": "positive-equivalent",
+      "old": "first in (\"実装着手可\", \"設計修正要\")",
+      "new": "first in {\"実装着手可\", \"設計修正要\"}",
+      "returncode": 0,
+      "result": "green",
+      "expected": "green",
+      "passed": true,
+      "source_sha256": "26fb1b130cb04144dab87411bfaa7fdaac561110af1654ae62d0327562c9e7f4",
+      "pytest_summary": "18 passed in 1.83s"
+    }
+  ]
+}
