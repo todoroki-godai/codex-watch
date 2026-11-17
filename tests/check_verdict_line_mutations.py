@@ -1,4 +1,5 @@
 """Mutate isolated checkout copies; require every defective variant to turn red."""
+import difflib
 import hashlib
 import json
 import os
@@ -30,20 +31,40 @@ CASES = [
      'first in {"実装着手可", "設計修正要"}', '', False),
 ]
 
+CONTROL_CASES = [
+    (SOURCE, 'control-splitlines', 'lines = text.split("\\n")',
+     'lines = text.splitlines()', 'separator_bypass or control_anywhere', True),
+    (SOURCE, 'control-disabled', 'if any((ord(c) < 32',
+     'if False and any((ord(c) < 32', 'control_anywhere', True),
+    (SOURCE, 'claim-splitlines', 'lines = split_receipt_lines(report_text or "")',
+     'lines = (report_text or "").splitlines()', 'separator_bypass', True),
+    (SOURCE, 'crlf-rejected', 'i < len(lines) - 1 and line.endswith("\\r")',
+     'False', 'all_verdicts_both_endings', True),
+    # Distinct from character/separator changes: erase bytes at the I/O boundaries.
+    (SOURCE, 'extra-cli-newline-folding', 'Path(args.report).open(newline="")',
+     'Path(args.report).open()', 'stray_cr', True),
+    ('lib/routing_record.py', 'extra-history-newline-folding',
+     "Path(d['report']).open(newline='')", "Path(d['report']).open()", 'stray_cr', True),
+]
+
+
 def main():
-    original = (ROOT / SOURCE).read_bytes()
+    originals = {path: (ROOT / path).read_bytes() for path in (SOURCE, 'lib/routing_record.py')}
+    original = originals[SOURCE]
     results = []
-    for name, old, new, selector, expect_red in CASES:
+    for source, name, old, new, selector, expect_red in [(SOURCE, *case) for case in CASES] + CONTROL_CASES:
         folder = OUT / name
         if folder.exists():
             shutil.rmtree(folder)
         folder.mkdir(parents=True)
         for sub in ('bin', 'lib', 'templates', 'tests'):
             shutil.copytree(ROOT / sub, folder / sub, ignore=shutil.ignore_patterns('__pycache__'))
-        path = folder / SOURCE
+        path = folder / source
         text = path.read_text()
-        assert text.count(old) == 1, name
-        mutated = text.replace(old, new)
+        assert text.count(old) == (2 if name == 'claim-splitlines' else 1), name
+        mutated = text.replace(old, new, 1)
+        (folder / 'mutation.diff').write_text(''.join(difflib.unified_diff(
+            text.splitlines(True), mutated.splitlines(True), fromfile=source, tofile=source)))
         path.write_text(mutated)
         command = [sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider',
                    '--basetemp=' + str(folder / 'tmp'), 'tests/test_verdict_line.py']
@@ -56,13 +77,16 @@ def main():
         # Syntax/import errors do not count as killed mutations.
         red = run.returncode == 1 and ' failed' in output and 'ERROR collecting' not in output
         passed = red if expect_red else run.returncode == 0
-        results.append(dict(name=name, old=old, new=new, returncode=run.returncode,
+        results.append(dict(name=name, source=source, old=old, new=new, returncode=run.returncode,
                             result='red' if red else 'green' if run.returncode == 0 else 'error',
                             expected='red' if expect_red else 'green', passed=passed,
                             source_sha256=hashlib.sha256(mutated.encode()).hexdigest(),
                             pytest_summary=output.strip().splitlines()[-1]))
-    assert (ROOT / SOURCE).read_bytes() == original
-    result = dict(original_sha256=hashlib.sha256(original).hexdigest(), original_unchanged=True,
+    assert all((ROOT / path).read_bytes() == data for path, data in originals.items())
+    result = dict(baseline_head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
+                  original_sha256=hashlib.sha256(original).hexdigest(), original_unchanged=True,
+                  original_sha256_by_source={path: hashlib.sha256(data).hexdigest()
+                                             for path, data in originals.items()},
                   results=results)
     (ROOT / 'evidence/verdict-line-mutations.json').write_text(json.dumps(result, ensure_ascii=False, indent=2)+'\n')
     for row in results:
