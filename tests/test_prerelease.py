@@ -217,6 +217,19 @@ def test_startup_reports_other_prerelease_rejections(case, field, value, reason)
     assert_prerelease_refusal(case, reason)
 
 
+def test_invalid_review_skill_addition_releases_unused_reservation(case, monkeypatch):
+    monkeypatch.setenv('CODEX_SKILLS_FILTER', 'on')
+    monkeypatch.setenv('CODEX_SKILLS_ALLOW', 'extra,')
+    monkeypatch.delenv('CODEX_REVIEW_ALLOW_SKILLS', raising=False)
+    result = run_cli(case)
+    assert result.returncode == 2, result.stderr
+    assert 'CODEX_SKILLS_ALLOW' in result.stderr
+    assert not (case['tmp'] / 'sent').exists()
+    assert not list(case['state'].glob('0-fixture-*.state'))
+    assert not list(case['state'].glob('0-fixture-*.reservation'))
+    assert not list(case['state'].glob('0-fixture-*.prompt.*'))
+
+
 def test_human_approval_ignores_policy_failure(case, monkeypatch):
     c = case
     (c['state'] / 'third.state').write_text(f'run_id=third\nreview_target={TARGET}\nround=3\nhead_sha={c["data"]["head_sha"]}\n')

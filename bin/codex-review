@@ -209,9 +209,18 @@ REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_REVIEW_EFFORT:-}")"
 [[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
 [[ "${#IMAGE_ARGS[@]}" -gt 0 ]] && CODEX_CLI_ARGS+=("${IMAGE_ARGS[@]}")
-prepare_codex_launch_skills "$WORKDIR" "$SKILLS_SUPPRESSED" exec -C "$WORKDIR" -s read-only \
-  ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} \
-  -o "$REPORT_FILE" -
+
+prepare_review_skills() {
+  prepare_codex_launch_skills "$WORKDIR" "$SKILLS_SUPPRESSED" exec -C "$WORKDIR" -s read-only \
+    ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} \
+    -o "$REPORT_FILE" -
+}
+CHECK_REVIEW_SKILLS=no
+if [[ "$SKILLS_SUPPRESSED" == yes && -n "${CODEX_SKILLS_ALLOW:-}" ]]; then
+  CHECK_REVIEW_SKILLS=yes
+else
+  prepare_review_skills
+fi
 
 # 生成先は mktemp で排他確保する。第2引数が生成先と同じパスだと、リダイレクトが
 # 原本を先に空にして前置きだけが届く（再発注で前回の .prompt を使い回すと起きる）。
@@ -249,12 +258,19 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
 
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
 # A only: re-read both sources and reserve before any external dispatch.
+RESERVATION_FILE=
 if python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("authority") == "project_prerelease" else 1)' "$GATE_JSON"; then
   GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --goal-cut "${REVIEW_GOAL_CUT:-}" --mandatory-gate "${REVIEW_MANDATORY_GATE:-}" --snapshot "$GATE_JSON" --reserve-run-id "$RUN_ID" --json)" || { echo "公開前特例の送信前再確認で停止: $GATE_JSON" >&2; exit 5; }
+  RESERVATION_FILE="$STATE_DIR/$RUN_ID.reservation"
 fi
 # D: observation only, after prerelease revalidation/reservation; never propagate failure.
 ROUTE_CONTENT_HASH="$(python3 "$(dirname "$GATE_PY")/routing_warn.py" "$STATE_DIR" "$RUN_ID" "${REVIEW_TARGET:-}" "$CODEX_REVIEW_KIND_LABEL" "$WORKDIR" "$PROMPT_FILE" || :)"
 [[ "$ROUTE_CONTENT_HASH" =~ ^[a-f0-9]{64}$ ]] || ROUTE_CONTENT_HASH=""
+# 禁止判定が必要な追加指定は、起動直前に準備する。
+if [[ "$CHECK_REVIEW_SKILLS" == yes ]] && ! prepare_review_skills; then
+  rm -f -- "$EFFECTIVE_PROMPT" ${RESERVATION_FILE:+"$RESERVATION_FILE"}
+  exit 2
+fi
 nohup codex exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 

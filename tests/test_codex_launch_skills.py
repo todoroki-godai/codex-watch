@@ -132,6 +132,7 @@ def test_default_filters_skills_and_memories(launch, kind):
     normal = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
     duplicate = skill("agent-browser", "home/.agents/skills/agent-browser.backup/SKILL.md")
     extra = skill("explicit", 'project/nested/.agents/skills/空 白 " and \\ /SKILL.md')
+    escaped = skill("unlisted", """project/nested/.agents/skills/日本 語 "' \\t/SKILL.md""")
     disabled = skill("disabled", "home/.codex/skills/disabled/SKILL.md")
     plugin = "home/.codex/plugins/cache"
     other = skill("pdf", f"{plugin}/other/pdf/1/skills/pdf/SKILL.md")
@@ -165,7 +166,7 @@ enabled = false
     observed = child(run(kind, CODEX_SKILLS_ALLOW=" explicit,explicit "))
     values = configs(observed)
     blocked = {Path(s["path"]) for s in values["skills"]["config"] if s["enabled"] is False}
-    assert blocked == {duplicate, other, system, admin, ancestor, project, external}
+    assert blocked == {duplicate, other, system, admin, ancestor, project, external, escaped}
     assert blocked.isdisjoint({commit, normal, extra, disabled, old, current})
     assert len(values["skills"]["config"]) == len(blocked)
     assert values.get("memories") == {"use_memories": False}
@@ -212,6 +213,36 @@ def test_review_linked_extra_rejected_or_explicitly_allowed(launch, direction, v
     assert configs(observed) == ({"skills": {"config": []}} if variant == "verified" else {})
     assert "を読み込んではならない" not in observed["prompt"]
     assert PROMPT in observed["prompt"]
+
+
+@pytest.mark.parametrize(("variant", "target", "reason"), [
+    ("verified", "home/.agents/private", "CODEX_REVIEW_ALLOW_SKILLS=1"),
+    ("new-version", "home/.agents/private", "CODEX_REVIEW_ALLOW_SKILLS=1"),
+    ("verified", "outside/other", "列挙後に実体が変更されました"),
+], ids=["verified", "new-version", "different-public-target"])
+def test_review_rechecks_nested_alias_after_keep_paths(launch, variant, target, reason):
+    root, skill, link, run, _ = launch
+    allowed = skill("extra", "home/.codex/skills/extra/SKILL.md")
+    replacement = skill("extra", f"{target}/SKILL.md")
+    alias = link("project/nested/.agents/skills/group/alias", allowed.parent)
+    helper = root / "wrapper/lib/codex_launch_skills.py"
+    marker = "    return keep, notices"
+    source = helper.read_text()
+    assert source.count(marker) == 1
+    helper.write_text(source.replace(marker, f"""
+    alias = Path({str(alias)!r})
+    if alias.readlink() == Path({str(allowed.parent)!r}):
+        alias.unlink()
+        alias.symlink_to({str(replacement.parent)!r}, target_is_directory=True)
+{marker}"""))
+
+    result = run("review", variant, CODEX_SKILLS_ALLOW="extra")
+    assert alias.resolve() == replacement.parent
+    assert result.returncode == 2, result.stderr
+    assert "extra" in result.stderr and reason in result.stderr
+    assert not (root / "capture").exists()
+    assert not list((root / "state").glob("*.state"))
+    assert not list((root / "state").glob("*.prompt.*"))
 
 
 def assert_skip_state(root, result, reason):
@@ -277,6 +308,34 @@ def test_file_at_skill_location_launches_without_filter(launch, kind):
     assert "private fixture content" not in result.stderr
     assert len([line for line in result.stderr.splitlines() if "絞り込み" in line]) == 1
     assert_skip_state(root, result, "inventory_unreadable")
+
+
+@pytest.mark.parametrize("kind", ["impl", "review"])
+def test_unsupported_skill_header_launches_without_filter(launch, kind):
+    root, skill, _, run, child = launch
+    path = skill("extra", "home/.codex/skills/extra/SKILL.md")
+    path.write_text("---\n{name: extra, description: fixture}\n---\n")
+    result = run(kind)
+    observed = child(result)
+    assert configs(observed) == {}
+    assert ("を読み込んではならない" in observed["prompt"]) == (kind == "review")
+    warnings = [line for line in result.stderr.splitlines() if "絞り込み" in line]
+    assert len(warnings) == 1 and warnings[0].startswith("警告:")
+    assert str(path) in warnings[0] and "見出しを解決できません" in warnings[0]
+    assert_skip_state(root, result, "inventory_unreadable")
+
+
+@pytest.mark.parametrize("variant", ["verified", "new-version"])
+def test_unsupported_skill_header_blocks_review_addition(launch, variant):
+    root, skill, _, run, _ = launch
+    path = skill("extra", "home/.codex/skills/extra/SKILL.md")
+    path.write_text("---\n{name: extra, description: fixture}\n---\n")
+    result = run("review", variant, CODEX_SKILLS_ALLOW="extra")
+    assert result.returncode == 2
+    assert "読み込み禁止に当たらないか確認できません" in result.stderr
+    assert str(path) in result.stderr
+    assert not (root / "capture").exists()
+    assert not list((root / "state").glob("*.state"))
 
 
 @pytest.mark.parametrize(("requested", "message"), [

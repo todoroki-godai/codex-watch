@@ -235,7 +235,7 @@ def discover(root, *, follow=True, agent_root=None):
 
 
 # Codex reads the YAML header. Keep name matching independent of the Markdown body.
-# If a mapping or name scalar cannot be determined safely, abort before dispatch.
+# An unsupported mapping or name scalar makes the inventory unreadable.
 HEADER_KEY = re.compile(r"""(?:([\w.-]+)|'([^']+)'|"([^"\\]+)")\s*:(?:\s+|$)(.*)""")
 QUOTED_NAME = re.compile(r"""("(?:[^"\\]|\\.)*"|'(?:[^']|'')*')(?:\s+#.*|\s*)""")
 
@@ -263,14 +263,14 @@ def skill_name(path):
     current = None
     for level, line in active:
         if line.startswith("\t"):
-            raise FilterError(f"{path}: SKILL.md の見出しを解決できません")
+            raise InventoryReadError(f"{path}: SKILL.md の見出しを解決できません")
         if level != indent:
             if current is not None:
                 fields[current][1].append(line)
             continue
         match = HEADER_KEY.fullmatch(line)
         if not match:
-            raise FilterError(f"{path}: SKILL.md の見出しを解決できません")
+            raise InventoryReadError(f"{path}: SKILL.md の見出しを解決できません")
         key = next(value for value in match.groups()[:3] if value is not None)
         if key in fields:
             return None  # duplicate keys are invalid in Codex's frontmatter
@@ -290,12 +290,12 @@ def skill_name(path):
     if value.startswith(("'", '"')):
         quoted = QUOTED_NAME.fullmatch(value)
         if not quoted or continued:
-            raise FilterError(f"{path}: SKILL.md の name を解決できません")
+            raise InventoryReadError(f"{path}: SKILL.md の name を解決できません")
         scalar = quoted[1]
         try:
             value = json.loads(scalar) if scalar.startswith('"') else scalar[1:-1].replace("''", "'")
         except ValueError:
-            raise FilterError(f"{path}: SKILL.md の name を解決できません") from None
+            raise InventoryReadError(f"{path}: SKILL.md の name を解決できません") from None
     else:
         value = re.split(r"\s+#|^#", value, maxsplit=1)[0].strip()
         if value.lower() in ("null", "~"):
@@ -303,7 +303,7 @@ def skill_name(path):
         if re.fullmatch(r"[>|][1-9+-]{0,2}", value):
             value = " ".join(continued)
         elif value.startswith(("[", "{", "&", "*", "!", "?", ">", "|")):
-            raise FilterError(f"{path}: SKILL.md の name を解決できません")
+            raise InventoryReadError(f"{path}: SKILL.md の name を解決できません")
         else:
             value = " ".join([value, *continued])
     name = " ".join(value.split()) or " ".join(path.parent.name.split()) or "skill"
@@ -509,7 +509,7 @@ def under_agents(path, agents, actual_agents, agents_stat):
     )
 
 
-def keep_paths(rows, home, skills, disabled, requested, suppress):
+def keep_paths(rows, home, skills, disabled, requested, suppress, *, recheck=False):
     by_name = defaultdict(list)
     by_path = defaultdict(list)
     for skill in skills:
@@ -546,13 +546,15 @@ def keep_paths(rows, home, skills, disabled, requested, suppress):
         if len(paths) > 1:
             raise FilterError(f"CODEX_SKILLS_ALLOW: {name!r} は複数実体に一致します")
         actual = next(iter(paths))
-        if suppress and any(
-            under_agents(skill.discovery, agents, actual_agents, agents_stat)
-            or under_agents(skill.actual, agents, actual_agents, agents_stat)
-            for skill in by_path[actual]
-        ):
-            raise FilterError(f"CODEX_SKILLS_ALLOW: {name!r} は探索経路または実体が ~/.agents 配下で"
-                              "レビューの前置きが読み込みを禁止します。CODEX_REVIEW_ALLOW_SKILLS=1 で許可できます")
+        if suppress:
+            for skill in by_path[actual]:
+                resolved = skill.discovery.resolve(strict=True) if recheck else skill.actual
+                if (under_agents(skill.discovery, agents, actual_agents, agents_stat)
+                        or under_agents(resolved, agents, actual_agents, agents_stat)):
+                    raise FilterError(f"CODEX_SKILLS_ALLOW: {name!r} は探索経路または実体が ~/.agents 配下で"
+                                      "レビューの前置きが読み込みを禁止します。CODEX_REVIEW_ALLOW_SKILLS=1 で許可できます")
+                if resolved != skill.actual:
+                    raise FilterError(f"CODEX_SKILLS_ALLOW: {name!r} は列挙後に実体が変更されました")
         if paths & disabled:
             raise FilterError(f"CODEX_SKILLS_ALLOW: {name!r} は既存設定で無効です。有効な skill を指定してください")
         keep.update(paths)
@@ -626,6 +628,7 @@ def prepare_filter(work, memories, argv, requested, check_review, version_suppor
         # Resolve review additions even when no filter overrides will be passed.
         keep_paths([], home, skills, set(), requested, check_review)
         scan.unchanged()
+        keep_paths([], home, skills, set(), requested, check_review, recheck=True)
         return
     rows = [line.split("\t") for line in ALLOWLIST.read_text(encoding="utf-8").splitlines()]
     disabled = disabled_paths(user, codex_home, skills)
@@ -636,6 +639,8 @@ def prepare_filter(work, memories, argv, requested, check_review, version_suppor
     memory_args = ["-c", "memories.use_memories=false"] if memories == "off" else []
     check_arg_size(["nohup", "codex", *argv, "-c", override, *memory_args])
     scan.unchanged()
+    if check_review:
+        keep_paths([], home, skills, disabled, requested, check_review, recheck=True)
     for notice in notices:
         print(notice, file=sys.stderr)
     print(f"skill 絞り込み: on 列挙={len(paths)} 残す={len(keep)} 外す={len(removed)} "

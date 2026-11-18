@@ -17,6 +17,14 @@ TEST = "tests/test_codex_launch_skills.py"
 DEFAULT = "test_default_filters_skills_and_memories[impl]"
 LINKS = "test_review_linked_extra_rejected_or_explicitly_allowed"
 VERSION = "test_unverified_version_launches_without_filter[new-version-impl]"
+RECHECK = "test_review_rechecks_nested_alias_after_keep_paths"
+HEADER = "test_unsupported_skill_header_launches_without_filter"
+DISCOVERY_CHECK = "under_agents(skill.discovery, agents, actual_agents, agents_stat)"
+RESOLVED_CHECK = "under_agents(resolved, agents, actual_agents, agents_stat)"
+FINAL_RECHECK = (
+    "    if check_review:\n"
+    "        keep_paths([], home, skills, disabled, requested, check_review, recheck=True)"
+)
 MUTATIONS = (
     ("all-disabled", "    removed = sorted(paths - keep - disabled)",
      "    removed = sorted(paths - disabled)", DEFAULT),
@@ -28,9 +36,9 @@ MUTATIONS = (
      "        except PermissionError:\n            return\n        for path in children:",
      "test_unreadable_directory_launches_without_filter[impl]"),
     ("discovery-path-ignored",
-     "            under_agents(skill.discovery, agents, actual_agents, agents_stat)\n"
-     "            or under_agents(skill.actual, agents, actual_agents, agents_stat)",
-     "            under_agents(skill.actual, agents, actual_agents, agents_stat)",
+     f"                if ({DISCOVERY_CHECK}\n"
+     f"                        or {RESOLVED_CHECK}):",
+     f"                if {RESOLVED_CHECK}:",
      f"{LINKS}[verified-out-of-agents]"),
     ("unverified-version-filtered",
      "    version_supported = version == CLI_VERSION",
@@ -50,11 +58,36 @@ MUTATIONS = (
      "    removed = sorted({skill.discovery for skill in skills if skill.actual not in keep | disabled})",
      DEFAULT),
     ("real-path-ignored",
-     "            under_agents(skill.discovery, agents, actual_agents, agents_stat)\n"
-     "            or under_agents(skill.actual, agents, actual_agents, agents_stat)",
-     "            under_agents(skill.discovery, agents, actual_agents, agents_stat)",
+     f"                if ({DISCOVERY_CHECK}\n"
+     f"                        or {RESOLVED_CHECK}):",
+     f"                if {DISCOVERY_CHECK}:",
      f"{LINKS}[verified-into-agents]"),
     ("all-enabled", "    removed = sorted(paths - keep - disabled)", "    removed = []", DEFAULT),
+    ("review-recheck-omitted", FINAL_RECHECK, "    pass", f"{RECHECK}[verified]"),
+    ("review-recheck-error-ignored", FINAL_RECHECK,
+     "    if check_review:\n"
+     "        try:\n"
+     "            keep_paths([], home, skills, disabled, requested, check_review, recheck=True)\n"
+     "        except FilterError:\n"
+     "            pass",
+     f"{RECHECK}[verified]"),
+    ("unsupported-header-stops",
+     '        if not match:\n            raise InventoryReadError(f"{path}: SKILL.md の見出しを解決できません")',
+     '        if not match:\n            raise FilterError(f"{path}: SKILL.md の見出しを解決できません")',
+     f"{HEADER}[impl]"),
+    ("unsupported-header-silently-skipped",
+     '        if not match:\n            raise InventoryReadError(f"{path}: SKILL.md の見出しを解決できません")',
+     "        if not match:\n            return None",
+     f"{HEADER}[review]"),
+    ("toml-path-unquoted", "json.dumps(str(path), ensure_ascii=False)", "str(path)", DEFAULT),
+    ("review-recheck-verified-only",
+     "        keep_paths([], home, skills, set(), requested, check_review, recheck=True)",
+     "        pass", f"{RECHECK}[new-version]"),
+    ("review-recheck-first-alias-only", "            for skill in by_path[actual]:",
+     "            for skill in (by_path[actual][:1] if recheck else by_path[actual]):",
+     f"{RECHECK}[verified]"),
+    ("review-recheck-allows-different-target", "                if resolved != skill.actual:",
+     "                if False:", f"{RECHECK}[different-public-target]"),
 )
 
 
@@ -81,8 +114,11 @@ def check_case(folder, original, case):
     assert original.count(before) == 1, name
     mutated = original.replace(before, after)
     first = original[:original.index(before)].count("\n") + 1
-    # Returning from PermissionError is the fault, so reaching the try alone is insufficient.
-    lines = [first + 3] if name == "unreadable-skipped" else list(range(first, first + len(after.splitlines())))
+    # For replacement error paths, require reaching the changed statement.
+    last_line_only = {"unreadable-skipped": 3, "review-recheck-error-ignored": 4,
+                      "unsupported-header-stops": 1, "unsupported-header-silently-skipped": 1}
+    lines = ([first + last_line_only[name]] if name in last_line_only
+             else list(range(first, first + len(after.splitlines()))))
     (source / HELPER).write_text(trace_source(mutated, lines))
     base = source.parent / "pytest"
     node = f"{TEST}::{test}"
