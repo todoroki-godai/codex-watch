@@ -1,0 +1,11 @@
+agent-browser	home	.agents/skills/agent-browser/SKILL.md
+investigate	home	.agents/skills/gstack/investigate/SKILL.md
+natural-japanese	home	.agents/skills/natural-japanese/SKILL.md
+aws-bedrock-cost-audit:aws-bedrock-cost-audit	home	.claude/skills/aws-bedrock-cost-audit/SKILL.md
+commit	home	.claude/skills/commit/SKILL.md
+daily-report	home	.claude/skills/daily-report/SKILL.md
+ground-truth-over-summary	home	.claude/skills/ground-truth-over-summary/SKILL.md
+anthropic-skills:docx	anthropic-skills@claude-cowork	skills/docx/SKILL.md
+anthropic-skills:pdf	anthropic-skills@claude-cowork	skills/pdf/SKILL.md
+engineering:documentation	engineering@claude-cowork	skills/documentation/SKILL.md
+pdf:pdf	pdf@openai-primary-runtime	skills/pdf/SKILL.md

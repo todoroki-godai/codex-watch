@@ -79,13 +79,16 @@ else:
         target = codex_home / path
         target.parent.mkdir(exist_ok=True)
         target.write_text("private fixture data")
-    def skill(name, rel, *, link=None):
+    def skill(name, rel):
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        if link is not None:
-            path.symlink_to(link)
-        else:
-            path.write_text(f"---\nname: {name}\ndescription: fixture\n---\n")
+        path.write_text(f"---\nname: {name}\ndescription: fixture\n---\n")
+        return path
+
+    def link(rel, target):
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.symlink_to(target, target_is_directory=True)
         return path
 
     env = dict(HOME=str(home), PATH=f"{fake}:{os.environ['PATH']}",
@@ -110,7 +113,7 @@ else:
             time.sleep(0.02)
         return json.loads((root / "capture").read_text())
 
-    return root, skill, run, child
+    return root, skill, link, run, child
 
 
 def configs(child):
@@ -121,9 +124,9 @@ def configs(child):
 
 @pytest.mark.parametrize("kind", ["impl", "review"])
 def test_default_filters_skills_and_memories(launch, kind):
-    root, skill, run, child = launch
+    root, skill, link, run, child = launch
     commit = skill("commit", "home/.claude/skills/commit/SKILL.md")
-    skill("commit", "home/.agents/skills/commit/SKILL.md", link=commit)
+    link("home/.agents/skills/commit", commit.parent)
     normal = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
     duplicate = skill("agent-browser", "home/.agents/skills/agent-browser.backup/SKILL.md")
     extra = skill("explicit", 'project/nested/.agents/skills/空 白 " and \\ /SKILL.md')
@@ -139,6 +142,9 @@ def test_default_filters_skills_and_memories(launch, kind):
     system = skill("system", "home/.codex/skills/.system/system/SKILL.md")
     admin = skill("admin", "admin/skills/admin/SKILL.md")
     ancestor = skill("ancestor", "project/.agents/skills/ancestor/SKILL.md")
+    external = skill("external", "home/.claude/skills/external/SKILL.md")
+    link("project/nested/.agents/skills/external", external.parent)
+    link("home/.agents/skills/external", external.parent)
     project = skill("project", "project/.codex/skills/project/SKILL.md")
     config = root / "home/.codex/config.toml"
     config.write_text(f"""
@@ -157,8 +163,9 @@ enabled = false
     observed = child(run(kind, CODEX_SKILLS_ALLOW=" explicit,explicit "))
     values = configs(observed)
     blocked = {Path(s["path"]) for s in values["skills"]["config"] if s["enabled"] is False}
-    assert blocked == {duplicate, other, system, admin, ancestor, project}
+    assert blocked == {duplicate, other, system, admin, ancestor, project, external}
     assert blocked.isdisjoint({commit, normal, extra, disabled, old, current})
+    assert len(values["skills"]["config"]) == len(blocked)
     assert values["memories"] == {"use_memories": False}
     assert observed["argv"][1:3] == ["-C", str(root / "project/nested")]
     assert ("を読み込んではならない" in observed["prompt"]) == (kind == "review")
@@ -166,7 +173,7 @@ enabled = false
 
 @pytest.mark.parametrize("kind", ["impl", "review"])
 def test_off_preserves_legacy_args(launch, kind):
-    root, _, run, child = launch
+    root, _, _, run, child = launch
     args = child(run(kind, "new-version", CODEX_SKILLS_FILTER="off"))["argv"]
     common = ["exec", "-C", str(root / "project/nested")]
     options = ["-s", "read-only"] if kind == "review" else [
@@ -185,14 +192,14 @@ def test_off_preserves_legacy_args(launch, kind):
 
 @pytest.mark.parametrize("direction", ["into-agents", "out-of-agents"])
 def test_review_linked_extra_rejected_or_explicitly_allowed(launch, direction):
-    root, skill, run, child = launch
+    root, skill, link, run, child = launch
     target, alias = (
         ("home/.agents/private/SKILL.md", "project/nested/.agents/skills/alias/SKILL.md")
         if direction == "into-agents" else
         ("home/.claude/skills/linked/SKILL.md", "home/.agents/skills/alias/SKILL.md")
     )
     actual = skill("linked", target)
-    skill("linked", alias, link=actual)
+    link(str(Path(alias).parent), actual.parent)
     result = run("review", CODEX_SKILLS_ALLOW="linked")
     assert result.returncode != 0, "review launched a forbidden linked skill"
     assert "linked" in result.stderr and "CODEX_REVIEW_ALLOW_SKILLS=1" in result.stderr
@@ -209,7 +216,7 @@ def test_review_linked_extra_rejected_or_explicitly_allowed(launch, direction):
     ("new-version", "0.169.2"), ("bad-version", "版"), ("", "読み取り"),
 ])
 def test_reject_before_exec(launch, kind, variant, message):
-    root, _, run, _ = launch
+    root, _, _, run, _ = launch
     (root / "home/.codex/skills").write_text("private fixture content")
     result = run(kind, variant)
     assert result.returncode != 0, (variant, result.stderr)
@@ -226,7 +233,7 @@ def test_reject_before_exec(launch, kind, variant, message):
     ("extra,", "不正"), ("extra\t", "不正"), ("ghost", "未知"),
 ])
 def test_extra_requires_exact_enabled_unambiguous_name(launch, requested, message):
-    root, skill, run, _ = launch
+    root, skill, _, run, _ = launch
     extra = skill("extra", "home/.codex/skills/extra/SKILL.md")
     (root / "home/.codex/config.toml").write_text(
         f"[[skills.config]]\npath = {json.dumps(str(extra))}\nenabled = false\n")
@@ -236,4 +243,184 @@ def test_extra_requires_exact_enabled_unambiguous_name(launch, requested, messag
     result = run("impl", CODEX_SKILLS_ALLOW=requested)
     assert result.returncode != 0
     assert message in result.stderr, result.stderr
+    assert not (root / "capture").exists()
+
+
+@pytest.mark.parametrize(("settings", "message"), [
+    ({"CODEX_SKILLS_FILTER": "yes"}, "CODEX_SKILLS_FILTER"),
+    ({"CODEX_MEMORIES": ""}, "CODEX_MEMORIES"),
+    ({"CODEX_SKILLS_FILTER": "off", "CODEX_SKILLS_ALLOW": "extra"}, "併用"),
+])
+def test_invalid_modes_fail_before_version(launch, settings, message):
+    root, _, _, run, _ = launch
+    result = run("impl", **settings)
+    assert result.returncode != 0
+    assert message in result.stderr
+    assert not (root / "version-called").exists()
+    assert not (root / "capture").exists()
+
+
+def test_custom_home_project_markers_and_scan_boundaries(launch):
+    root, skill, link, run, child = launch
+    custom_home = root / "custom-home"
+    custom_home.mkdir()
+    (custom_home / "config.toml").write_text('project_root_markers = ["marker"]\n')
+    (root / "project/marker").touch()
+    (root / "project/nested/.git").touch()
+    ancestor = skill("ancestor", "project/.agents/skills/ancestor/SKILL.md")
+    project = skill("project", "project/.codex/skills/project/SKILL.md")
+    alt_home = skill("custom", "custom-home/skills/custom/SKILL.md")
+    boundary = skill("depth6", "custom-home/skills/a/b/c/d/e/f/SKILL.md")
+    skill("depth7", "custom-home/skills/a/b/c/d/e/f/g/SKILL.md")
+    skill("hidden", "custom-home/skills/.hidden/SKILL.md")
+    skill("other-home", "home/.codex/skills/other/SKILL.md")
+    system = skill("system", "custom-home/skills/.system/system/SKILL.md")
+    outside = skill("outside", "outside/system/SKILL.md")
+    link("custom-home/skills/.system/outside", outside.parent)
+    link("custom-home/skills/a/broken", root / "absent")
+    link("custom-home/skills/a/loop", alt_home.parents[1])
+    result = child(run("impl", CODEX_HOME=str(custom_home), CODEX_MEMORIES="keep"))
+    assert configs(result) == {"skills": {"config": [
+        {"path": str(path), "enabled": False}
+        for path in sorted((ancestor, project, alt_home, boundary, system))
+    ]}}
+
+
+def test_plugin_manifest_formats_and_local_version(launch):
+    root, skill, link, run, child = launch
+    cache = "home/.codex/plugins/cache/market"
+    legacy = skill("legacy", f"{cache}/legacy/local/custom/nested/legacy/SKILL.md")
+    migrated = skill("migrated", f"{cache}/legacy/local/.codex-plugin/migrated-command-skills/item/SKILL.md")
+    tool = skill("tool", f"{cache}/agent/1.0.0/skills/tool/SKILL.md")
+    old = skill("old", f"{cache}/legacy/99.0.0/skills/old/SKILL.md")
+    deep = skill("deep", f"{cache}/agent/1.0.0/skills/nested/too/deep/SKILL.md")
+    foreign = skill("foreign", "outside/foreign/SKILL.md")
+    link(f"{cache}/agent/1.0.0/skills/foreign", foreign.parent)
+    disabled = skill("disabled", f"{cache}/disabled/local/skills/disabled/SKILL.md")
+    for plug_root, name in ((legacy.parents[3], "legacy"), (old.parents[2], "legacy"),
+                            (disabled.parents[2], "disabled")):
+        manifest = plug_root / ".claude-plugin/plugin.json"
+        manifest.parent.mkdir()
+        manifest.write_text(json.dumps({"name": name, "skills": "./custom"}))
+    (tool.parents[2] / "plugin.json").write_text(json.dumps({
+        "name": "agent", "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+    }))
+    (root / "home/.codex/config.toml").write_text("""
+[plugins]
+"legacy@market".enabled = true
+"agent@market".enabled = true
+"disabled@market".enabled = false
+""")
+    result = child(run("impl", CODEX_SKILLS_ALLOW="agent:tool"))
+    blocked = configs(result)["skills"]["config"]
+    assert blocked == [{"path": str(path), "enabled": False} for path in sorted((legacy, migrated))]
+    for name in ("agent:deep", "agent:foreign", "disabled:disabled", "legacy:old"):
+        rejected = run("impl", CODEX_SKILLS_ALLOW=name)
+        assert rejected.returncode != 0
+        assert "未知" in rejected.stderr
+        assert not (root / "capture").exists()
+
+
+def test_name_fallback_namespace_and_ordered_rules(launch):
+    root, skill, link, run, child = launch
+    legacy = skill("ignored", "home/.claude/skills/namespace/skills/real-folder/SKILL.md")
+    legacy.write_text("---\nname: ''\ndescription: fixture\n---\nname: body\n")
+    manifest = legacy.parents[2] / ".claude-plugin/plugin.json"
+    manifest.parent.mkdir()
+    manifest.write_text('{"name":"namespace"}')
+    link("home/.agents/skills/alias", legacy.parent)
+    (root / "home/.codex/config.toml").write_text("""
+[[skills.config]]
+name = "namespace:real-folder"
+enabled = false
+[[skills.config]]
+path = "~/.agents/skills/alias/SKILL.md"
+enabled = true
+""")
+    result = child(run("impl", CODEX_SKILLS_ALLOW="namespace:real-folder"))
+    assert configs(result)["skills"] == {"config": []}
+    rejected = run("impl", CODEX_SKILLS_ALLOW="namespace:alias")
+    assert rejected.returncode != 0
+    assert "未知" in rejected.stderr
+
+
+@pytest.mark.parametrize("kind", ["impl", "review"])
+@pytest.mark.parametrize(("statement", "message"), [
+    ("os.kill(os.getpid(), signal.SIGALRM)", "期限"),
+    ('(home / ".codex/config.toml").write_text("# fixture config changed")', "変更"),
+    ('(codex_home / "plugins/cache/market/plugin/2.0.0").mkdir()', "変更"),
+    ('check_arg_size(["x" * 131072])', "引数がシステムの上限"),
+])
+def test_scan_failures_stop_before_dispatch(launch, kind, statement, message):
+    root, skill, _, run, _ = launch
+    skill("test", "home/.agents/skills/test/SKILL.md")
+    plugin = root / "home/.codex/plugins/cache/market/plugin/1.0.0"
+    plugin.mkdir(parents=True)
+    (root / "home/.codex/config.toml").write_text('[plugins]\n"plugin@market".enabled = true\n')
+    helper = root / "wrapper/lib/codex_launch_skills.py"
+    marker = "    disabled = disabled_paths(user, codex_home, skills)"
+    source = helper.read_text()
+    assert source.count(marker) == 1
+    helper.write_text(source.replace(marker, f"    {statement}\n{marker}"))
+    result = run(kind)
+    assert result.returncode != 0
+    assert message in result.stderr, result.stderr
+    assert not (root / "capture").exists()
+    assert not list((root / "state").glob("*.state"))
+
+
+@pytest.mark.parametrize("kind", ["impl", "review"])
+def test_child_config_failure_is_visible_in_status(launch, kind):
+    root, _, _, run, child = launch
+    result = run(kind, "child-error")
+    child(result)
+    run_id = result.stdout.strip()
+    command = ["bash", str(root / "wrapper/bin/codex-status"), run_id]
+    deadline = time.monotonic() + 4
+    while True:
+        status = subprocess.run(command, env={**os.environ, "CODEX_WATCH_DIR": str(root / "state")},
+                                capture_output=True, text=True, timeout=5, check=True)
+        if "異常終了（判定行なし・ログを確認）" in status.stdout or time.monotonic() >= deadline:
+            break
+        time.sleep(0.02)
+    assert "異常終了（判定行なし・ログを確認）" in status.stdout
+    assert "test config error" in (root / "state" / f"{run_id}.log").read_text()
+
+
+@pytest.mark.parametrize("kind", ["impl", "review"])
+def test_unreadable_directory_stops_before_dispatch(launch, kind):
+    root, skill, _, run, _ = launch
+    path = skill("hidden", "home/.codex/skills/hidden/SKILL.md").parents[1]
+    path.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            list(path.iterdir())
+        result = run(kind)
+        assert result.returncode != 0
+        assert str(path) in result.stderr and "読み取り" in result.stderr
+        assert not (root / "capture").exists()
+        assert not list((root / "state").glob("*.state"))
+    finally:
+        path.chmod(0o700)
+
+
+def test_review_permission_uses_path_components(launch):
+    _, skill, link, run, child = launch
+    actual = skill("allowed", "home/.agents-neighbor/allowed/SKILL.md")
+    link("project/nested/.agents/skills/alias", actual.parent)
+    observed = child(run("review", CODEX_SKILLS_ALLOW="allowed"))
+    assert configs(observed)["skills"] == {"config": []}
+    assert "を読み込んではならない" in observed["prompt"]
+
+
+def test_review_rejects_case_alias_on_case_insensitive_home(launch):
+    root, skill, link, run, _ = launch
+    skill("linked", "home/.agents/private/SKILL.md")
+    alias = root / "home/.AGENTS/private"
+    if not alias.exists():
+        pytest.skip("filesystem distinguishes case")
+    link("project/nested/.agents/skills/alias", alias)
+    result = run("review", CODEX_SKILLS_ALLOW="linked")
+    assert result.returncode != 0
+    assert "CODEX_REVIEW_ALLOW_SKILLS=1" in result.stderr
     assert not (root / "capture").exists()

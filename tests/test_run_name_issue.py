@@ -103,7 +103,7 @@ fi
     # Keep nested temporary workdirs from inheriting this checkout's declarations.
     subprocess.run(['git', 'init', '-q', str(workdir)], check=True, capture_output=True)
     env.update(PATH=f'{fake_bin}:{os.environ["PATH"]}', HOME=str(home),
-               CODEX_WATCH_DIR=str(tmp_path / 'state'), CODEX_IMPL_ALLOW_MAIN='1',
+               CODEX_SKILLS_FILTER='off', CODEX_WATCH_DIR=str(tmp_path / 'state'), CODEX_IMPL_ALLOW_MAIN='1',
                CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1', CODEX_REVIEW_KIND_LABEL='コード',
                CODEX_REVIEW_ADAPTER=str(tmp_path / 'missing-adapter'),
                REVIEW_TARGET='issue:example-org/example-repo#1', REVIEW_GOAL_CUT=VALID_GOAL_CUT,

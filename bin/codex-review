@@ -201,6 +201,18 @@ case "${CODEX_REVIEW_ALLOW_SKILLS:-}" in
   1|true|yes) SKILLS_SUPPRESSED=no ;;
   *)          SKILLS_SUPPRESSED=yes ;;
 esac
+# 発注ごとに model / reasoning effort を変えられるようにする（未指定なら config.toml の既定）。
+# macOS 既定の bash 3.2 では空配列の "${a[@]}" が set -u で落ちるので +展開で渡す。
+CODEX_CLI_ARGS=()
+REQUESTED_MODEL="$(sanitize_single_line "${CODEX_REVIEW_MODEL:-}")"
+REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_REVIEW_EFFORT:-}")"
+[[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
+[[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
+[[ "${#IMAGE_ARGS[@]}" -gt 0 ]] && CODEX_CLI_ARGS+=("${IMAGE_ARGS[@]}")
+prepare_codex_launch_skills "$WORKDIR" "$SKILLS_SUPPRESSED" exec -C "$WORKDIR" -s read-only \
+  ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} \
+  -o "$REPORT_FILE" -
+
 # 生成先は mktemp で排他確保する。第2引数が生成先と同じパスだと、リダイレクトが
 # 原本を先に空にして前置きだけが届く（再発注で前回の .prompt を使い回すと起きる）。
 EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
@@ -236,14 +248,6 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
 } > "$EFFECTIVE_PROMPT"
 
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
-# 発注ごとに model / reasoning effort を変えられるようにする（未指定なら config.toml の既定）。
-# macOS 既定の bash 3.2 では空配列の "${a[@]}" が set -u で落ちるので +展開で渡す。
-CODEX_CLI_ARGS=()
-REQUESTED_MODEL="$(sanitize_single_line "${CODEX_REVIEW_MODEL:-}")"
-REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_REVIEW_EFFORT:-}")"
-[[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
-[[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
-[[ "${#IMAGE_ARGS[@]}" -gt 0 ]] && CODEX_CLI_ARGS+=("${IMAGE_ARGS[@]}")
 # A only: re-read both sources and reserve before any external dispatch.
 if python3 -c 'import json,sys; sys.exit(0 if json.loads(sys.argv[1]).get("authority") == "project_prerelease" else 1)' "$GATE_JSON"; then
   GATE_JSON="$(python3 "$GATE_PY" gate --target "${REVIEW_TARGET:-}" --workdir "$WORKDIR" --state-dir "$STATE_DIR" --goal-cut "${REVIEW_GOAL_CUT:-}" --mandatory-gate "${REVIEW_MANDATORY_GATE:-}" --snapshot "$GATE_JSON" --reserve-run-id "$RUN_ID" --json)" || { echo "公開前特例の送信前再確認で停止: $GATE_JSON" >&2; exit 5; }

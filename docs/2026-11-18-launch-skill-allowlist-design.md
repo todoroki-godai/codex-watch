@@ -67,6 +67,10 @@ harness-nudge の試験では、保存した一覧の284件を `SKILL.md` の絶
 - 記憶は `-c memories.use_memories=false` を渡す。0.169.1 の読み込み側の条件と、先行実験の差し込み1→0がこの選択の根拠。［[公式の記憶設定](https://learn.chatgpt.com/docs/customization/memories#configure-local-memories)・[0.169.1 の差し込み条件](https://github.com/openai/codex/blob/c376cf7396eff83ce4c6ac61b9553df142e7a0be/codex-rs/ext/memories/src/extension.rs#L43)］
 - `bin/_codex_common.sh` の共通処理から、両起動口の既存の実行引数に追加する。`python3` で文字列を TOML として組み立て、`tomllib` で読み直して期待したパスと型・値に一致することを確認する。引数配列として渡し、名前やパスをシェルで再解釈させない。列挙・検証は実行の予約やバックグラウンド起動の前に完了させ、既存の作業権限、GitHub/AWS の名義、モデル設定を引き継ぐ。
 
+**実装メモ**　列挙と照合は `lib/codex_launch_skills.py` に置き、既存の Python 標準ライブラリと両起動口の引数配列を使う。
+`SKILL.md` の名前にはプレーン・引用・ブロックのスカラーを扱い、複雑な YAML で掲載名を確定できない場合は起動前に止める。
+設定と採用版の置き場は列挙の末尾で再照合する。
+
 ### 対応する CLI の版
 
 絞り込みを使う場合は、実作業と同じ CLI の版を列挙前に識別する。最初の検証対象は 0.169.1。置き場、名前の照合、上書きの動作を確認した版を通す。未検証版や版を識別できない場合は、検出した版または識別できなかった理由を出し、列挙と実作業の前に非0で終了する。明示の `CODEX_SKILLS_FILTER=off` は絞り込み用の版判定を省き、既存の経路で起動する。
