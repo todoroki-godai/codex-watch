@@ -310,10 +310,11 @@ PYAWSACCOUNT
   fi
 }
 
-# Called before reservation/dispatch. Each stdout line is one TOML override.
+# Called before reservation/dispatch. The helper returns overrides or a skip reason.
 prepare_codex_launch_skills() {
   local workdir="$1" suppressed="$2" mode="${CODEX_SKILLS_FILTER-on}" memories="${CODEX_MEMORIES-off}"
   local overrides override helper
+  CODEX_LAUNCH_SKILLS_STATE=
   shift 2
   case "$mode" in
     on|off) ;;
@@ -332,6 +333,11 @@ prepare_codex_launch_skills() {
   fi
   helper="$(dirname "${BASH_SOURCE[0]}")/../lib/codex_launch_skills.py"
   overrides="$(python3 "$helper" "$workdir" "$suppressed" "$memories" "$@")" || return 2
+  case "$overrides" in
+    launch_skills_filter=skipped:*)
+      CODEX_LAUNCH_SKILLS_STATE="$overrides"
+      return 0 ;;
+  esac
   while IFS= read -r override; do
     CODEX_CLI_ARGS+=(-c "$override")
   done <<< "$overrides"

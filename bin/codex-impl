@@ -238,6 +238,7 @@ CODEX_PID=$!
   echo "aws_expiration=$CODEX_IMPL_AWS_EXPIRATION"
   codex_github_account_state
   codex_summary_state
+  if [[ -n "$CODEX_LAUNCH_SKILLS_STATE" ]]; then echo "$CODEX_LAUNCH_SKILLS_STATE"; fi
   echo "requested_model=$REQUESTED_MODEL"
   echo "requested_effort=$REQUESTED_EFFORT"
   echo "estimate_min=$ESTIMATE_MIN"

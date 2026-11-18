@@ -16,6 +16,7 @@ HELPER = Path("lib/codex_launch_skills.py")
 TEST = "tests/test_codex_launch_skills.py"
 DEFAULT = "test_default_filters_skills_and_memories[impl]"
 LINKS = "test_review_linked_extra_rejected_or_explicitly_allowed"
+VERSION = "test_unverified_version_launches_without_filter[new-version-impl]"
 MUTATIONS = (
     ("all-disabled", "    removed = sorted(paths - keep - disabled)",
      "    removed = sorted(paths - disabled)", DEFAULT),
@@ -25,16 +26,21 @@ MUTATIONS = (
     ("unreadable-skipped", "        for path in sorted(folder.iterdir()):",
      "        try:\n            children = sorted(folder.iterdir())\n"
      "        except PermissionError:\n            return\n        for path in children:",
-     "test_unreadable_directory_stops_before_dispatch[impl]"),
+     "test_unreadable_directory_launches_without_filter[impl]"),
     ("discovery-path-ignored",
      "            under_agents(skill.discovery, agents, actual_agents, agents_stat)\n"
      "            or under_agents(skill.actual, agents, actual_agents, agents_stat)",
      "            under_agents(skill.actual, agents, actual_agents, agents_stat)",
-     f"{LINKS}[out-of-agents]"),
-    ("unverified-version-accepted",
-     "    if version[1].decode(\"ascii\") != CLI_VERSION:",
-     "    if False and version[1].decode(\"ascii\") != CLI_VERSION:",
-     "test_reject_before_exec[new-version-0.169.2-impl]"),
+     f"{LINKS}[verified-out-of-agents]"),
+    ("unverified-version-filtered",
+     "    version_supported = version == CLI_VERSION",
+     "    version_supported = version is not None",
+     VERSION),
+    ("unverified-version-warning-omitted",
+     '    print(f"警告: skill と記憶の絞り込みを省略（Codex CLI {version or \'版不明\'}、{reason}）。"\n'
+     '          f" {check}を確認してください。", file=sys.stderr)',
+     "    pass  # Emit the state record without the warning.",
+     VERSION),
     ("substring-name",
      "    for name in requested:\n        matches = by_name[name]",
      "    for name in requested:\n"
@@ -47,7 +53,7 @@ MUTATIONS = (
      "            under_agents(skill.discovery, agents, actual_agents, agents_stat)\n"
      "            or under_agents(skill.actual, agents, actual_agents, agents_stat)",
      "            under_agents(skill.discovery, agents, actual_agents, agents_stat)",
-     f"{LINKS}[into-agents]"),
+     f"{LINKS}[verified-into-agents]"),
     ("all-enabled", "    removed = sorted(paths - keep - disabled)", "    removed = []", DEFAULT),
 )
 

@@ -26,6 +26,8 @@ args = sys.argv[1:]
 variant = (root / 'variant').read_text()
 if args == ['--version']:
     (root / 'version-called').touch()
+    if variant == 'version-exit-error':
+        sys.exit(7)
     print('unknown' if variant == 'bad-version' else
           'codex-cli 0.169.2' if variant == 'new-version' else 'codex-cli 0.169.1')
 elif args[0] == 'exec':
@@ -191,7 +193,8 @@ def test_off_preserves_legacy_args(launch, kind):
 
 
 @pytest.mark.parametrize("direction", ["into-agents", "out-of-agents"])
-def test_review_linked_extra_rejected_or_explicitly_allowed(launch, direction):
+@pytest.mark.parametrize("variant", ["verified", "new-version", "bad-version"])
+def test_review_linked_extra_rejected_or_explicitly_allowed(launch, direction, variant):
     root, skill, link, run, child = launch
     target, alias = (
         ("home/.agents/private/SKILL.md", "project/nested/.agents/skills/alias/SKILL.md")
@@ -200,32 +203,80 @@ def test_review_linked_extra_rejected_or_explicitly_allowed(launch, direction):
     )
     actual = skill("linked", target)
     link(str(Path(alias).parent), actual.parent)
-    result = run("review", CODEX_SKILLS_ALLOW="linked")
+    result = run("review", variant, CODEX_SKILLS_ALLOW="linked")
     assert result.returncode != 0, "review launched a forbidden linked skill"
     assert "linked" in result.stderr and "CODEX_REVIEW_ALLOW_SKILLS=1" in result.stderr
     assert not (root / "capture").exists()
-    observed = child(run("review", CODEX_SKILLS_ALLOW="linked",
+    observed = child(run("review", variant, CODEX_SKILLS_ALLOW="linked",
                          CODEX_REVIEW_ALLOW_SKILLS="1", CODEX_MEMORIES="keep"))
-    assert configs(observed) == {"skills": {"config": []}}
+    assert configs(observed) == ({"skills": {"config": []}} if variant == "verified" else {})
     assert "を読み込んではならない" not in observed["prompt"]
     assert PROMPT in observed["prompt"]
 
 
+def assert_skip_state(root, result, reason):
+    state = root / "state" / (result.stdout.strip() + ".state")
+    records = [line for line in state.read_text().splitlines() if line.startswith("launch_skills_filter=")]
+    assert records == [f"launch_skills_filter=skipped:{reason}"]
+
+
 @pytest.mark.parametrize("kind", ["impl", "review"])
-@pytest.mark.parametrize(("variant", "message"), [
-    ("new-version", "0.169.2"), ("bad-version", "版"), ("", "読み取り"),
-])
-def test_reject_before_exec(launch, kind, variant, message):
+@pytest.mark.parametrize(("variant", "version", "reason"), [
+    ("new-version", "0.169.2", "未検証の版"),
+    ("bad-version", "版不明", "版を識別できません"),
+    ("version-exit-error", "版不明", "版を識別できません"),
+], ids=["new-version", "bad-version", "version-exit-error"])
+def test_unverified_version_launches_without_filter(launch, kind, variant, version, reason):
+    root, skill, _, run, child = launch
+    skill("unlisted", "home/.codex/skills/unlisted/SKILL.md")
+    result = run(kind, variant)
+    assert configs(child(result)) == {}
+    assert result.stderr.startswith("警告: skill と記憶の絞り込みを省略"), result.stderr
+    assert len([line for line in result.stderr.splitlines() if "絞り込み" in line]) == 1
+    assert version in result.stderr and reason in result.stderr and "codex --version" in result.stderr
+    assert_skip_state(root, result, "unverified_version")
+
+
+def test_unverified_version_skips_inventory_for_ordinary_launch(launch):
+    root, _, _, run, child = launch
+    (root / "home/.codex/skills").write_text("private fixture content")
+    result = run("impl", "new-version")
+    assert configs(child(result)) == {}
+    assert "未検証の版" in result.stderr and "読み取り失敗" not in result.stderr
+    assert_skip_state(root, result, "unverified_version")
+
+
+def test_unverified_version_checks_safe_review_addition(launch):
+    root, skill, _, run, child = launch
+    skill("extra", "home/.codex/skills/extra/SKILL.md")
+    result = run("review", "new-version", CODEX_SKILLS_ALLOW="extra")
+    observed = child(result)
+    assert configs(observed) == {}
+    assert "を読み込んではならない" in observed["prompt"]
+    assert_skip_state(root, result, "unverified_version")
+
+
+def test_unreadable_location_blocks_unverified_review_addition(launch):
     root, _, _, run, _ = launch
     (root / "home/.codex/skills").write_text("private fixture content")
-    result = run(kind, variant)
-    assert result.returncode != 0, (variant, result.stderr)
-    assert message in result.stderr, result.stderr
-    if variant:
-        assert "読み取り" not in result.stderr
+    result = run("review", "new-version", CODEX_SKILLS_ALLOW="extra")
+    assert result.returncode != 0
+    assert "読み込み禁止に当たらないか確認できません" in result.stderr
     assert "private fixture content" not in result.stderr
     assert not (root / "capture").exists()
     assert not list((root / "state").glob("*.state"))
+
+
+@pytest.mark.parametrize("kind", ["impl", "review"])
+def test_file_at_skill_location_launches_without_filter(launch, kind):
+    root, _, _, run, child = launch
+    (root / "home/.codex/skills").write_text("private fixture content")
+    result = run(kind)
+    assert configs(child(result)) == {}
+    assert "ディレクトリではありません" in result.stderr
+    assert "private fixture content" not in result.stderr
+    assert len([line for line in result.stderr.splitlines() if "絞り込み" in line]) == 1
+    assert_skip_state(root, result, "inventory_unreadable")
 
 
 @pytest.mark.parametrize(("requested", "message"), [
@@ -388,8 +439,8 @@ def test_child_config_failure_is_visible_in_status(launch, kind):
 
 
 @pytest.mark.parametrize("kind", ["impl", "review"])
-def test_unreadable_directory_stops_before_dispatch(launch, kind):
-    root, skill, _, run, _ = launch
+def test_unreadable_directory_launches_without_filter(launch, kind):
+    root, skill, _, run, child = launch
     nested = skill("hidden", "home/.codex/skills/hidden/SKILL.md").parent
     for path in (nested.parent, nested):
         path.chmod(0)
@@ -397,10 +448,12 @@ def test_unreadable_directory_stops_before_dispatch(launch, kind):
             with pytest.raises(PermissionError):
                 list(path.iterdir())
             result = run(kind)
-            assert result.returncode != 0, f"dispatch proceeded despite unreadable directory {path}"
+            assert configs(child(result)) == {}
             assert str(path) in result.stderr and "読み取り" in result.stderr
-            assert not (root / "capture").exists()
-            assert not list((root / "state").glob("*.state"))
+            assert "0.169.1" in result.stderr and "codex --version" in result.stderr
+            assert result.stderr.startswith("警告:")
+            assert len([line for line in result.stderr.splitlines() if "絞り込み" in line]) == 1
+            assert_skip_state(root, result, "inventory_unreadable")
         finally:
             path.chmod(0o700)
 

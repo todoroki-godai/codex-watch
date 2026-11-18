@@ -1,4 +1,4 @@
-"""Read the local startup skill inventory for the verified Codex CLI version."""
+"""Prepare startup overrides and check review skill additions."""
 import errno
 from functools import cmp_to_key
 import json
@@ -28,6 +28,10 @@ class FilterError(Exception):
     pass
 
 
+class InventoryReadError(FilterError):
+    pass
+
+
 def metadata(path, *, follow=True):
     try:
         return path.stat(follow_symlinks=follow)
@@ -40,11 +44,11 @@ def read_file(path):
     if info is None:
         return None
     if not stat.S_ISREG(info.st_mode):
-        raise FilterError(f"{path}: 通常ファイルではありません")
+        raise InventoryReadError(f"{path}: 読み取り失敗（通常ファイルではありません）")
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeError:
-        raise FilterError(f"{path}: 文字コードを解釈できません") from None
+        raise InventoryReadError(f"{path}: 文字コードを解釈できません") from None
 
 
 def parse_config(contents, path, parser):
@@ -198,7 +202,7 @@ def discover(root, *, follow=True, agent_root=None):
         if info is None:
             return
         if not stat.S_ISDIR(info.st_mode):
-            raise FilterError(f"{folder}: 置き場の読み取り失敗（ディレクトリではありません）")
+            raise InventoryReadError(f"{folder}: 置き場の読み取り失敗（ディレクトリではありません）")
         actual_dir = folder.resolve(strict=True)
         if actual_dir in visiting:
             return
@@ -249,7 +253,7 @@ def skill_name(path):
             else:
                 return None
     except UnicodeError:
-        raise FilterError(f"{path}: SKILL.md の文字コードを解釈できません") from None
+        raise InventoryReadError(f"{path}: SKILL.md の文字コードを解釈できません") from None
     active = [(len(line) - len(line.lstrip(" ")), line.lstrip(" "))
               for line in header if line.strip() and not line.lstrip().startswith("#")]
     if not active:
@@ -362,7 +366,7 @@ def active_version(scan, base):
     if info is None:
         return None
     if not stat.S_ISDIR(info.st_mode):
-        raise FilterError(f"{base}: 採用版の置き場の読み取り失敗")
+        raise InventoryReadError(f"{base}: 採用版の置き場の読み取り失敗")
     versions = [path.name for path in sorted(base.iterdir())
                 if stat.S_ISDIR(path.lstat().st_mode) and re.fullmatch(r"[A-Za-z0-9._+-]+", path.name)]
     if not versions:
@@ -512,6 +516,7 @@ def keep_paths(rows, home, skills, disabled, requested, suppress):
         by_name[skill.name].append(skill)
         by_path[skill.actual].append(skill)
     keep = set()
+    notices = []
     for name, provider, rel in rows:
         matches = by_name[name]
         if provider == "home":
@@ -528,7 +533,7 @@ def keep_paths(rows, home, skills, disabled, requested, suppress):
             keep.update(enabled)
         else:
             reason = "既存設定で無効" if paths else "未導入または対象外"
-            print(f"skill 絞り込み: {name}（{reason}）", file=sys.stderr)
+            notices.append(f"skill 絞り込み: {name}（{reason}）")
 
     agents = home / ".agents"
     agents_stat = metadata(agents) if suppress and requested else None
@@ -551,7 +556,7 @@ def keep_paths(rows, home, skills, disabled, requested, suppress):
         if paths & disabled:
             raise FilterError(f"CODEX_SKILLS_ALLOW: {name!r} は既存設定で無効です。有効な skill を指定してください")
         keep.update(paths)
-    return keep
+    return keep, notices
 
 
 def skill_override(paths):
@@ -577,48 +582,62 @@ def check_arg_size(args):
         raise FilterError("skill 起動引数がシステムの上限を超えます")
 
 
-def check_version():
+def read_version():
     try:
         result = subprocess.run(["codex", "--version"], capture_output=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
-        raise FilterError("Codex CLI の版を識別できません") from None
+        return None
     version = re.fullmatch(rb"codex-cli ([0-9][0-9A-Za-z.+-]{0,63})\s*", result.stdout)
     if result.returncode or version is None:
-        raise FilterError("Codex CLI の版を識別できません")
-    if version[1].decode("ascii") != CLI_VERSION:
-        raise FilterError(f"Codex CLI {version[1].decode('ascii')} は未検証の版です（対象 {CLI_VERSION}）")
+        return None
+    return version[1].decode("ascii")
+
+
+def skip_filter(version, status, reason):
+    # Paths may contain newlines. Keep the diagnostic to one stderr line.
+    reason = " ".join(reason.splitlines())
+    check = f"codex --version（検証済み {CLI_VERSION}）"
+    if status == "inventory_unreadable":
+        check += "と表示された置き場の種類・読み取り権限"
+    print(f"警告: skill と記憶の絞り込みを省略（Codex CLI {version or '版不明'}、{reason}）。"
+          f" {check}を確認してください。", file=sys.stderr)
+    print(f"launch_skills_filter=skipped:{status}")
 
 
 def timed_out(_signal, _frame):
     raise FilterError("skill 列挙の期限を超えました")
 
 
-def main():
-    work, suppressed, memories, *argv = sys.argv[1:]
-    check_version()
+def prepare_filter(work, memories, argv, requested, check_review, version_supported):
     signal.signal(signal.SIGALRM, timed_out)
     signal.alarm(SCAN_TIMEOUT)
     start = time.monotonic()
-    requested = requested_names(os.environ.get("CODEX_SKILLS_ALLOW", ""))
     home = Path(os.environ["HOME"]).absolute()
     custom_home = os.environ.get("CODEX_HOME")
     codex_home = Path(custom_home).resolve(strict=True) if custom_home else home / ".codex"
     if custom_home and not codex_home.is_dir():
-        raise FilterError(f"{codex_home}: CODEX_HOME がディレクトリではありません")
+        raise InventoryReadError(f"{codex_home}: CODEX_HOME の読み取り失敗（ディレクトリではありません）")
     scan = Scan()
     system = scan.config(SYSTEM_CONFIG / "config.toml")
     user = scan.config(codex_home / "config.toml")
     managed = scan.config(SYSTEM_CONFIG / "managed_config.toml")
-    rows = [line.split("\t") for line in ALLOWLIST.read_text(encoding="utf-8").splitlines()]
     skills = inventory(scan, home, codex_home, Path(work).resolve(strict=True), merge(system, user), managed)
+    if not version_supported:
+        # Resolve review additions even when no filter overrides will be passed.
+        keep_paths([], home, skills, set(), requested, check_review)
+        scan.unchanged()
+        return
+    rows = [line.split("\t") for line in ALLOWLIST.read_text(encoding="utf-8").splitlines()]
     disabled = disabled_paths(user, codex_home, skills)
-    keep = keep_paths(rows, home, skills, disabled, requested, suppressed == "yes")
+    keep, notices = keep_paths(rows, home, skills, disabled, requested, check_review)
     paths = {skill.actual for skill in skills}
     removed = sorted(paths - keep - disabled)
     override = skill_override(removed)
     memory_args = ["-c", "memories.use_memories=false"] if memories == "off" else []
     check_arg_size(["nohup", "codex", *argv, "-c", override, *memory_args])
     scan.unchanged()
+    for notice in notices:
+        print(notice, file=sys.stderr)
     print(f"skill 絞り込み: on 列挙={len(paths)} 残す={len(keep)} 外す={len(removed)} "
           f"記憶={memories} {time.monotonic() - start:.3f}s", file=sys.stderr)
     print(override)
@@ -626,13 +645,36 @@ def main():
         print(memory_args[1])
 
 
+def main():
+    work, suppressed, memories, *argv = sys.argv[1:]
+    requested = requested_names(os.environ.get("CODEX_SKILLS_ALLOW", ""))
+    check_review = suppressed == "yes" and bool(requested)
+    version = read_version()
+    version_supported = version == CLI_VERSION
+    if version_supported or check_review:
+        try:
+            prepare_filter(work, memories, argv, requested, check_review, version_supported)
+        except (InventoryReadError, OSError) as error:
+            if isinstance(error, OSError):
+                detail = os.strerror(error.errno) if error.errno in errno.errorcode else "入出力エラー"
+                reason = f"{error.filename or '置き場'}: 読み取り・パス解決失敗（{detail}）"
+            else:
+                reason = str(error)
+            if check_review:
+                raise FilterError(f"{reason}。レビューの追加指定が読み込み禁止に当たらないか確認できません") from None
+            skip_filter(version, "inventory_unreadable", reason)
+            return
+        finally:
+            signal.alarm(0)
+    if not version_supported:
+        reason = "未検証の版" if version else "--version の出力から版を識別できません"
+        skip_filter(version, "unverified_version", reason)
+
+
 if __name__ == "__main__":
     try:
         main()
     except FilterError as error:
         sys.exit(f"skill 絞り込み: {error}")
-    except OSError as error:
-        reason = os.strerror(error.errno) if error.errno in errno.errorcode else "入出力エラー"
-        sys.exit(f"skill 絞り込み: {error.filename or '置き場'}: 読み取り・パス解決失敗（{reason}）")
     except (ValueError, UnicodeError, RuntimeError, subprocess.TimeoutExpired):
         sys.exit("skill 絞り込み: 設定またはパスを解決できません")
