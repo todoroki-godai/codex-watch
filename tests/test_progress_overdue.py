@@ -46,9 +46,7 @@ def launch(sandbox):
     tree = tmp / 'source'
     for folder in ('bin', 'lib'):
         shutil.copytree(ROOT / folder, tree / folder)
-    # No real config, credentials, network, git mutation or LLM calls.
-    (tree / 'lib/codex_impl_aws.py').write_text(
-        'import sys\nif len(sys.argv)==1: print("CODEX_IMPL_AWS_STATE=none; CODEX_IMPL_AWS_EXPIRATION=; CODEX_IMPL_AWS_DOCS_STATE=none; CODEX_IMPL_AWS_DOCS_EXPIRATION=; " )\n')
+    # The real AWS helper uses the sandbox's failing fake aws and temporary HOME.
     executable(fake / 'codex', 'cat >/dev/null\n')
     env.update(CODEX_SUMMARY='#0', CODEX_IMPL_ALLOW_MAIN='1', CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1')
 
