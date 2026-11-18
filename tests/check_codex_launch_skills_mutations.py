@@ -88,6 +88,12 @@ MUTATIONS = (
      f"{RECHECK}[verified]"),
     ("review-recheck-allows-different-target", "                if resolved != skill.actual:",
      "                if False:", f"{RECHECK}[different-public-target]"),
+    ("unreadable-review-falls-back",
+     "            if check_review:\n                raise FilterError",
+     "            if False:\n                raise FilterError",
+     "test_unsupported_skill_header_blocks_review_addition[verified]"),
+    ("toml-backslash-unescaped", "json.dumps(str(path), ensure_ascii=False)",
+     r'json.dumps(str(path), ensure_ascii=False).replace("\\\\", "\\")', DEFAULT),
 )
 
 
