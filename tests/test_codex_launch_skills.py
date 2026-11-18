@@ -431,6 +431,59 @@ def test_plugin_manifest_formats_and_local_version(launch):
         assert not (root / "capture").exists()
 
 
+@pytest.mark.parametrize("kind", ["impl", "review"])
+def test_remote_cache_filters_unregistered_plugins(launch, kind):
+    root, skill, link, run, child = launch
+    cache = "home/.codex/plugins/cache/openai-curated-remote"
+    skill("old", f"{cache}/figma/19.0.0/skills/old/SKILL.md")
+    legacy = skill("design", "shared/design/SKILL.md")
+    version = root / cache / "figma/20.0.0"
+    link(f"{cache}/figma/20.0.0/custom/design", legacy.parent)
+    manifest = version / ".codex-plugin/plugin.json"
+    manifest.parent.mkdir()
+    manifest.write_text('{"name": "figma", "skills": "./custom"}')
+    agent = skill("deploy", f"{cache}/netlify/1.6.0/skills/deploy/SKILL.md")
+    (agent.parents[2] / "plugin.json").write_text(json.dumps({
+        "name": "netlify", "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+    }))
+    commit = skill("commit", "home/.claude/skills/commit/SKILL.md")
+    link("home/.agents/skills/commit", commit.parent)
+    result = run(kind)
+    blocked = configs(child(result))["skills"]["config"]
+    assert blocked == [{"path": str(path), "enabled": False} for path in sorted((legacy, agent))]
+    assert "列挙=3 残す=1 外す=2" in result.stderr
+
+    allowed = child(run(kind, CODEX_SKILLS_ALLOW="figma:design"))
+    assert configs(allowed)["skills"]["config"] == [{"path": str(agent), "enabled": False}]
+
+
+@pytest.mark.parametrize("shape", ["file", "unreadable", "no-version", "bad-manifest", "bad-skill-root"])
+def test_unreadable_remote_cache_launches_without_filter(launch, shape):
+    root, skill, _, run, child = launch
+    skill("unlisted", "home/.codex/skills/unlisted/SKILL.md")
+    cache = root / "home/.codex/plugins/cache/openai-curated-remote"
+    cache.parent.mkdir(parents=True)
+    if shape == "file":
+        cache.touch()
+    elif shape == "unreadable":
+        cache.mkdir(mode=0)
+    elif shape == "no-version":
+        (cache / "figma").mkdir(parents=True)
+    else:
+        manifest = cache / "figma/20.0.0/.codex-plugin/plugin.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("{" if shape == "bad-manifest" else '{"name":"figma","skills":"/unexpected"}')
+    try:
+        result = run("impl")
+        assert configs(child(result)) == {}
+        assert result.stderr.startswith("警告:")
+        assert str(cache) in result.stderr
+        assert_skip_state(root, result, "inventory_unreadable")
+    finally:
+        if shape == "unreadable":
+            cache.chmod(0o700)
+
+
 def test_name_fallback_namespace_and_ordered_rules(launch):
     root, skill, link, run, child = launch
     legacy = skill("ignored", "home/.claude/skills/namespace/skills/real-folder/SKILL.md")

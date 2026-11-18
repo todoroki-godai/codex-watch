@@ -18,6 +18,7 @@ from dataclasses import dataclass
 CLI_VERSION = "0.169.1"
 SCAN_TIMEOUT = 15
 SYSTEM_CONFIG = Path("/etc/codex")
+REMOTE_MARKETPLACE = "openai-curated-remote"
 ALLOWLIST = Path(__file__).resolve().parents[1] / "templates/codex-skills-allowlist.tsv"
 LEGACY_MANIFESTS = (".codex-plugin/plugin.json", ".claude-plugin/plugin.json",
                     ".cursor-plugin/plugin.json")
@@ -374,6 +375,24 @@ def active_version(scan, base):
     return base / ("local" if "local" in versions else sorted(versions, key=cmp_to_key(compare_versions))[-1])
 
 
+def remote_plugin_keys(scan, cache):
+    # Remote enablement comes from the account's installed list at runtime.
+    # Inventory all local candidates without reading auth or querying the service.
+    root = cache / REMOTE_MARKETPLACE
+    scan.watch(root)
+    if metadata(root, follow=False) is None:
+        return set()
+    keys = set()
+    for path in sorted(root.iterdir()):
+        if path.name.startswith("."):
+            continue
+        if (not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*", path.name)
+                or not path.is_dir()):
+            raise InventoryReadError(f"{path}: リモートプラグインの置き場を解決できません")
+        keys.add(f"{path.name}@{REMOTE_MARKETPLACE}")
+    return keys
+
+
 def plugin_skills(scan, codex_home, config):
     features = table(config.get("features", {}), "features")
     if not config_flag(features, "plugins", True):
@@ -381,32 +400,48 @@ def plugin_skills(scan, codex_home, config):
     cache = codex_home / "plugins/cache"
     plugins = table(config.get("plugins", {}), "plugins")
     default = config_flag(table(plugins.get("_default", {}), "plugins._default"), "enabled", True)
-    for key, value in plugins.items():
-        if key == "_default" or not config_flag(table(value, "plugins"), "enabled", default):
+    remote = remote_plugin_keys(scan, cache)
+    for key in sorted((plugins.keys() - {"_default"}) | remote):
+        is_remote = key in remote
+        enabled = config_flag(table(plugins.get(key, {}), "plugins"), "enabled", default)
+        if not enabled and not is_remote:
             continue
         match = re.fullmatch(r"([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)@([A-Za-z0-9_-]+)", key)
         if match is None:
             raise FilterError("plugins: プラグイン ID の形式が不正です")
-        version = active_version(scan, cache / match[2] / match[1])
+        base = cache / match[2] / match[1]
+        version = active_version(scan, base)
+        error_type = InventoryReadError if is_remote else FilterError
         if version is None:
+            if is_remote:
+                raise InventoryReadError(f"{base}: リモートプラグインの採用版を解決できません")
             continue
-        loaded = scan.installed_manifest(version)
+        try:
+            loaded = scan.installed_manifest(version)
+        except FilterError as error:
+            if is_remote:
+                raise InventoryReadError(str(error)) from None
+            raise
         if loaded is None:
+            if is_remote:
+                raise InventoryReadError(f"{version}: リモートプラグインの定義を解決できません")
             continue
         manifest, agent = loaded
         namespace = manifest.get("name", "" if not agent else None)
         if not isinstance(namespace, str):
-            raise FilterError(f"{version}: プラグイン名を解決できません")
+            raise error_type(f"{version}: プラグイン名を解決できません")
         namespace = namespace if namespace.strip() else version.name
         paths = "./skills" if agent else manifest.get("skills", [])
         if isinstance(paths, str):
             paths = [paths]
         if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
-            raise FilterError(f"{version}: プラグインの skill の置き場を解決できません")
-        roots = {version / path[2:] for path in paths
-                 if path.startswith("./") and len(path) > 2
-                 and not path.startswith(".//") and ".." not in Path(path[2:]).parts}
-        roots = roots or {version / "skills"}
+            raise error_type(f"{version}: プラグインの skill の置き場を解決できません")
+        relative_roots = [path[2:] for path in paths
+                          if path.startswith("./") and len(path) > 2
+                          and not path.startswith(".//") and ".." not in Path(path[2:]).parts]
+        if is_remote and len(relative_roots) != len(paths):
+            raise InventoryReadError(f"{version}: リモートプラグインの skill の置き場を解決できません")
+        roots = {version / relative for relative in relative_roots} or {version / "skills"}
         if not agent:
             roots.add(version / ".codex-plugin/migrated-command-skills")
         actual_version = version.resolve(strict=True)

@@ -94,6 +94,8 @@ MUTATIONS = (
      "test_unsupported_skill_header_blocks_review_addition[verified]"),
     ("toml-backslash-unescaped", "json.dumps(str(path), ensure_ascii=False)",
      r'json.dumps(str(path), ensure_ascii=False).replace("\\\\", "\\")', DEFAULT),
+    ("remote-cache-omitted", "    remote = remote_plugin_keys(scan, cache)",
+     "    remote = set()", "test_remote_cache_filters_unregistered_plugins[impl]"),
 )
 
 
