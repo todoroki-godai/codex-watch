@@ -34,7 +34,7 @@ def sandbox(tmp_path):
     state.mkdir()
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(('CODEX_', 'AWS_', 'GH_', 'GITHUB_'))}
-    env.update(HOME=str(home), PATH=f'{fake}:{env["PATH"]}', CODEX_WATCH_DIR=str(state))
+    env.update(HOME=str(home), PATH=f'{fake}:{env["PATH"]}', CODEX_WATCH_DIR=str(state), CODEX_SKILLS_FILTER='off')
     for name in ('aws', 'gh', 'codex', 'git'):
         executable(fake / name, 'exit 99\n')
     return tmp_path, fake, state, env

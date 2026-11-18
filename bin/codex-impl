@@ -212,6 +212,10 @@ REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_IMPL_EFFORT-medium}")"
 [[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
 
+prepare_codex_launch_skills "$WORKDIR" no exec -C "$WORKDIR" \
+  ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} \
+  ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" -
+
 # パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
 nohup codex exec -C "$WORKDIR" ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
@@ -234,6 +238,7 @@ CODEX_PID=$!
   echo "aws_expiration=$CODEX_IMPL_AWS_EXPIRATION"
   codex_github_account_state
   codex_summary_state
+  if [[ -n "$CODEX_LAUNCH_SKILLS_STATE" ]]; then echo "$CODEX_LAUNCH_SKILLS_STATE"; fi
   echo "requested_model=$REQUESTED_MODEL"
   echo "requested_effort=$REQUESTED_EFFORT"
   echo "estimate_min=$ESTIMATE_MIN"

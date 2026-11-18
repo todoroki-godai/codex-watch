@@ -1,0 +1,228 @@
+{
+  "source_commit": "e2bd5ce0273eb19f166fbeeb978ee77056ad69ed",
+  "source_sha256": "d5c8da3a457e9ea70f205301ec881a278d42da6826d022fbc1de94cc63acb49d",
+  "mutations": [
+    {
+      "mutation": "all-disabled",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -635,5 +635,5 @@\n     keep, notices = keep_paths(rows, home, skills, disabled, requested, check_review)\n     paths = {skill.actual for skill in skills}\n-    removed = sorted(paths - keep - disabled)\n+    removed = sorted(paths - disabled)\n     override = skill_override(removed)\n     memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n",
+      "executed_lines": [
+        637
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
+      "assertion_line": 169,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
+    },
+    {
+      "mutation": "memory-override-omitted",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -637,5 +637,5 @@\n     removed = sorted(paths - keep - disabled)\n     override = skill_override(removed)\n-    memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n+    memory_args = []\n     check_arg_size([\"nohup\", \"codex\", *argv, \"-c\", override, *memory_args])\n     scan.unchanged()\n",
+      "executed_lines": [
+        639
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
+      "assertion_line": 172,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
+    },
+    {
+      "mutation": "unreadable-skipped",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -210,5 +210,9 @@\n         if dirs > 2000:\n             raise FilterError(f\"{root}: 探索ディレクトリ数が上限を超えました\")\n-        for path in sorted(folder.iterdir()):\n+        try:\n+            children = sorted(folder.iterdir())\n+        except PermissionError:\n+            return\n+        for path in children:\n             entries += 1\n             if entries > 20_000:\n",
+      "executed_lines": [
+        215
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_unreadable_directory_launches_without_filter[impl]",
+      "assertion_line": 510,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unreadable_directory_launches_without_filter[impl]"
+    },
+    {
+      "mutation": "discovery-path-ignored",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -550,6 +550,5 @@\n             for skill in by_path[actual]:\n                 resolved = skill.discovery.resolve(strict=True) if recheck else skill.actual\n-                if (under_agents(skill.discovery, agents, actual_agents, agents_stat)\n-                        or under_agents(resolved, agents, actual_agents, agents_stat)):\n+                if under_agents(resolved, agents, actual_agents, agents_stat):\n                     raise FilterError(f\"CODEX_SKILLS_ALLOW: {name!r} は探索経路または実体が ~/.agents 配下で\"\n                                       \"レビューの前置きが読み込みを禁止します。CODEX_REVIEW_ALLOW_SKILLS=1 で許可できます\")\n",
+      "executed_lines": [
+        552
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[verified-out-of-agents]",
+      "assertion_line": 208,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[verified-out-of-agents]"
+    },
+    {
+      "mutation": "unverified-version-filtered",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -656,5 +656,5 @@\n     check_review = suppressed == \"yes\" and bool(requested)\n     version = read_version()\n-    version_supported = version == CLI_VERSION\n+    version_supported = version is not None\n     if version_supported or check_review:\n         try:\n",
+      "executed_lines": [
+        658
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_unverified_version_launches_without_filter[new-version-impl]",
+      "assertion_line": 264,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unverified_version_launches_without_filter[new-version-impl]"
+    },
+    {
+      "mutation": "unverified-version-warning-omitted",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -602,6 +602,5 @@\n     if status == \"inventory_unreadable\":\n         check += \"と表示された置き場の種類・読み取り権限\"\n-    print(f\"警告: skill と記憶の絞り込みを省略（Codex CLI {version or '版不明'}、{reason}）。\"\n-          f\" {check}を確認してください。\", file=sys.stderr)\n+    pass  # Emit the state record without the warning.\n     print(f\"launch_skills_filter=skipped:{status}\")\n \n",
+      "executed_lines": [
+        604
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_unverified_version_launches_without_filter[new-version-impl]",
+      "assertion_line": 265,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unverified_version_launches_without_filter[new-version-impl]"
+    },
+    {
+      "mutation": "substring-name",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -540,5 +540,5 @@\n     actual_agents = agents.resolve(strict=True) if agents_stat is not None else agents\n     for name in requested:\n-        matches = by_name[name]\n+        matches = [skill for skill in skills if skill.name and name in skill.name]\n         paths = {skill.actual for skill in matches}\n         if not paths:\n",
+      "executed_lines": [
+        541,
+        542
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_extra_requires_exact_enabled_unambiguous_name[part-\\u672a\\u77e5]",
+      "assertion_line": 354,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_extra_requires_exact_enabled_unambiguous_name[part-\\u672a\\u77e5]"
+    },
+    {
+      "mutation": "discovery-used-as-override",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -635,5 +635,5 @@\n     keep, notices = keep_paths(rows, home, skills, disabled, requested, check_review)\n     paths = {skill.actual for skill in skills}\n-    removed = sorted(paths - keep - disabled)\n+    removed = sorted({skill.discovery for skill in skills if skill.actual not in keep | disabled})\n     override = skill_override(removed)\n     memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n",
+      "executed_lines": [
+        637
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
+      "assertion_line": 169,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
+    },
+    {
+      "mutation": "real-path-ignored",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -550,6 +550,5 @@\n             for skill in by_path[actual]:\n                 resolved = skill.discovery.resolve(strict=True) if recheck else skill.actual\n-                if (under_agents(skill.discovery, agents, actual_agents, agents_stat)\n-                        or under_agents(resolved, agents, actual_agents, agents_stat)):\n+                if under_agents(skill.discovery, agents, actual_agents, agents_stat):\n                     raise FilterError(f\"CODEX_SKILLS_ALLOW: {name!r} は探索経路または実体が ~/.agents 配下で\"\n                                       \"レビューの前置きが読み込みを禁止します。CODEX_REVIEW_ALLOW_SKILLS=1 で許可できます\")\n",
+      "executed_lines": [
+        552
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[verified-into-agents]",
+      "assertion_line": 208,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[verified-into-agents]"
+    },
+    {
+      "mutation": "all-enabled",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -635,5 +635,5 @@\n     keep, notices = keep_paths(rows, home, skills, disabled, requested, check_review)\n     paths = {skill.actual for skill in skills}\n-    removed = sorted(paths - keep - disabled)\n+    removed = []\n     override = skill_override(removed)\n     memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n",
+      "executed_lines": [
+        637
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
+      "assertion_line": 169,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
+    },
+    {
+      "mutation": "review-recheck-omitted",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -640,6 +640,5 @@\n     check_arg_size([\"nohup\", \"codex\", *argv, \"-c\", override, *memory_args])\n     scan.unchanged()\n-    if check_review:\n-        keep_paths([], home, skills, disabled, requested, check_review, recheck=True)\n+    pass\n     for notice in notices:\n         print(notice, file=sys.stderr)\n",
+      "executed_lines": [
+        642
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[verified]",
+      "assertion_line": 241,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[verified]"
+    },
+    {
+      "mutation": "review-recheck-error-ignored",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -641,5 +641,8 @@\n     scan.unchanged()\n     if check_review:\n-        keep_paths([], home, skills, disabled, requested, check_review, recheck=True)\n+        try:\n+            keep_paths([], home, skills, disabled, requested, check_review, recheck=True)\n+        except FilterError:\n+            pass\n     for notice in notices:\n         print(notice, file=sys.stderr)\n",
+      "executed_lines": [
+        646
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[verified]",
+      "assertion_line": 241,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[verified]"
+    },
+    {
+      "mutation": "unsupported-header-stops",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -271,5 +271,5 @@\n         match = HEADER_KEY.fullmatch(line)\n         if not match:\n-            raise InventoryReadError(f\"{path}: SKILL.md の見出しを解決できません\")\n+            raise FilterError(f\"{path}: SKILL.md の見出しを解決できません\")\n         key = next(value for value in match.groups()[:3] if value is not None)\n         if key in fields:\n",
+      "executed_lines": [
+        273
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_unsupported_skill_header_launches_without_filter[impl]",
+      "assertion_line": 319,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unsupported_skill_header_launches_without_filter[impl]"
+    },
+    {
+      "mutation": "unsupported-header-silently-skipped",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -271,5 +271,5 @@\n         match = HEADER_KEY.fullmatch(line)\n         if not match:\n-            raise InventoryReadError(f\"{path}: SKILL.md の見出しを解決できません\")\n+            return None\n         key = next(value for value in match.groups()[:3] if value is not None)\n         if key in fields:\n",
+      "executed_lines": [
+        273
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_unsupported_skill_header_launches_without_filter[review]",
+      "assertion_line": 320,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unsupported_skill_header_launches_without_filter[review]"
+    },
+    {
+      "mutation": "toml-path-unquoted",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -564,5 +564,5 @@\n def skill_override(paths):\n     encoded = \"skills.config=[\" + \", \".join(\n-        \"{path=\" + json.dumps(str(path), ensure_ascii=False) + \", enabled=false}\" for path in paths\n+        \"{path=\" + str(path) + \", enabled=false}\" for path in paths\n     ) + \"]\"\n     expected = [{\"path\": str(path), \"enabled\": False} for path in paths]\n",
+      "executed_lines": [
+        566
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
+      "assertion_line": 166,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
+    },
+    {
+      "mutation": "review-recheck-verified-only",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -629,5 +629,5 @@\n         keep_paths([], home, skills, set(), requested, check_review)\n         scan.unchanged()\n-        keep_paths([], home, skills, set(), requested, check_review, recheck=True)\n+        pass\n         return\n     rows = [line.split(\"\\t\") for line in ALLOWLIST.read_text(encoding=\"utf-8\").splitlines()]\n",
+      "executed_lines": [
+        631
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[new-version]",
+      "assertion_line": 241,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[new-version]"
+    },
+    {
+      "mutation": "review-recheck-first-alias-only",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -548,5 +548,5 @@\n         actual = next(iter(paths))\n         if suppress:\n-            for skill in by_path[actual]:\n+            for skill in (by_path[actual][:1] if recheck else by_path[actual]):\n                 resolved = skill.discovery.resolve(strict=True) if recheck else skill.actual\n                 if (under_agents(skill.discovery, agents, actual_agents, agents_stat)\n",
+      "executed_lines": [
+        550
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[verified]",
+      "assertion_line": 241,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[verified]"
+    },
+    {
+      "mutation": "review-recheck-allows-different-target",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -554,5 +554,5 @@\n                     raise FilterError(f\"CODEX_SKILLS_ALLOW: {name!r} は探索経路または実体が ~/.agents 配下で\"\n                                       \"レビューの前置きが読み込みを禁止します。CODEX_REVIEW_ALLOW_SKILLS=1 で許可できます\")\n-                if resolved != skill.actual:\n+                if False:\n                     raise FilterError(f\"CODEX_SKILLS_ALLOW: {name!r} は列挙後に実体が変更されました\")\n         if paths & disabled:\n",
+      "executed_lines": [
+        556
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[different-public-target]",
+      "assertion_line": 241,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_rechecks_nested_alias_after_keep_paths[different-public-target]"
+    },
+    {
+      "mutation": "unreadable-review-falls-back",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -666,5 +666,5 @@\n             else:\n                 reason = str(error)\n-            if check_review:\n+            if False:\n                 raise FilterError(f\"{reason}。レビューの追加指定が読み込み禁止に当たらないか確認できません\") from None\n             skip_filter(version, \"inventory_unreadable\", reason)\n",
+      "executed_lines": [
+        668
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_unsupported_skill_header_blocks_review_addition[verified]",
+      "assertion_line": 334,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unsupported_skill_header_blocks_review_addition[verified]"
+    },
+    {
+      "mutation": "toml-backslash-unescaped",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -564,5 +564,5 @@\n def skill_override(paths):\n     encoded = \"skills.config=[\" + \", \".join(\n-        \"{path=\" + json.dumps(str(path), ensure_ascii=False) + \", enabled=false}\" for path in paths\n+        \"{path=\" + json.dumps(str(path), ensure_ascii=False).replace(\"\\\\\\\\\", \"\\\\\") + \", enabled=false}\" for path in paths\n     ) + \"]\"\n     expected = [{\"path\": str(path), \"enabled\": False} for path in paths]\n",
+      "executed_lines": [
+        566
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
+      "assertion_line": 166,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
+    }
+  ],
+  "undetected_mutations": 0
+}
