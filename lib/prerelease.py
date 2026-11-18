@@ -7,12 +7,15 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
 REGISTRY = Path(__file__).resolve().parents[1] / 'config/prerelease-projects.json'
 RE_ID = re.compile(r'[A-Za-z0-9_.:-]{1,160}')
+PREDECESSOR_EXCLUDED = '前身の巡を継承する系列は公開前特例の対象外です'
 
 
 def command(*args: str) -> str:
@@ -38,6 +41,26 @@ class ConflictingHistory(ValueError):
     """A dispatch identity has contradictory source rows; approval cannot waive it."""
 
 
+def _valid_history_cells(cells: list[str]) -> bool:
+    return (len(cells) == 7 and cells[1] in ('設計', 'コード')
+            and re.fullmatch(r'[0-9a-f]{7,40}', cells[3]) is not None)
+
+
+def _missing_dispatch_id(line: str) -> bool:
+    """Identify an ordinary history row for the diagnostic after rejection."""
+    return ('dispatch_id=' not in line and line.endswith('|')
+            and re.match(r'^\|\s*[0-9]+\s*\|', line) is not None
+            and _valid_history_cells([cell.strip() for cell in line.split('|')[1:-1]]))
+
+
+def _missing_dispatch_id_message(target: str, state_dir: Path) -> str:
+    backfill = Path(__file__).resolve().parents[1] / 'bin/codex-history-backfill'
+    args = [str(backfill), target]
+    if os.environ.get('CODEX_WATCH_DIR') or state_dir != Path.home() / '.codex-watch':
+        args.extend(['--state-dir', str(state_dir)])
+    return '巡の履歴に発注IDがありません。補完案を確認してください。実行例: ' + shlex.join(args)
+
+
 def history(body: str, state_dir: Path, target: str, *, strict: bool,
             kind_label: str = 'コード', pending_head: str | None = None) -> int:
     """Reconcile dispatch identities before counting same-kind distinct HEADs."""
@@ -53,11 +76,12 @@ def history(body: str, state_dir: Path, target: str, *, strict: bool,
                 re.fullmatch(r'\|(?:\s*:?-{3,}:?\s*\|)+', line) or not line.startswith('|')):
             continue
         if not re.match(r'^\|\s*[0-9]+\s*\|', line) or not match:
-            raise ValueError('履歴行が不正または dispatch_id の補完が必要です')
+            raise ValueError(_missing_dispatch_id_message(target, state_dir)
+                             if _missing_dispatch_id(line) else '履歴行が不正です')
         if line.count('dispatch_id=') != 1 or not line[:match.start()].rstrip().endswith('|') or not RE_ID.fullmatch(match[1]):
             raise ValueError('履歴行の発注IDが不正です')
         cells = [cell.strip() for cell in line[:match.start()].split('|')[1:-1]]
-        if len(cells) != 7 or cells[1] not in ('設計', 'コード') or not re.fullmatch(r'[0-9a-f]{7,40}', cells[3]):
+        if not _valid_history_cells(cells):
             raise ValueError('履歴行の種別・HEAD・列が不正です')
         fingerprint = cells[:5]
         if match[1] in rows_by_id and rows_by_id[match[1]] != fingerprint:
@@ -125,7 +149,8 @@ def _legacy_history(body: str, state_dir: Path, target: str, *, strict: bool) ->
         match = re.search(r'<!-- dispatch_id=([A-Za-z0-9_.:-]+) -->$', line)
         if not match:
             if strict:
-                raise ValueError('履歴行に dispatch_id の補完が必要です')
+                raise ValueError(_missing_dispatch_id_message(target, state_dir)
+                                 if _missing_dispatch_id(line.strip()) else '履歴行が不正です')
             legacy_rows.append([cell.strip() for cell in line.split("|")[1:6]])
         else:
             fingerprint = [cell.strip() for cell in line.split('|')[1:6]]
@@ -195,8 +220,10 @@ def validate_record(data: dict, target: str, total: int, now: dt.datetime) -> No
             raise ValueError('裁定の配列がありません: ' + key)
         if any(not isinstance(item, str) or not item.strip() for item in data[key]):
             raise ValueError('裁定の配列要素が空です: ' + key)
-    if data['blocking'] or data['predecessors']:
-        raise ValueError('blocking残存・前身系列はAの特例対象外です')
+    if data['blocking']:
+        raise ValueError('blockingが残っているため公開前特例の対象外です')
+    if data['predecessors']:
+        raise ValueError(PREDECESSOR_EXCLUDED)
     if type(data.get('total_cap')) is not int or not 3 <= total <= data['total_cap'] <= 5:
         raise ValueError('公開前裁定は巡3〜5、固定総上限3〜5だけです')
     if total == 5 and data.get('round5_options') != ['縮小', '前身継承で切り出し', '撤回して再設計']:
@@ -238,8 +265,10 @@ def evaluate(target, workdir: str, state_dir: Path, body: str, total: int,
                 raise ValueError('規則は追跡された通常ファイルだけです')
     data = record(body, record_id)
     validate_record(data, target.key(), total, now)
-    if data['kind'] != kind or parse_inherited_pr_numbers(body):
-        raise ValueError('種別不一致・前身系列はAの特例対象外です')
+    if data['kind'] != kind:
+        raise ValueError('裁定と発注の種別が一致しません')
+    if parse_inherited_pr_numbers(body):
+        raise ValueError(PREDECESSOR_EXCLUDED)
     history_round = (_legacy_history(body, state_dir, target.key(), strict=True) + 1
                      if legacy_rounds else history(body, state_dir, target.key(), strict=True,
                          kind_label=kind, pending_head=git(workdir, 'rev-parse', 'HEAD')))
