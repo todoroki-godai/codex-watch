@@ -1,104 +1,115 @@
 {
-  "source_commit": "8eb17e03bd86c006879d98d277c0631ef2b6e4d1",
-  "source_sha256": "732edbc5d7d6154425b41420948bedc3b4062edf2fa714f23dad4cc95ec07c8e",
+  "source_commit": "9dc2e6ad3c3d1da892bcc9d011c2e3f389761e22",
+  "source_sha256": "b9330d6c8fd4b04765a119e75de8a640b6cfff1d4b2ab7dbbba436384b7b51cf",
   "mutations": [
     {
       "mutation": "all-disabled",
-      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -615,5 +615,5 @@\n     keep = keep_paths(rows, home, skills, disabled, requested, suppressed == \"yes\")\n     paths = {skill.actual for skill in skills}\n-    removed = sorted(paths - keep - disabled)\n+    removed = sorted(paths - disabled)\n     override = skill_override(removed)\n     memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -632,5 +632,5 @@\n     keep, notices = keep_paths(rows, home, skills, disabled, requested, check_review)\n     paths = {skill.actual for skill in skills}\n-    removed = sorted(paths - keep - disabled)\n+    removed = sorted(paths - disabled)\n     override = skill_override(removed)\n     memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n",
       "executed_lines": [
-        617
+        634
       ],
       "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
-      "assertion_line": 166,
+      "assertion_line": 168,
       "pytest_exit": 1,
       "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
     },
     {
       "mutation": "memory-override-omitted",
-      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -617,5 +617,5 @@\n     removed = sorted(paths - keep - disabled)\n     override = skill_override(removed)\n-    memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n+    memory_args = []\n     check_arg_size([\"nohup\", \"codex\", *argv, \"-c\", override, *memory_args])\n     scan.unchanged()\n",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -634,5 +634,5 @@\n     removed = sorted(paths - keep - disabled)\n     override = skill_override(removed)\n-    memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n+    memory_args = []\n     check_arg_size([\"nohup\", \"codex\", *argv, \"-c\", override, *memory_args])\n     scan.unchanged()\n",
       "executed_lines": [
-        619
+        636
       ],
       "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
-      "assertion_line": 169,
+      "assertion_line": 171,
       "pytest_exit": 1,
       "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
     },
     {
       "mutation": "unreadable-skipped",
-      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -206,5 +206,9 @@\n         if dirs > 2000:\n             raise FilterError(f\"{root}: 探索ディレクトリ数が上限を超えました\")\n-        for path in sorted(folder.iterdir()):\n+        try:\n+            children = sorted(folder.iterdir())\n+        except PermissionError:\n+            return\n+        for path in children:\n             entries += 1\n             if entries > 20_000:\n",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -210,5 +210,9 @@\n         if dirs > 2000:\n             raise FilterError(f\"{root}: 探索ディレクトリ数が上限を超えました\")\n-        for path in sorted(folder.iterdir()):\n+        try:\n+            children = sorted(folder.iterdir())\n+        except PermissionError:\n+            return\n+        for path in children:\n             entries += 1\n             if entries > 20_000:\n",
       "executed_lines": [
-        211
+        215
       ],
-      "test": "tests/test_codex_launch_skills.py::test_unreadable_directory_stops_before_dispatch[impl]",
-      "assertion_line": 400,
+      "test": "tests/test_codex_launch_skills.py::test_unreadable_directory_launches_without_filter[impl]",
+      "assertion_line": 451,
       "pytest_exit": 1,
-      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unreadable_directory_stops_before_dispatch[impl]"
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unreadable_directory_launches_without_filter[impl]"
     },
     {
       "mutation": "discovery-path-ignored",
-      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -543,6 +543,5 @@\n         actual = next(iter(paths))\n         if suppress and any(\n-            under_agents(skill.discovery, agents, actual_agents, agents_stat)\n-            or under_agents(skill.actual, agents, actual_agents, agents_stat)\n+            under_agents(skill.actual, agents, actual_agents, agents_stat)\n             for skill in by_path[actual]\n         ):\n",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -548,6 +548,5 @@\n         actual = next(iter(paths))\n         if suppress and any(\n-            under_agents(skill.discovery, agents, actual_agents, agents_stat)\n-            or under_agents(skill.actual, agents, actual_agents, agents_stat)\n+            under_agents(skill.actual, agents, actual_agents, agents_stat)\n             for skill in by_path[actual]\n         ):\n",
       "executed_lines": [
-        545
+        550
       ],
-      "test": "tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[out-of-agents]",
-      "assertion_line": 204,
+      "test": "tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[verified-out-of-agents]",
+      "assertion_line": 207,
       "pytest_exit": 1,
-      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[out-of-agents]"
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[verified-out-of-agents]"
     },
     {
-      "mutation": "unverified-version-accepted",
-      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -586,5 +586,5 @@\n     if result.returncode or version is None:\n         raise FilterError(\"Codex CLI の版を識別できません\")\n-    if version[1].decode(\"ascii\") != CLI_VERSION:\n+    if False and version[1].decode(\"ascii\") != CLI_VERSION:\n         raise FilterError(f\"Codex CLI {version[1].decode('ascii')} は未検証の版です（対象 {CLI_VERSION}）\")\n \n",
+      "mutation": "unverified-version-filtered",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -651,5 +651,5 @@\n     check_review = suppressed == \"yes\" and bool(requested)\n     version = read_version()\n-    version_supported = version == CLI_VERSION\n+    version_supported = version is not None\n     if version_supported or check_review:\n         try:\n",
       "executed_lines": [
-        588
+        653
       ],
-      "test": "tests/test_codex_launch_skills.py::test_reject_before_exec[new-version-0.169.2-impl]",
-      "assertion_line": 223,
+      "test": "tests/test_codex_launch_skills.py::test_unverified_version_launches_without_filter[new-version-impl]",
+      "assertion_line": 233,
       "pytest_exit": 1,
-      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_reject_before_exec[new-version-0.169.2-impl]"
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unverified_version_launches_without_filter[new-version-impl]"
+    },
+    {
+      "mutation": "unverified-version-warning-omitted",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -600,6 +600,5 @@\n     if status == \"inventory_unreadable\":\n         check += \"と表示された置き場の種類・読み取り権限\"\n-    print(f\"警告: skill と記憶の絞り込みを省略（Codex CLI {version or '版不明'}、{reason}）。\"\n-          f\" {check}を確認してください。\", file=sys.stderr)\n+    pass  # Emit the state record without the warning.\n     print(f\"launch_skills_filter=skipped:{status}\")\n \n",
+      "executed_lines": [
+        602
+      ],
+      "test": "tests/test_codex_launch_skills.py::test_unverified_version_launches_without_filter[new-version-impl]",
+      "assertion_line": 234,
+      "pytest_exit": 1,
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_unverified_version_launches_without_filter[new-version-impl]"
     },
     {
       "mutation": "substring-name",
-      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -535,5 +535,5 @@\n     actual_agents = agents.resolve(strict=True) if agents_stat is not None else agents\n     for name in requested:\n-        matches = by_name[name]\n+        matches = [skill for skill in skills if skill.name and name in skill.name]\n         paths = {skill.actual for skill in matches}\n         if not paths:\n",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -540,5 +540,5 @@\n     actual_agents = agents.resolve(strict=True) if agents_stat is not None else agents\n     for name in requested:\n-        matches = by_name[name]\n+        matches = [skill for skill in skills if skill.name and name in skill.name]\n         paths = {skill.actual for skill in matches}\n         if not paths:\n",
       "executed_lines": [
-        536,
-        537
+        541,
+        542
       ],
       "test": "tests/test_codex_launch_skills.py::test_extra_requires_exact_enabled_unambiguous_name[part-\\u672a\\u77e5]",
-      "assertion_line": 244,
+      "assertion_line": 295,
       "pytest_exit": 1,
       "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_extra_requires_exact_enabled_unambiguous_name[part-\\u672a\\u77e5]"
     },
     {
       "mutation": "discovery-used-as-override",
-      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -615,5 +615,5 @@\n     keep = keep_paths(rows, home, skills, disabled, requested, suppressed == \"yes\")\n     paths = {skill.actual for skill in skills}\n-    removed = sorted(paths - keep - disabled)\n+    removed = sorted({skill.discovery for skill in skills if skill.actual not in keep | disabled})\n     override = skill_override(removed)\n     memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -632,5 +632,5 @@\n     keep, notices = keep_paths(rows, home, skills, disabled, requested, check_review)\n     paths = {skill.actual for skill in skills}\n-    removed = sorted(paths - keep - disabled)\n+    removed = sorted({skill.discovery for skill in skills if skill.actual not in keep | disabled})\n     override = skill_override(removed)\n     memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n",
       "executed_lines": [
-        617
+        634
       ],
       "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
-      "assertion_line": 166,
+      "assertion_line": 168,
       "pytest_exit": 1,
       "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
     },
     {
       "mutation": "real-path-ignored",
-      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -544,5 +544,4 @@\n         if suppress and any(\n             under_agents(skill.discovery, agents, actual_agents, agents_stat)\n-            or under_agents(skill.actual, agents, actual_agents, agents_stat)\n             for skill in by_path[actual]\n         ):\n",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -549,5 +549,4 @@\n         if suppress and any(\n             under_agents(skill.discovery, agents, actual_agents, agents_stat)\n-            or under_agents(skill.actual, agents, actual_agents, agents_stat)\n             for skill in by_path[actual]\n         ):\n",
       "executed_lines": [
-        545
+        550
       ],
-      "test": "tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[into-agents]",
-      "assertion_line": 204,
+      "test": "tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[verified-into-agents]",
+      "assertion_line": 207,
       "pytest_exit": 1,
-      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[into-agents]"
+      "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_review_linked_extra_rejected_or_explicitly_allowed[verified-into-agents]"
     },
     {
       "mutation": "all-enabled",
-      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -615,5 +615,5 @@\n     keep = keep_paths(rows, home, skills, disabled, requested, suppressed == \"yes\")\n     paths = {skill.actual for skill in skills}\n-    removed = sorted(paths - keep - disabled)\n+    removed = []\n     override = skill_override(removed)\n     memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n",
+      "diff": "--- a/lib/codex_launch_skills.py\n+++ b/lib/codex_launch_skills.py\n@@ -632,5 +632,5 @@\n     keep, notices = keep_paths(rows, home, skills, disabled, requested, check_review)\n     paths = {skill.actual for skill in skills}\n-    removed = sorted(paths - keep - disabled)\n+    removed = []\n     override = skill_override(removed)\n     memory_args = [\"-c\", \"memories.use_memories=false\"] if memories == \"off\" else []\n",
       "executed_lines": [
-        617
+        634
       ],
       "test": "tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]",
-      "assertion_line": 166,
+      "assertion_line": 168,
       "pytest_exit": 1,
       "pytest_failure": "FAILED tests/test_codex_launch_skills.py::test_default_filters_skills_and_memories[impl]"
     }
