@@ -166,7 +166,7 @@ enabled = false
     assert blocked == {duplicate, other, system, admin, ancestor, project, external}
     assert blocked.isdisjoint({commit, normal, extra, disabled, old, current})
     assert len(values["skills"]["config"]) == len(blocked)
-    assert values["memories"] == {"use_memories": False}
+    assert values.get("memories") == {"use_memories": False}
     assert observed["argv"][1:3] == ["-C", str(root / "project/nested")]
     assert ("を読み込んではならない" in observed["prompt"]) == (kind == "review")
     assert snapshot() == before
