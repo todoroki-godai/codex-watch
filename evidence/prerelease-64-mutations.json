@@ -125,5 +125,49 @@
     "前身あり（裁定JSON、本文の前身PR継承行）",
     "壊れた数値行と不正なIDコメント",
     "未解消blocking、裁定と発注の種別不一致"
-  ]
+  ],
+  "review_follow_up": {
+    "review_run": "cw64-crev1-20261118-124806-74003",
+    "base_sha": "4d498c761f21c0f1a4de15d3ee3ed5851138f882",
+    "source_sha256": {
+      "lib/prerelease.py": "4788b73c8e71425a29a9cc2b53c3d2533171d834783616a93272b99d48d2b94c",
+      "tests/test_prerelease.py": "0dfef16360a75fbecd676f6120dcb8249d621277a7ca13e9072d304e77c4be02"
+    },
+    "mutations": {
+      "omit-target-argument": {
+        "change": "--- a/lib/prerelease.py\n+++ b/lib/prerelease.py\n@@ -55,7 +55,7 @@\n \n def _missing_dispatch_id_message(target: str, state_dir: Path) -> str:\n     backfill = Path(__file__).resolve().parents[1] / 'bin/codex-history-backfill'\n-    args = [str(backfill), target]\n+    args = [str(backfill)]\n     if os.environ.get('CODEX_WATCH_DIR') or state_dir != Path.home() / '.codex-watch':\n         args.extend(['--state-dir', str(state_dir)])\n     return '巡の履歴に発注IDがありません。補完案を確認してください。実行例: ' + shlex.join(args)\n",
+        "tests": [
+          "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id"
+        ],
+        "summary": "2 failed in 3.69s",
+        "failures": [
+          {
+            "test": "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[per-kind]",
+            "assertion": "tests/test_prerelease.py:187"
+          },
+          {
+            "test": "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[legacy]",
+            "assertion": "tests/test_prerelease.py:187"
+          }
+        ]
+      },
+      "omit-state-dir-argument": {
+        "change": "--- a/lib/prerelease.py\n+++ b/lib/prerelease.py\n@@ -57,7 +57,7 @@\n     backfill = Path(__file__).resolve().parents[1] / 'bin/codex-history-backfill'\n     args = [str(backfill), target]\n     if os.environ.get('CODEX_WATCH_DIR') or state_dir != Path.home() / '.codex-watch':\n-        args.extend(['--state-dir', str(state_dir)])\n+        pass\n     return '巡の履歴に発注IDがありません。補完案を確認してください。実行例: ' + shlex.join(args)\n \n \n",
+        "tests": [
+          "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id"
+        ],
+        "summary": "2 failed in 3.29s",
+        "failures": [
+          {
+            "test": "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[per-kind]",
+            "assertion": "tests/test_prerelease.py:188"
+          },
+          {
+            "test": "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[legacy]",
+            "assertion": "tests/test_prerelease.py:188"
+          }
+        ]
+      }
+    }
+  }
 }

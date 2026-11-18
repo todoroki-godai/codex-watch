@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -55,7 +56,7 @@ def case(tmp_path, monkeypatch):
         default_branch='main', policies={name: git('rev-parse', 'HEAD:' + name)
         for name in ('policy.md', 'release.md')})]))
     (work / 'code.py').write_text('changed\n')
-    state = tmp_path / 'state'
+    state = tmp_path / 'state ledger'
     state.mkdir()
     # Normal counting uses the ledger. Two completed, distinct HEADs precede
     # this dispatch; body history alone cannot manufacture the third round.
@@ -159,10 +160,13 @@ def assert_prerelease_refusal(case, reason, total=3):
     assert lines[0].startswith(prefix)
     gate = json.loads(lines[0].removeprefix(prefix))
     assert gate['total_round'] == total
-    assert gate['message'].split('。公開前特例不成立: ')[1:] == [reason]
+    _, actual_reason = gate['message'].split('。公開前特例不成立: ')
+    if reason is not None:
+        assert actual_reason == reason
     assert not list(case['state'].glob('*.reservation'))
     assert not list(case['state'].glob('0-fixture-*.state'))
     assert not (case['tmp'] / 'sent').exists()
+    return actual_reason
 
 
 @pytest.mark.parametrize('legacy', [False, True], ids=['per-kind', 'legacy'])
@@ -175,9 +179,13 @@ def test_startup_reports_missing_dispatch_id(case, legacy):
         suffix = '\n## 承認\n巡4の人間承認\n'
     body = case['body'](suffix=suffix).replace(' <!-- dispatch_id=agent-1 -->', '')
     case['body_file'].write_text(body)
-    assert_prerelease_refusal(case,
-        '巡の履歴に発注IDがありません。codex-history-backfill で補完案を確認してください',
-        total=4 if legacy else 3)
+    reason = assert_prerelease_refusal(case, None, total=4 if legacy else 3)
+    notice, example = reason.split('実行例: ', 1)
+    assert notice == '巡の履歴に発注IDがありません。補完案を確認してください。'
+    command, *args = shlex.split(example)
+    assert command == str(case['package'] / 'bin/codex-history-backfill')
+    assert args[:1] == [TARGET]
+    assert args[1:] == ['--state-dir', str(case['state'])]
 
 
 @pytest.mark.parametrize('source', ['record', 'body'])

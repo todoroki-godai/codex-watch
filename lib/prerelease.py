@@ -7,13 +7,14 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import re
+import shlex
 import subprocess
 from pathlib import Path
 
 REGISTRY = Path(__file__).resolve().parents[1] / 'config/prerelease-projects.json'
 RE_ID = re.compile(r'[A-Za-z0-9_.:-]{1,160}')
-HISTORY_ID_MISSING = '巡の履歴に発注IDがありません。codex-history-backfill で補完案を確認してください'
 PREDECESSOR_EXCLUDED = '前身の巡を継承する系列は公開前特例の対象外です'
 
 
@@ -52,6 +53,14 @@ def _missing_dispatch_id(line: str) -> bool:
             and _valid_history_cells([cell.strip() for cell in line.split('|')[1:-1]]))
 
 
+def _missing_dispatch_id_message(target: str, state_dir: Path) -> str:
+    backfill = Path(__file__).resolve().parents[1] / 'bin/codex-history-backfill'
+    args = [str(backfill), target]
+    if os.environ.get('CODEX_WATCH_DIR') or state_dir != Path.home() / '.codex-watch':
+        args.extend(['--state-dir', str(state_dir)])
+    return '巡の履歴に発注IDがありません。補完案を確認してください。実行例: ' + shlex.join(args)
+
+
 def history(body: str, state_dir: Path, target: str, *, strict: bool,
             kind_label: str = 'コード', pending_head: str | None = None) -> int:
     """Reconcile dispatch identities before counting same-kind distinct HEADs."""
@@ -67,7 +76,8 @@ def history(body: str, state_dir: Path, target: str, *, strict: bool,
                 re.fullmatch(r'\|(?:\s*:?-{3,}:?\s*\|)+', line) or not line.startswith('|')):
             continue
         if not re.match(r'^\|\s*[0-9]+\s*\|', line) or not match:
-            raise ValueError(HISTORY_ID_MISSING if _missing_dispatch_id(line) else '履歴行が不正です')
+            raise ValueError(_missing_dispatch_id_message(target, state_dir)
+                             if _missing_dispatch_id(line) else '履歴行が不正です')
         if line.count('dispatch_id=') != 1 or not line[:match.start()].rstrip().endswith('|') or not RE_ID.fullmatch(match[1]):
             raise ValueError('履歴行の発注IDが不正です')
         cells = [cell.strip() for cell in line[:match.start()].split('|')[1:-1]]
@@ -139,7 +149,8 @@ def _legacy_history(body: str, state_dir: Path, target: str, *, strict: bool) ->
         match = re.search(r'<!-- dispatch_id=([A-Za-z0-9_.:-]+) -->$', line)
         if not match:
             if strict:
-                raise ValueError(HISTORY_ID_MISSING if _missing_dispatch_id(line.strip()) else '履歴行が不正です')
+                raise ValueError(_missing_dispatch_id_message(target, state_dir)
+                                 if _missing_dispatch_id(line.strip()) else '履歴行が不正です')
             legacy_rows.append([cell.strip() for cell in line.split("|")[1:6]])
         else:
             fingerprint = [cell.strip() for cell in line.split('|')[1:6]]
