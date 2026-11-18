@@ -210,3 +210,8 @@ harness-nudge の試験では、保存した一覧の284件を `SKILL.md` の絶
 
 **#65 巡3の実装メモ**　0.169.1 は認証済みアカウントの導入一覧を取得し、その有効状態をローカルのプラグイン設定に合流させる。［[導入一覧の取得](https://github.com/openai/codex/blob/c376cf7396eff83ce4c6ac61b9553df142e7a0be/codex-rs/core-plugins/src/manager.rs#L3515-L3528)・[設定への合流](https://github.com/openai/codex/blob/c376cf7396eff83ce4c6ac61b9553df142e7a0be/codex-rs/core-plugins/src/loader.rs#L343-L396)］
 起動口は `$CODEX_HOME/plugins/cache/openai-curated-remote/<プラグイン>/<採用版>` のローカル候補を列挙し、許可外の実体パスを `skills.config` で無効にする。読めないか形式を判定できない場合は既存の警告・省略処理を使う。
+
+## 実起動の測り直し（2026-11-18 15:55〜15:57 JST・HEAD 06412a0）
+- 再現手段: `evidence/launch-skill-measure2-20261118.sh`（結果は同名の `.tsv`）。codex-review・同じ測定用の依頼文・作業場所はこの worktree。
+- 既定（列挙348・残す11・外す337・記憶 off）: 初回 input_tokens 26,455 ×3。off: 39,715・39,320・39,715（平均 39,583）。
+- 削減 13,128（33.2%）。合格条件の25%以上を満たす。頭打ちの要因: 残る固定部分（基本指示・ツール定義など約2.4万）は絞り込みの対象外。
