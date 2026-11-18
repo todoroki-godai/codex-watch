@@ -1,0 +1,129 @@
+{
+  "sha": "93276073888cde1a025c12114092013445b0495a",
+  "mutations": {
+    "01-hide-reason": {
+      "change": "--- a/lib/round_gate.py\n+++ b/lib/round_gate.py\n@@ -1373,7 +1373,7 @@\n                                 prerelease_record, kind_label, legacy_rounds=legacy_rounds)\n             decision = decide(total, body, evidence)\n         except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, Indeterminate) as error:\n-            decision.message += \"。公開前特例不成立: \" + str(error)\n+            pass\n \n     return {\n         \"authority\": evidence.get(\"authority\", \"human\" if total >= 3 and decision.status == \"pass\" else \"ordinary\"),\n",
+      "tests": [
+        "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[per-kind]",
+        "tests/test_prerelease.py::test_startup_reports_inherited_predecessor[record]"
+      ],
+      "summary": "2 failed in 3.03s",
+      "failures": [
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[per-kind]",
+          "assertion": "tests/test_prerelease.py:162"
+        },
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_inherited_predecessor[record]",
+          "assertion": "tests/test_prerelease.py:162"
+        }
+      ]
+    },
+    "02-allow-missing-id": {
+      "change": "--- a/lib/prerelease.py\n+++ b/lib/prerelease.py\n@@ -67,7 +67,9 @@\n                 re.fullmatch(r'\\|(?:\\s*:?-{3,}:?\\s*\\|)+', line) or not line.startswith('|')):\n             continue\n         if not re.match(r'^\\|\\s*[0-9]+\\s*\\|', line) or not match:\n-            raise ValueError(HISTORY_ID_MISSING if _missing_dispatch_id(line) else '履歴行が不正です')\n+            if _missing_dispatch_id(line):\n+                continue\n+            raise ValueError('履歴行が不正です')\n         if line.count('dispatch_id=') != 1 or not line[:match.start()].rstrip().endswith('|') or not RE_ID.fullmatch(match[1]):\n             raise ValueError('履歴行の発注IDが不正です')\n         cells = [cell.strip() for cell in line[:match.start()].split('|')[1:-1]]\n",
+      "tests": [
+        "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[per-kind]"
+      ],
+      "summary": "1 failed in 3.97s",
+      "failures": [
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[per-kind]",
+          "assertion": "tests/test_prerelease.py:154"
+        }
+      ]
+    },
+    "03-allow-predecessors": {
+      "change": "--- a/lib/prerelease.py\n+++ b/lib/prerelease.py\n@@ -211,8 +211,6 @@\n             raise ValueError('裁定の配列要素が空です: ' + key)\n     if data['blocking']:\n         raise ValueError('blockingが残っているため公開前特例の対象外です')\n-    if data['predecessors']:\n-        raise ValueError(PREDECESSOR_EXCLUDED)\n     if type(data.get('total_cap')) is not int or not 3 <= total <= data['total_cap'] <= 5:\n         raise ValueError('公開前裁定は巡3〜5、固定総上限3〜5だけです')\n     if total == 5 and data.get('round5_options') != ['縮小', '前身継承で切り出し', '撤回して再設計']:\n@@ -256,8 +254,6 @@\n     validate_record(data, target.key(), total, now)\n     if data['kind'] != kind:\n         raise ValueError('裁定と発注の種別が一致しません')\n-    if parse_inherited_pr_numbers(body):\n-        raise ValueError(PREDECESSOR_EXCLUDED)\n     history_round = (_legacy_history(body, state_dir, target.key(), strict=True) + 1\n                      if legacy_rounds else history(body, state_dir, target.key(), strict=True,\n                          kind_label=kind, pending_head=git(workdir, 'rev-parse', 'HEAD')))\n",
+      "tests": [
+        "tests/test_prerelease.py::test_startup_reports_inherited_predecessor"
+      ],
+      "summary": "2 failed in 7.54s",
+      "failures": [
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_inherited_predecessor[record]",
+          "assertion": "tests/test_prerelease.py:154"
+        },
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_inherited_predecessor[body]",
+          "assertion": "tests/test_prerelease.py:154"
+        }
+      ]
+    },
+    "04-swap-reasons": {
+      "change": "--- a/lib/prerelease.py\n+++ b/lib/prerelease.py\n@@ -13,8 +13,8 @@\n \n REGISTRY = Path(__file__).resolve().parents[1] / 'config/prerelease-projects.json'\n RE_ID = re.compile(r'[A-Za-z0-9_.:-]{1,160}')\n-HISTORY_ID_MISSING = '巡の履歴に発注IDがありません。codex-history-backfill で補完案を確認してください'\n-PREDECESSOR_EXCLUDED = '前身の巡を継承する系列は公開前特例の対象外です'\n+PREDECESSOR_EXCLUDED = '巡の履歴に発注IDがありません。codex-history-backfill で補完案を確認してください'\n+HISTORY_ID_MISSING = '前身の巡を継承する系列は公開前特例の対象外です'\n \n \n def command(*args: str) -> str:\n",
+      "tests": [
+        "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id",
+        "tests/test_prerelease.py::test_startup_reports_inherited_predecessor"
+      ],
+      "summary": "4 failed in 6.04s",
+      "failures": [
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[per-kind]",
+          "assertion": "tests/test_prerelease.py:162"
+        },
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[legacy]",
+          "assertion": "tests/test_prerelease.py:162"
+        },
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_inherited_predecessor[record]",
+          "assertion": "tests/test_prerelease.py:162"
+        },
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_inherited_predecessor[body]",
+          "assertion": "tests/test_prerelease.py:162"
+        }
+      ]
+    },
+    "05-treat-malformed-as-missing": {
+      "change": "--- a/lib/prerelease.py\n+++ b/lib/prerelease.py\n@@ -67,7 +67,7 @@\n                 re.fullmatch(r'\\|(?:\\s*:?-{3,}:?\\s*\\|)+', line) or not line.startswith('|')):\n             continue\n         if not re.match(r'^\\|\\s*[0-9]+\\s*\\|', line) or not match:\n-            raise ValueError(HISTORY_ID_MISSING if _missing_dispatch_id(line) else '履歴行が不正です')\n+            raise ValueError(HISTORY_ID_MISSING)\n         if line.count('dispatch_id=') != 1 or not line[:match.start()].rstrip().endswith('|') or not RE_ID.fullmatch(match[1]):\n             raise ValueError('履歴行の発注IDが不正です')\n         cells = [cell.strip() for cell in line[:match.start()].split('|')[1:-1]]\n",
+      "tests": [
+        "tests/test_prerelease.py::test_startup_does_not_offer_backfill_for_malformed_history"
+      ],
+      "summary": "2 failed in 2.73s",
+      "failures": [
+        {
+          "test": "tests/test_prerelease.py::test_startup_does_not_offer_backfill_for_malformed_history[broken-row]",
+          "assertion": "tests/test_prerelease.py:162"
+        },
+        {
+          "test": "tests/test_prerelease.py::test_startup_does_not_offer_backfill_for_malformed_history[invalid-id]",
+          "assertion": "tests/test_prerelease.py:162"
+        }
+      ]
+    },
+    "06-bypass-blocking": {
+      "change": "--- a/lib/prerelease.py\n+++ b/lib/prerelease.py\n@@ -209,8 +209,6 @@\n             raise ValueError('裁定の配列がありません: ' + key)\n         if any(not isinstance(item, str) or not item.strip() for item in data[key]):\n             raise ValueError('裁定の配列要素が空です: ' + key)\n-    if data['blocking']:\n-        raise ValueError('blockingが残っているため公開前特例の対象外です')\n     if data['predecessors']:\n         raise ValueError(PREDECESSOR_EXCLUDED)\n     if type(data.get('total_cap')) is not int or not 3 <= total <= data['total_cap'] <= 5:\n",
+      "tests": [
+        "tests/test_prerelease.py::test_startup_reports_other_prerelease_rejections[blocking]"
+      ],
+      "summary": "1 failed in 3.92s",
+      "failures": [
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_other_prerelease_rejections[blocking]",
+          "assertion": "tests/test_prerelease.py:154"
+        }
+      ]
+    },
+    "07-drop-legacy-guidance": {
+      "change": "--- a/lib/prerelease.py\n+++ b/lib/prerelease.py\n@@ -139,7 +139,7 @@\n         match = re.search(r'<!-- dispatch_id=([A-Za-z0-9_.:-]+) -->$', line)\n         if not match:\n             if strict:\n-                raise ValueError(HISTORY_ID_MISSING if _missing_dispatch_id(line.strip()) else '履歴行が不正です')\n+                raise ValueError('巡の履歴に発注IDがありません')\n             legacy_rows.append([cell.strip() for cell in line.split(\"|\")[1:6]])\n         else:\n             fingerprint = [cell.strip() for cell in line.split('|')[1:6]]\n",
+      "tests": [
+        "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[legacy]"
+      ],
+      "summary": "1 failed in 1.74s",
+      "failures": [
+        {
+          "test": "tests/test_prerelease.py::test_startup_reports_missing_dispatch_id[legacy]",
+          "assertion": "tests/test_prerelease.py:162"
+        }
+      ]
+    }
+  },
+  "input_classes": [
+    "ID付きの一致する履歴と登録済み裁定（陽性対照）",
+    "IDなしの通常履歴（種別別計数、旧計数）",
+    "前身あり（裁定JSON、本文の前身PR継承行）",
+    "壊れた数値行と不正なIDコメント",
+    "未解消blocking、裁定と発注の種別不一致"
+  ]
+}
