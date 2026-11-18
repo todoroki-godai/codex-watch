@@ -390,18 +390,19 @@ def test_child_config_failure_is_visible_in_status(launch, kind):
 @pytest.mark.parametrize("kind", ["impl", "review"])
 def test_unreadable_directory_stops_before_dispatch(launch, kind):
     root, skill, _, run, _ = launch
-    path = skill("hidden", "home/.codex/skills/hidden/SKILL.md").parents[1]
-    path.chmod(0)
-    try:
-        with pytest.raises(PermissionError):
-            list(path.iterdir())
-        result = run(kind)
-        assert result.returncode != 0
-        assert str(path) in result.stderr and "読み取り" in result.stderr
-        assert not (root / "capture").exists()
-        assert not list((root / "state").glob("*.state"))
-    finally:
-        path.chmod(0o700)
+    nested = skill("hidden", "home/.codex/skills/hidden/SKILL.md").parent
+    for path in (nested.parent, nested):
+        path.chmod(0)
+        try:
+            with pytest.raises(PermissionError):
+                list(path.iterdir())
+            result = run(kind)
+            assert result.returncode != 0, f"dispatch proceeded despite unreadable directory {path}"
+            assert str(path) in result.stderr and "読み取り" in result.stderr
+            assert not (root / "capture").exists()
+            assert not list((root / "state").glob("*.state"))
+        finally:
+            path.chmod(0o700)
 
 
 def test_review_permission_uses_path_components(launch):

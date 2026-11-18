@@ -54,9 +54,10 @@ MUTATIONS = (
 
 def trace_source(source, lines):
     trace = f"""
-    def trace(frame, event, arg):
-        if event == "line" and frame.f_code.co_filename == __file__ and frame.f_lineno in {lines!r}:
-            with Path(__file__).resolve().parents[2].joinpath("mutation-hit").open("a") as output:
+    def trace(frame, event, _arg, filename=__file__, lines={lines!r},
+              path=Path(__file__).resolve().parents[2] / "mutation-hit"):
+        if event == "line" and frame.f_code.co_filename == filename and frame.f_lineno in lines:
+            with path.open("a") as output:
                 output.write(f"{{frame.f_lineno}}\\n")
         return trace
 
@@ -90,8 +91,8 @@ def check_case(folder, original, case):
         fromfile=f"a/{HELPER}", tofile=f"b/{HELPER}", n=2,
     ))
     (source.parent / "mutation.diff").write_text(diff)
-    visits = sorted({int(line) for marker in base.glob("test_*/mutation-hit")
-                     for line in marker.read_text().splitlines()})
+    markers = {path.resolve() for path in base.glob("test_*/mutation-hit")}
+    visits = sorted({int(line) for marker in markers for line in marker.read_text().splitlines()})
     failure = re.search(rf"^{re.escape(TEST)}:(\d+): in test_", output, re.MULTILINE)
     assertion = re.search(r"^E\s+(?:assert\b|AssertionError\b)", output, re.MULTILINE)
     if not (result.returncode == 1 and failure and assertion and visits):
