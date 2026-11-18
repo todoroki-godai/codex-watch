@@ -96,6 +96,8 @@ elif a[0]=='api' and '-X' not in a:
     print(os.environ['POLICY_COMMIT'])
 elif a[0]=='api':
     Path(os.environ['BODY']).write_text(json.load(sys.stdin)['body'])
+elif a[:3]==['pr', 'view', '2']:
+    print('')
 else:
     print(Path(os.environ['BODY']).read_text())
 ''')
@@ -145,6 +147,66 @@ def test_completed_history_round3_dispatch(case):
     evidence = json.loads(saved['prerelease_evidence'])
     assert evidence['record']['total_cap'] == 3
     assert '3巡目' in Path(saved['effective_prompt']).read_text() or '巡3' in Path(saved['effective_prompt']).read_text() or '第3巡' in Path(saved['effective_prompt']).read_text()
+
+
+def assert_prerelease_refusal(case, reason, total=3):
+    result = run_cli(case)
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert result.stdout == ''
+    lines = result.stderr.splitlines()
+    assert len(lines) == 1, result.stderr
+    prefix = '巡数ゲートで拒否されました: '
+    assert lines[0].startswith(prefix)
+    gate = json.loads(lines[0].removeprefix(prefix))
+    assert gate['total_round'] == total
+    assert gate['message'].split('。公開前特例不成立: ')[1:] == [reason]
+    assert not list(case['state'].glob('*.reservation'))
+    assert not list(case['state'].glob('0-fixture-*.state'))
+    assert not (case['tmp'] / 'sent').exists()
+
+
+@pytest.mark.parametrize('legacy', [False, True], ids=['per-kind', 'legacy'])
+def test_startup_reports_missing_dispatch_id(case, legacy):
+    suffix = ''
+    if legacy:
+        # No saved round 4 to attribute and the ledger is at round 3.
+        # The legacy count reads the approval, but it has no accompanying cap.
+        case['data']['total_cap'] = 4
+        suffix = '\n## 承認\n巡4の人間承認\n'
+    body = case['body'](suffix=suffix).replace(' <!-- dispatch_id=agent-1 -->', '')
+    case['body_file'].write_text(body)
+    assert_prerelease_refusal(case,
+        '巡の履歴に発注IDがありません。codex-history-backfill で補完案を確認してください',
+        total=4 if legacy else 3)
+
+
+@pytest.mark.parametrize('source', ['record', 'body'])
+def test_startup_reports_inherited_predecessor(case, source):
+    if source == 'record':
+        case['data']['predecessors'] = ['pr:min-sys/updater-index#2']
+        case['body']()
+    else:
+        case['body'](suffix='\n## 継承\n前身 PR #2 で 設計0巡・コード0巡 消化済み（継承）。\n')
+    assert_prerelease_refusal(case, '前身の巡を継承する系列は公開前特例の対象外です')
+
+
+@pytest.mark.parametrize('malformation', ['broken-row', 'invalid-id'])
+def test_startup_does_not_offer_backfill_for_malformed_history(case, malformation):
+    body = case['body']()
+    first_row = next(line for line in body.splitlines() if line.startswith('| 1 |'))
+    replacement = '| 1 |' if malformation == 'broken-row' else first_row.replace('agent-1', 'bad id')
+    case['body_file'].write_text(body.replace(first_row, replacement))
+    assert_prerelease_refusal(case, '履歴行が不正です')
+
+
+@pytest.mark.parametrize(('field', 'value', 'reason'), [
+    ('blocking', ['unresolved'], 'blockingが残っているため公開前特例の対象外です'),
+    ('kind', '設計', '裁定と発注の種別が一致しません'),
+], ids=['blocking', 'kind'])
+def test_startup_reports_other_prerelease_rejections(case, field, value, reason):
+    case['data'][field] = value
+    case['body']()
+    assert_prerelease_refusal(case, reason)
 
 
 def test_human_approval_ignores_policy_failure(case, monkeypatch):
