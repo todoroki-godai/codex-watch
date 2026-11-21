@@ -25,6 +25,14 @@ BIN_DIR = Path(__file__).resolve().parent.parent / "bin"
 CODEX_REVIEW = BIN_DIR / "codex-review"
 
 VALID_GOAL_CUT = "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26"
+CONFIG_MODEL_RESPONSE_SH = (
+    "if [ \"$1\" = app-server ]; then\n"
+    "  read -r request; echo '{\"id\":1,\"result\":{}}'\n"
+    "  read -r notification; read -r request\n"
+    "  echo '{\"id\":2,\"result\":{\"config\":{\"model\":\"gpt-6.1-terra\"}}}'\n"
+    "  exit 0\n"
+    "fi\n"
+)
 
 
 def _write_executable(path: Path, script: str) -> None:
@@ -68,7 +76,8 @@ def fake_bin(tmp_path: Path) -> Path:
     _write_executable(
         d / "codex",
         "#!/bin/sh\n"
-        "cat >/dev/null\n"
+        + CONFIG_MODEL_RESPONSE_SH
+        + "cat >/dev/null\n"
         "if [ -n \"$ARGV_CAPTURE_FILE\" ]; then\n"
         "  : > \"$ARGV_CAPTURE_FILE\"\n"
         "  for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"$ARGV_CAPTURE_FILE\"; done\n"
@@ -85,6 +94,7 @@ def _run(
     review_target: str,
     review_goal_cut: str,
     gate_check: bool,
+    model: str | None = "gpt-6.2-sol",
 ) -> subprocess.CompletedProcess:
     workdir = tmp_path / "workdir"
     workdir.mkdir(exist_ok=True)
@@ -94,12 +104,17 @@ def _run(
     state_dir.mkdir(exist_ok=True)
 
     env = dict(os.environ)
+    config_dir = tmp_path / "codex-home"
+    config_dir.mkdir(exist_ok=True)
+    env["CODEX_HOME"] = str(config_dir)
     env["CODEX_SUMMARY"] = "#0"
     for key in ("CODEX_REVIEW_MODEL", "CODEX_REVIEW_EFFORT", "CODEX_REVIEW_NO_GATE", "CODEX_REVIEW_ACK_PHRASING"):
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
     env["CODEX_REVIEW_KIND_LABEL"] = "コード"
+    if model is not None:
+        env["CODEX_REVIEW_MODEL"] = model
     env["REVIEW_TARGET"] = review_target
     env["REVIEW_GOAL_CUT"] = review_goal_cut
     env["FAKE_GH_BODY"] = str(tmp_path / "fake_gh_body.txt")
@@ -152,7 +167,7 @@ def test_cli_unset_model_and_effort_use_config_defaults(
     monkeypatch.setenv("CODEX_REVIEW_EFFORT", "high")
     result = _run(
         fake_bin, tmp_path, review_target="issue:example-org/example-repo#1",
-        review_goal_cut=VALID_GOAL_CUT, gate_check=False,
+        review_goal_cut=VALID_GOAL_CUT, gate_check=False, model=None,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     capture = tmp_path / "argv.txt"
@@ -163,7 +178,7 @@ def test_cli_unset_model_and_effort_use_config_defaults(
         time.sleep(0.02)
     assert capture.exists()
     argv = capture.read_text().splitlines()
-    assert "-m" not in argv, argv
+    assert argv.count("-m") == 1 and argv[argv.index("-m") + 1] == "gpt-6.1-terra", argv
     assert not any(arg.startswith("model_reasoning_effort=") for arg in argv), argv
 
 
@@ -291,6 +306,7 @@ def _run_in_git_workdir(
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"
     env["CODEX_WATCH_DIR"] = str(state_dir)
     env["CODEX_REVIEW_KIND_LABEL"] = kind_label
+    env["CODEX_REVIEW_MODEL"] = "gpt-6.2-sol"
     env["REVIEW_TARGET"] = review_target
     env["REVIEW_GOAL_CUT"] = review_goal_cut
     env["FAKE_GH_BODY"] = str(tmp_path / "fake_gh_body.txt")

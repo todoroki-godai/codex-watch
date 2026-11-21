@@ -13,6 +13,11 @@
 #   run id を1行で返す。以降 codex-status <run id> / codex-watch <run id> で観測する。
 set -euo pipefail
 
+# Only the preflight receives the reason. Keep it out of dispatch and other helpers' environments.
+unset ASTRA_REASON_INPUT ASTRA_REASON MODEL_PREFLIGHT
+ASTRA_REASON_INPUT="${CODEX_ASTRA_REASON:-}"
+unset CODEX_ASTRA_REASON
+
 WORKDIR="${1:?対象ディレクトリの絶対パスを指定してください}"
 PROMPT_FILE="${2:?プロンプトファイルのパスを指定してください}"
 LABEL="${3:-review}"
@@ -114,6 +119,16 @@ fi
 
 # 点検は自己申告の書き忘れ検査。前置きと同じ巡数を一度だけ計算する。
 PROMPT_ROUND="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1]).get("total_round") or 1)' "$GATE_JSON")" || exit 2
+MUST_ONLY=no
+if [[ "$PROMPT_ROUND" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND >= 2 )); then
+  MUST_ONLY=yes
+fi
+MODEL_PREFLIGHT="$(CODEX_ASTRA_REASON="$ASTRA_REASON_INPUT" python3 "$(dirname "$GATE_PY")/codex_dispatch_model.py" \
+  "$WORKDIR" "${CODEX_REVIEW_MODEL:-}" CODEX_REVIEW_MODEL \
+  "$CODEX_REVIEW_KIND_LABEL" "$GATE_JSON" "$MUST_ONLY")" || exit 2
+ASTRA_REASON="${MODEL_PREFLIGHT%%$'\n'*}"
+REQUESTED_MODEL="${MODEL_PREFLIGHT#*$'\n'}"
+unset ASTRA_REASON_INPUT MODEL_PREFLIGHT
 python3 - "$(dirname "$GATE_PY")" "$PROMPT_FILE" "$PROMPT_ROUND" <<'PYPREVIEW' || exit 2
 import sys
 from pathlib import Path
@@ -201,12 +216,11 @@ case "${CODEX_REVIEW_ALLOW_SKILLS:-}" in
   1|true|yes) SKILLS_SUPPRESSED=no ;;
   *)          SKILLS_SUPPRESSED=yes ;;
 esac
-# 発注ごとに model / reasoning effort を変えられるようにする（未指定なら config.toml の既定）。
+# 確定したモデルを固定する。effort は指定がなければ Codex の設定に従う。
 # macOS 既定の bash 3.2 では空配列の "${a[@]}" が set -u で落ちるので +展開で渡す。
 CODEX_CLI_ARGS=()
-REQUESTED_MODEL="$(sanitize_single_line "${CODEX_REVIEW_MODEL:-}")"
 REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_REVIEW_EFFORT:-}")"
-[[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
+CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
 [[ "${#IMAGE_ARGS[@]}" -gt 0 ]] && CODEX_CLI_ARGS+=("${IMAGE_ARGS[@]}")
 
@@ -249,7 +263,7 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
   echo "今回のレビュー: 巡${PROMPT_ROUND}（種別: ${CODEX_REVIEW_KIND_LABEL}）"
   # gate・前置き・stateは同じ種別別総巡を使う。
 
-  if [[ "$PROMPT_ROUND" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND >= 2 )); then
+  if [[ "$MUST_ONLY" == yes ]]; then
     echo 'この巡は前の巡の [Must] が直ったかを確かめるだけ。新しい論点は [Should] として別課題の候補に返す。新しい [Must] は今回の直しが新たに壊したものだけ。'
   fi
   echo
@@ -343,6 +357,7 @@ esac
   codex_summary_state
   if [[ -n "$CODEX_LAUNCH_SKILLS_STATE" ]]; then echo "$CODEX_LAUNCH_SKILLS_STATE"; fi
   echo "requested_model=$REQUESTED_MODEL"
+  if [[ -n "$ASTRA_REASON" ]]; then printf 'astra_reason=%s\n' "$ASTRA_REASON"; fi
   echo "requested_effort=$REQUESTED_EFFORT"
   echo "prompt_bytes=$(wc -c < "$EFFECTIVE_PROMPT" | tr -d ' ')"
   echo "started_at=$(date +%s)"

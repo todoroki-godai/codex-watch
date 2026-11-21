@@ -73,7 +73,7 @@ EFFECTIVE_PROMPT="$STATE_DIR/fixed.prompt"
     env.update(PATH=f'{fake_bin}:{os.environ["PATH"]}', HOME=str(home),
                CODEX_SKILLS_FILTER='off', CODEX_WATCH_DIR=str(tmp_path / 'state'), CODEX_IMPL_ALLOW_MAIN='1',
                CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1',
-               CODEX_REVIEW_KIND_LABEL='コード',
+               CODEX_REVIEW_KIND_LABEL='コード', CODEX_REVIEW_MODEL='gpt-6.2-sol',
                REVIEW_TARGET='issue:example-org/example-repo#1',
                REVIEW_GOAL_CUT=VALID_GOAL_CUT, FAKE_GH_BODY=str(tmp_path / 'gh-body'))
     # Keep the mutation-runner's trace sink; it is never used by normal code.

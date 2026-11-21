@@ -23,6 +23,11 @@
 set +x  # Credentials must never enter shell trace, including bash -x invocations.
 set -euo pipefail
 
+# Only the preflight receives the reason. Keep it out of dispatch and other helpers' environments.
+unset ASTRA_REASON_INPUT ASTRA_REASON MODEL_PREFLIGHT
+ASTRA_REASON_INPUT="${CODEX_ASTRA_REASON:-}"
+unset CODEX_ASTRA_REASON
+
 WORKDIR="${1:?worktree の絶対パスを指定してください}"
 PROMPT_FILE="${2:?プロンプトファイルのパスを指定してください}"
 LABEL="${3:-impl}"
@@ -139,6 +144,13 @@ if [[ "${CODEX_IMPL_ALLOW_MISSING_NODE_MODULES:-0}" != "1" ]]; then
   fi
 fi
 
+# 未指定の impl モデルは従来の Sol。空文字を指定したときだけ Codex の設定を読む。
+MODEL_PREFLIGHT="$(CODEX_ASTRA_REASON="$ASTRA_REASON_INPUT" python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_dispatch_model.py" \
+  "$WORKDIR" "${CODEX_IMPL_MODEL-gpt-6.2-sol}" CODEX_IMPL_MODEL)" || exit 2
+ASTRA_REASON="${MODEL_PREFLIGHT%%$'\n'*}"
+REQUESTED_MODEL="${MODEL_PREFLIGHT#*$'\n'}"
+unset ASTRA_REASON_INPUT MODEL_PREFLIGHT
+
 # AWS の接続先（AWS_PROFILE / --profile）は依頼文に書かれていてもよい。
 # PJ の宣言で dev または docs 読み取り専用の1組だけを渡す。
 # 2026-11-06 までは依頼文を文字列で検査して拒否していたが、説明文や削除指示まで止める一方で
@@ -201,15 +213,10 @@ AWS_ENV_UPDATES="$(python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib
 eval "$AWS_ENV_UPDATES"
 unset AWS_ENV_UPDATES
 
-# 発注ごとに model / reasoning effort を変えられるようにする（codex-review と同じ形。
-# モデル未指定なら gpt-6.2-sol、effort 未指定なら medium。
-# 空文字を明示した場合は、それぞれ config.toml の既定）。
-# macOS 既定の bash 3.2 では空配列の "${a[@]}" が
-# set -u で落ちるので +展開で渡す（SANDBOX_ARGS も同じ理由でここに合わせて +展開へ直す）。
+# 確定したモデルを固定する。effort は未指定なら medium、空なら Codex の設定に従う。
 CODEX_CLI_ARGS=()
-REQUESTED_MODEL="$(sanitize_single_line "${CODEX_IMPL_MODEL-gpt-6.2-sol}")"
 REQUESTED_EFFORT="$(sanitize_single_line "${CODEX_IMPL_EFFORT-medium}")"
-[[ -n "$REQUESTED_MODEL" ]] && CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
+CODEX_CLI_ARGS+=(-m "$REQUESTED_MODEL")
 [[ -n "$REQUESTED_EFFORT" ]] && CODEX_CLI_ARGS+=(-c "model_reasoning_effort=\"$REQUESTED_EFFORT\"")
 
 prepare_codex_launch_skills "$WORKDIR" no exec -C "$WORKDIR" \
@@ -240,6 +247,7 @@ CODEX_PID=$!
   codex_summary_state
   if [[ -n "$CODEX_LAUNCH_SKILLS_STATE" ]]; then echo "$CODEX_LAUNCH_SKILLS_STATE"; fi
   echo "requested_model=$REQUESTED_MODEL"
+  if [[ -n "$ASTRA_REASON" ]]; then printf 'astra_reason=%s\n' "$ASTRA_REASON"; fi
   echo "requested_effort=$REQUESTED_EFFORT"
   echo "estimate_min=$ESTIMATE_MIN"
   echo "started_at=$(date +%s)"
