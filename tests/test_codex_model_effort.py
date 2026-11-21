@@ -22,7 +22,7 @@ model/effort 配線を試験する。
 
 ここで試験するのは:
   ① impl の env 未指定時、-m gpt-6.2-sol と effort=medium が1つずつ付くこと
-  ② env が空文字なら対応する引数が付かず、明示値はその値で渡ること
+  ② モデルの env が空文字なら設定で解決した値、明示値はその値で渡ること
   ③ node_modules が非空なら通り、欠損・空なら拒否し、明示した例外口では通ること
   ④ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
      書かれないこと（起動側は待たない）
@@ -54,6 +54,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
+from test_codex_review_cli import CONFIG_MODEL_RESPONSE_SH
 
 BIN_DIR = Path(__file__).resolve().parent.parent / "bin"
 CODEX_REVIEW = BIN_DIR / "codex-review"
@@ -137,7 +139,8 @@ def fake_bin(tmp_path: Path) -> Path:
     _write_executable(
         d / "codex",
         "#!/bin/sh\n"
-        "cat >/dev/null\n"  # 標準入力（プロンプト）を読み捨てる
+        + CONFIG_MODEL_RESPONSE_SH
+        + "cat >/dev/null\n"  # 標準入力（プロンプト）を読み捨てる
         "if [ -n \"$ARGV_CAPTURE_FILE\" ]; then\n"
         "  : > \"$ARGV_CAPTURE_FILE.tmp\"\n"
         "  for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"$ARGV_CAPTURE_FILE.tmp\"; done\n"
@@ -179,6 +182,9 @@ def _run_impl(
     state_dir.mkdir(exist_ok=True)
 
     env = dict(os.environ)
+    config_dir = tmp_path / "codex-home"
+    config_dir.mkdir(exist_ok=True)
+    env["CODEX_HOME"] = str(config_dir)
     env["CODEX_SUMMARY"] = "#0"
     for key in ("CODEX_IMPL_ALLOW_MISSING_NODE_MODULES", "CODEX_IMPL_MODEL", "CODEX_IMPL_EFFORT"):
         env.pop(key, None)
@@ -322,10 +328,11 @@ def test_impl_explicit_empty_model_uses_config_default(fake_bin: Path, tmp_path:
     result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, model_env="")
     assert result.returncode == 0, result.stdout + result.stderr
     _wait_for_file(argv_capture)
-    assert "-m" not in argv_capture.read_text().splitlines()
+    argv = argv_capture.read_text().splitlines()
+    assert argv.count("-m") == 1 and argv[argv.index("-m") + 1] == "gpt-6.1-terra"
     run_id = result.stdout.strip().splitlines()[-1]
     state = _state_dict(tmp_path / "state" / f"{run_id}.state")
-    assert state["requested_model"] == ""
+    assert state["requested_model"] == "gpt-6.1-terra"
 
 
 # ---------------------------------------------------------------------------

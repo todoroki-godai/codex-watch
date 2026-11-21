@@ -109,7 +109,7 @@ Path(os.environ['SENT']).write_text(sys.stdin.read())
 ''')
     monkeypatch.setenv('PATH', str(fake) + os.pathsep + os.environ['PATH'])
     for key, value in dict(BODY=str(body_file), SENT=str(tmp_path / 'sent'), POLICY_COMMIT=head,
-        CODEX_SUMMARY='#0', CODEX_REVIEW_KIND_LABEL='コード', REVIEW_TARGET=TARGET,
+        CODEX_SUMMARY='#0', CODEX_REVIEW_KIND_LABEL='コード', CODEX_REVIEW_MODEL='gpt-6.2-sol', REVIEW_TARGET=TARGET,
         REVIEW_GOAL_CUT=GOAL, REVIEW_PRERELEASE_RECORD='decision-1', CODEX_WATCH_DIR=str(state)).items():
         monkeypatch.setenv(key, value)
     for key in ('CODEX_REVIEW_NO_GATE', 'CODEX_REVIEW_GATE_CHECK', 'REVIEW_PREDECESSOR', 'REVIEW_MANDATORY_GATE'):

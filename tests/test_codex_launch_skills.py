@@ -96,7 +96,7 @@ else:
     env = dict(HOME=str(home), PATH=f"{fake}:{os.environ['PATH']}",
                CODEX_WATCH_DIR=str(root / "state"), CODEX_SUMMARY="#0",
                CODEX_IMPL_ALLOW_MAIN="1", CODEX_IMPL_ALLOW_MISSING_NODE_MODULES="1",
-               CODEX_REVIEW_KIND_LABEL="コード", CODEX_REVIEW_NO_GATE="local test",
+               CODEX_REVIEW_KIND_LABEL="コード", CODEX_REVIEW_NO_GATE="local test", CODEX_REVIEW_MODEL='gpt-6.2-sol',
                GIT_CEILING_DIRECTORIES=str(root))
 
     def run(kind, variant="", **settings):
@@ -175,11 +175,11 @@ enabled = false
     assert snapshot() == before
 
 @pytest.mark.parametrize("kind", ["impl", "review"])
-def test_off_preserves_legacy_args(launch, kind):
+def test_off_adds_no_skill_args(launch, kind):
     root, _, _, run, child = launch
     args = child(run(kind, "new-version", CODEX_SKILLS_FILTER="off"))["argv"]
     common = ["exec", "-C", str(root / "project/nested")]
-    options = ["-s", "read-only"] if kind == "review" else [
+    options = ["-s", "read-only", "-m", "gpt-6.2-sol"] if kind == "review" else [
         "-c", 'default_permissions="codex-impl-dev"',
         "-c", 'permissions.codex-impl-dev.extends=":workspace"',
         "-c", 'permissions.codex-impl-dev.network.enabled=true',

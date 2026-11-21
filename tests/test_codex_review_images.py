@@ -91,8 +91,7 @@ def _run(env_dir: Path, tmp_path: Path, images: str | None, model: str | None = 
     env["ARGV_CAPTURE_FILE"] = str(tmp_path / "argv.txt")
     if images is not None:
         env["CODEX_REVIEW_IMAGES"] = images
-    if model is not None:
-        env["CODEX_REVIEW_MODEL"] = model
+    env["CODEX_REVIEW_MODEL"] = model or "gpt-6.2-sol"
     return subprocess.run([str(CODEX_REVIEW), str(workdir), str(prompt), "imgtest"],
                           env=env, capture_output=True, text=True, timeout=30,
                           cwd=str(cwd) if cwd else None)
@@ -127,15 +126,13 @@ def _assert_rejected_before_anything(tmp_path: Path, r: subprocess.CompletedProc
 
 # ---- 陽性対照 ----
 
-def test_no_env_has_no_image_flag_and_same_argv_as_before(env_dir, tmp_path):
+def test_unset_images_adds_no_image_arguments(env_dir, tmp_path):
     r = _run(env_dir, tmp_path, None)
     assert r.returncode == 0, r.stdout + r.stderr
     argv = _argv(tmp_path)
     assert "-i" not in argv
-    # 従来の起動の行どおり（exec -C <dir> -s read-only -o <report> -）。余計な引数が1つも無い
-    assert len(argv) == 8, argv
-    assert argv[0] == "exec" and argv[1] == "-C" and argv[3:5] == ["-s", "read-only"], argv
-    assert argv[5] == "-o" and argv[7] == "-", argv
+    assert argv == ["exec", "-C", str(tmp_path / "workdir"), "-s", "read-only",
+                    "-m", "gpt-6.2-sol", "-o", argv[-2], "-"]
 
 
 def test_empty_env_same_argv_as_unset(env_dir, tmp_path):

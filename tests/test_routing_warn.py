@@ -42,7 +42,7 @@ def dispatch(tmp_path, fake_bin, monkeypatch, adapter_path, *, kind='コード',
     prompt = tmp_path / 'prompt.txt'
     prompt.write_text('本文 SYNTHETIC_PROMPT\n点検:\n- 突き合わせ: 済\n- 出所の付記: 済\n- 直し残しの検索: 済\n')
     env = dict(os.environ, PATH=f'{fake_bin}:{os.environ["PATH"]}', CODEX_WATCH_DIR=str(state),
-               CODEX_REVIEW_KIND_LABEL=kind, CODEX_SUMMARY='#0', CODEX_REVIEW_ADAPTER=str(adapter_path),
+               CODEX_REVIEW_KIND_LABEL=kind, CODEX_SUMMARY='#0', CODEX_REVIEW_MODEL='gpt-6.2-sol', CODEX_REVIEW_ADAPTER=str(adapter_path),
                REVIEW_TARGET='issue:example-org/example-repo#1', REVIEW_GOAL_CUT=VALID_GOAL_CUT,
                FAKE_GH_BODY=str(tmp_path / 'body.txt'), ARGV_CAPTURE_FILE=str(tmp_path / 'sent.txt'))
     for name in ('CODEX_REVIEW_GATE_CHECK', 'CODEX_REVIEW_NO_GATE'):

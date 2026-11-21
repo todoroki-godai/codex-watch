@@ -289,7 +289,7 @@ def test_cli_wires_generated_json(case, tmp_path, fake_bin, monkeypatch):
     (tmp_path/'route.mjs').symlink_to(PARTS/'route.mjs')
     adapter.write_text(f'import json,sys,subprocess\nfrom pathlib import Path\nPath({str(observed)!r}).write_text(json.dumps([sys.argv[1],json.loads(Path(sys.argv[1]).read_text())]))\nsys.exit(subprocess.call([sys.executable,{str(PARTS/"adapter.py")!r},*sys.argv[1:]]))\n')
     env = dict(os.environ, PATH=f'{fake_bin}:{os.environ["PATH"]}', CODEX_WATCH_DIR=str(state),
-               CODEX_REVIEW_KIND_LABEL='設計', CODEX_SUMMARY='#0', CODEX_REVIEW_ADAPTER=str(adapter),
+               CODEX_REVIEW_KIND_LABEL='設計', CODEX_SUMMARY='#0', CODEX_REVIEW_MODEL='gpt-6.2-sol', CODEX_REVIEW_ADAPTER=str(adapter),
                REVIEW_TARGET='issue:org/repo#1', REVIEW_GOAL_CUT=VALID_GOAL_CUT,
                FAKE_GH_BODY=str(bodyfile), ARGV_CAPTURE_FILE=str(tmp_path/'sent'))
     for key in ('REVIEW_GATE_RECORD', 'CODEX_REVIEW_GATE_CHECK', 'CODEX_REVIEW_NO_GATE'):
