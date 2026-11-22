@@ -258,6 +258,9 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
   echo 'このコマンドが非0終了なら値を書かず止めて報告すること。'
   echo 'この2行が欠けている、または実際にコマンドを実行した値でない場合、このレビューは機械照合で受領不可（取り直し）になる。'
   echo
+  echo '本文に `## 過剰の点検` の見出しを独立した行で必ず置く。変更で足した仕組み（関数・検査・設定・分岐・ファイル）を1件ずつ別の行に挙げ、各行に出所 `仕様` / `本人の指示` / `自前` のいずれかを付ける。'
+  echo '`自前` の行には、削れる候補と、削ったとき失うものを同じ行に書く。足した仕組みがなければ `なし` と1行だけ書く。見出しや節の中身が欠けると受領不可になる。'
+  echo
   [[ -s "$(dirname "$GATE_PY")/../templates/must-criteria.md" ]] || exit 2
   cat "$(dirname "$GATE_PY")/../templates/must-criteria.md" || exit 2
   echo "今回のレビュー: 巡${PROMPT_ROUND}（種別: ${CODEX_REVIEW_KIND_LABEL}）"
@@ -265,6 +268,7 @@ EFFECTIVE_PROMPT="$(mktemp "$STATE_DIR/$RUN_ID.prompt.XXXXXX")"
 
   if [[ "$MUST_ONLY" == yes ]]; then
     echo 'この巡は前の巡の [Must] が直ったかを確かめるだけ。新しい論点は [Should] として別課題の候補に返す。新しい [Must] は今回の直しが新たに壊したものだけ。'
+    echo '`## 過剰の点検` も、この巡の直しで足した分について同じ形式で書く。'
   fi
   echo
   cat "$PROMPT_FILE"

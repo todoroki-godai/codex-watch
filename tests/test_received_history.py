@@ -23,7 +23,7 @@ def evidence(case, tags=('alpha', 'beta')):
     receipts = []
     for rid, tag in zip(('first', 'second'), tags):
         report = case[1] / (rid + '.report')
-        report.write_text(f'実装着手可\nread_sha={SHA}\ncontent_hash={TREE}\n')
+        report.write_text(f'実装着手可\nread_sha={SHA}\ncontent_hash={TREE}\n## 過剰の点検\nなし\n')
         (case[1] / (rid + '.state')).write_text(
             f'run_id={rid}\nreview_target={TARGET}\nround=1\nkind_label=設計\n'
             f'started_at_human=date\nhead_sha={SHA}\nreviewer={rid}\n'

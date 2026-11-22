@@ -568,13 +568,30 @@ def test_parse_receipt_claim_rejects_read_sha_on_verdict_line():
 
 
 def test_check_receipt_ok_on_match():
-    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n判定: 実装着手可\n"
+    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n\n## 過剰の点検\nなし\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "ok"
 
 
+@pytest.mark.parametrize("body", [
+    pytest.param("なし\n", id="missing-heading"),
+    pytest.param("## 過剰の点検", id="heading-only"),
+    pytest.param("## 過剰の点検\n \t\u3000\u00a0\n", id="blank-body"),
+    pytest.param("## 過剰の確認\nなし\n", id="wrong-heading"),
+    pytest.param("なし\n## 過剰の点検\n\n## 指摘\n指摘なし\n", id="body-in-other-section"),
+    pytest.param("> ## 過剰の点検\n> なし\n", id="quoted-heading"),
+    pytest.param("~~~markdown\n## 過剰の点検\nなし\n~~~\n", id="fenced-heading"),
+    pytest.param("＃＃ 過剰の点検\nなし\n", id="fullwidth-markers"),
+])
+def test_check_receipt_rejects_missing_overkill_section(body):
+    report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n\n{body}"
+    result = rg.check_receipt(SHA_A, HASH_A, report)
+    assert result.status == "rejected"
+    assert "## 過剰の点検" in result.reason
+
+
 def test_check_receipt_ok_when_report_uses_uppercase_hex():
-    report = f"実装着手可\nread_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n"
+    report = f"実装着手可\nread_sha={SHA_A.upper()}\ncontent_hash={HASH_A.upper()}\n## 過剰の点検\nなし\n"
     result = rg.check_receipt(SHA_A, HASH_A, report)
     assert result.status == "ok"
 
@@ -1409,7 +1426,8 @@ def test_receipt_positive_real_recipe(tmp_path, dirty):
     claim = subprocess.run(["/bin/sh", "-c", rg.CONTENT_HASH_RECIPE], cwd=tmp_path,
                            capture_output=True, check=True, text=True).stdout.strip()
     sha = rg.git_head_sha(str(tmp_path))
-    assert rg.check_receipt(sha, expected, f"実装着手可\r\nread_sha={sha}\r\ncontent_hash={claim}\r\n").status == "ok"
+    report = f"実装着手可\r\nread_sha={sha}\r\ncontent_hash={claim}\r\n## 過剰の点検\r\nなし\r\n"
+    assert rg.check_receipt(sha, expected, report).status == "ok"
 
 
 @pytest.mark.parametrize("lines", [
@@ -1475,7 +1493,8 @@ def test_hash_receipt_matches_for_each_worktree_state(tmp_path, kind):
                            check=True, capture_output=True, text=True).stdout.strip()
     assert claim == expected != rg.EMPTY_SHA256
     sha = rg.git_head_sha(str(tmp_path))
-    assert rg.check_receipt(sha, expected, f"実装着手可\nread_sha={sha}\ncontent_hash={claim}\n").status == "ok"
+    report = f"実装着手可\nread_sha={sha}\ncontent_hash={claim}\n## 過剰の点検\nなし\n"
+    assert rg.check_receipt(sha, expected, report).status == "ok"
 
 
 @pytest.mark.parametrize("expected,claimed", [

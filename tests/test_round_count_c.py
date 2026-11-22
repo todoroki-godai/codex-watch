@@ -1,4 +1,6 @@
 """C contract, from round-count-c design §2–5 (normal path first)."""
+from pathlib import Path
+
 import pytest
 from test_prerelease import case, run_cli, rg, pre, TARGET, GOAL
 
@@ -116,7 +118,10 @@ def test_cli_predecessor(case, monkeypatch):
     assert result.returncode == 0, result.stdout + result.stderr
     state = rg.read_state_file(next(case['state'].glob('0-fixture-*.state')))
     assert state['round'] == '3'
-    assert '今回のレビュー: 巡3（種別: コード）' in open(state['effective_prompt']).read()
+    prompt = Path(state['effective_prompt']).read_text()
+    assert '今回のレビュー: 巡3（種別: コード）' in prompt
+    assert '`## 過剰の点検`' in prompt
+    assert 'この巡の直しで足した分' in prompt
 
 
 @pytest.mark.parametrize('mode', ['full', 'short', 'ambiguous', 'conflict', 'reservation'])

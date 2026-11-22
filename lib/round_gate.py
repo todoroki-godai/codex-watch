@@ -365,11 +365,32 @@ def check_verdict_line(report_text: str) -> ReceiptCheck:
         return ReceiptCheck("ok", "")
 
 
+def has_overkill_section(report_text: str) -> bool:
+    """本文の見出しと非空行だけを検査する。記載の正しさは自己申告で迂回可能。"""
+    in_section = False
+    fence = ""
+    for line in split_receipt_lines(report_text)[3:]:
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if marker and marker[1].startswith(fence) and not marker[2].strip():
+                fence = ""
+            continue
+        if marker:
+            fence = marker[1]
+            continue
+        if re.match(r"^ {0,3}#{1,6}(?:[ \t]|$)", line):
+            in_section = line.rstrip(" \t") == "## 過剰の点検"
+        elif in_section and line.strip():
+            return True
+    return False
+
+
 def check_receipt(expected_head_sha: str, expected_content_hash: str, report_text: str) -> ReceiptCheck:
     """レビュー本文が申告した「読んだ版」を、発注時に固定した値と機械で突合する。
 
     SHA・内容ハッシュは欠落・不一致・例外で rejected（従来の fail-closed）。
     一致した報告には1行目の形式検査も行い、その検査だけの例外は fail-open とする。
+    過剰の点検は節の有無だけを検査し、欠落は rejected。内容は自己申告で迂回可能。
     """
     try:
         if not expected_head_sha or not expected_content_hash:
@@ -408,6 +429,8 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
         verdict = check_verdict_line(report_text)
         if verdict.status == "rejected":
             return verdict
+        if not has_overkill_section(report_text):
+            return ReceiptCheck("rejected", "本文に `## 過剰の点検` の見出しと空でない行を書いて出し直してください。")
         return ReceiptCheck("ok", "受領可: read_sha/content_hash が発注時の値と一致しました。")
     except Exception as e:  # fail-closed: 想定外の例外も受領不可にする
         return ReceiptCheck("rejected", f"照合不能: {e}")
