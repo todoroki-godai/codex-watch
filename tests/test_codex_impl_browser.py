@@ -102,7 +102,7 @@ port = os.environ['TEST_PORT']
             env['CODEX_BROWSER_TRACE'] = os.environ['CODEX_BROWSER_TRACE']
         env.update(PATH=f'{fake}:{os.environ["PATH"]}', HOME=str(home),
                    CODEX_WATCH_DIR=str(state), CODEX_SUMMARY='#0', CODEX_SKILLS_FILTER='off',
-                   CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1', CODEX_IMPL_NO_BROWSER=opt_out,
+                   CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1', CODEX_IMPL_MODEL='gpt-6.2-sol', CODEX_IMPL_NO_BROWSER=opt_out,
                    TEST_ROOT=str(tmp_path), TEST_PORT=str(port), TEST_BROWSER_MODE=mode)
         if override is not None:
             env['CODEX_IMPL_CHROMIUM'] = str(override)

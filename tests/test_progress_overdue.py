@@ -49,7 +49,7 @@ def launch(sandbox):
         shutil.copytree(ROOT / folder, tree / folder)
     # The real AWS helper uses the sandbox's failing fake aws and temporary HOME.
     executable(fake / 'codex', 'cat >/dev/null\n')
-    env.update(CODEX_SUMMARY='#0', CODEX_IMPL_ALLOW_MAIN='1', CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1')
+    env.update(CODEX_SUMMARY='#0', CODEX_IMPL_ALLOW_MAIN='1', CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1', CODEX_IMPL_MODEL='gpt-6.2-sol')
 
     def run(body, override=None):
         prompt = tmp / 'prompt with spaces.md'

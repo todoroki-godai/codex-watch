@@ -95,7 +95,7 @@ else:
 
     env = dict(HOME=str(home), PATH=f"{fake}:{os.environ['PATH']}",
                CODEX_WATCH_DIR=str(root / "state"), CODEX_SUMMARY="#0",
-               CODEX_IMPL_ALLOW_MAIN="1", CODEX_IMPL_ALLOW_MISSING_NODE_MODULES="1",
+               CODEX_IMPL_ALLOW_MAIN="1", CODEX_IMPL_ALLOW_MISSING_NODE_MODULES="1", CODEX_IMPL_MODEL="gpt-6.2-sol",
                CODEX_REVIEW_KIND_LABEL="コード", CODEX_REVIEW_NO_GATE="local test", CODEX_REVIEW_MODEL='gpt-6.2-sol',
                GIT_CEILING_DIRECTORIES=str(root))
 
