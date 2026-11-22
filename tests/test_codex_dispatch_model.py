@@ -42,27 +42,12 @@ def dispatch(tmp_path, fake_bin):
     _write_executable(fake_bin / "aws",
                       f"#!/bin/sh\ntouch {shlex.quote(str(tmp_path / 'aws-called'))}\nexit 1\n")
     _write_executable(fake_bin / "codex", f"""#!{sys.executable}
-import json, os, sys, time, tomllib
+import json, os, sys
 from pathlib import Path
 root = Path({str(tmp_path)!r})
 if sys.argv[1] == "app-server":
-    home = Path(os.environ["CODEX_HOME"])
-    config = tomllib.loads((home / "config.toml").read_text())
-    (root / "probe").write_text(json.dumps([sys.argv[1:], str(home), config,
-        (home / "auth.json").exists(), sorted(os.environ)]))
-    mode = (root / "reply").read_text()
-    if mode == "timeout":
-        time.sleep(30)
-    assert json.loads(input())["method"] == "initialize"
-    print(json.dumps({{"id": 1, "result": {{}}}}), flush=True)
-    assert json.loads(input())["method"] == "initialized"
-    request = json.loads(input())
-    assert request["method"] == "config/read" and request["params"]["cwd"] == str(Path.cwd())
-    if mode == "invalid":
-        print("invalid", flush=True)
-    else:
-        model = None if mode == "null" else mode
-        print(json.dumps({{"id": 2, "result": {{"config": {{"model": model}}}}}}), flush=True)
+    (root / "probe").touch()
+    raise AssertionError(sys.argv)
 elif sys.argv[1] == "exec":
     (root / "stdin").write_bytes(sys.stdin.buffer.read())
     seen = root / "exec.tmp"
@@ -82,10 +67,9 @@ else:
                CODEX_REVIEW_KIND_LABEL="設計", REVIEW_TARGET="issue:example-org/example-repo#1",
                REVIEW_GOAL_CUT=VALID_GOAL_CUT)
 
-    def run(launcher, model_reply=TERRA, *, prompt_bytes=None, **settings):
+    def run(launcher, *, prompt_bytes=None, **settings):
         if prompt_bytes is not None:
             prompt.write_bytes(prompt_bytes)
-        (tmp_path / "reply").write_text(model_reply)
         return subprocess.run([str(BIN_DIR / f"codex-{launcher}"), str(work), str(prompt)],
                               env=dict(env, **settings), capture_output=True, text=True, timeout=12)
 
@@ -107,8 +91,10 @@ def check_dispatch(result, path, launcher, model, reason=None):
     assert state["requested_model"] == model and state.get("astra_reason") == reason
     model_lines = [line for line in result.stderr.splitlines() if line.startswith("モデル: ")]
     option = f"CODEX_{launcher.upper()}_MODEL"
-    guidance = (f"通常は terra、大事な場面・難しい作業は sol、全体の設計・設計し直しは "
-                f"astra（理由の指定が必要）を {option} で指定")
+    guidance = ("通常は sol、全体の設計・レビューの繰り返し・設計し直しは "
+                if launcher == "review" else
+                "通常は terra、大事な場面・難しい作業は sol、全体の設計・設計し直しは ")
+    guidance += f"astra（理由の指定が必要）を {option} で指定"
     assert model_lines == [f"モデル: {model}（{guidance}）"]
     return state
 
@@ -129,8 +115,11 @@ def test_missing_model_rejected_without_codex(dispatch, tmp_path, launcher, mode
     check_rejected(result, tmp_path)
     assert "拒否: モデルの指定がありません" in result.stderr
     assert option in result.stderr
-    assert "gpt-6.1-terra" in result.stderr and "gpt-6.2-sol" in result.stderr
-    assert "astra" in result.stderr and "理由" in result.stderr
+    guidance = ("通常は gpt-6.2-sol、全体の設計・レビューの繰り返し・設計し直しは "
+                "astra（理由の指定が必要）を使用してください。" if launcher == "review" else
+                "通常は gpt-6.1-terra、大事な場面・難しい作業は gpt-6.2-sol、\n"
+                "全体の設計・設計し直しは astra（理由の指定が必要）を使用してください。")
+    assert guidance in result.stderr
     assert not (tmp_path / "probe").exists()
 
 
