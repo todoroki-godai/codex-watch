@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import time
 
 import pytest
 
@@ -126,7 +127,8 @@ def watch(sandbox, baseline_source):
     executable(fake / 'stat', 'echo 1000\n')
     executable(fake / 'sleep', 'echo SLEPT >&2\nexit 77\n')
     def run(estimate='1', elapsed=121, marker=False, dead=False, maximum=0,
-            baseline=False, verdict=False, command='codex-watch', content=None, missing=False, failure=None):
+            baseline=False, verdict=False, command='codex-watch', content=None, missing=False, failure=None,
+            interrupt=False):
         log = state / 'run.log'
         log.write_text(content if content is not None else ('tokens used\n' if verdict else ''))
         if missing:
@@ -142,8 +144,18 @@ def watch(sandbox, baseline_source):
         if marker:
             m.touch()
         source = baseline_source if baseline else ROOT
-        r = subprocess.run(['bash', '-x', str(source / 'bin' / command), 'run', '99999', str(maximum)],
-                           env=env, capture_output=True, text=True, errors="replace", timeout=16)
+        args = ['bash', '-x', str(source / 'bin' / command), 'run', '99999', str(maximum)]
+        if interrupt:
+            p = subprocess.Popen(args, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            deadline = time.monotonic() + 5
+            while not (tmp / 'hint-started').exists() and time.monotonic() < deadline:
+                time.sleep(.02)
+            assert (tmp / 'hint-started').exists()
+            p.terminate()
+            stdout, stderr = p.communicate(timeout=5)
+            r = subprocess.CompletedProcess(args, p.returncode, stdout, stderr)
+        else:
+            r = subprocess.run(args, env=env, capture_output=True, text=True, errors="replace", timeout=16)
         trace_dir = os.environ.get('CODEX_OVERDUE_TRACE_DIR')
         if trace_dir:
             p = Path(trace_dir)
@@ -261,3 +273,38 @@ def test_actual_time_limit(watch, sandbox):
     assert r.returncode == 0 and marker.exists()
     assert len(r.stdout.splitlines()) == 1
     assert r.stdout.endswith('／手がかり: 数えられず（時間）\n')
+
+
+def test_outer_time_limit(watch, sandbox):
+    tmp, fake, state, env = sandbox
+    real_python = shutil.which('python3')
+    executable(fake / 'python3', f'if [ "$#" -eq 2 ]; then exec {real_python} -c "import time; time.sleep(13)"; fi\nexec {real_python} "$@"\n')
+    started = time.monotonic()
+    r, marker = watch()
+    assert time.monotonic() - started < 12
+    assert r.returncode == 0 and marker.exists()
+    assert len(r.stdout.splitlines()) == 1
+    assert r.stdout.endswith('／手がかり: 数えられず（時間）\n')
+
+
+def test_interrupted_count_can_rearm(watch, sandbox):
+    tmp, fake, state, env = sandbox
+    real_python = shutil.which('python3')
+    executable(fake / 'python3', f'if [ "$#" -eq 2 ]; then touch "{tmp}/hint-started"; exec {real_python} -c "import time; time.sleep(30)"; fi\nexec {real_python} "$@"\n')
+    r, marker = watch(interrupt=True)
+    assert not marker.exists() and r.stdout == ''
+    (fake / 'python3').unlink()
+    r, marker = watch()
+    assert r.returncode == 0 and marker.exists() and r.stdout.startswith('OVERDUE:')
+
+
+def test_partial_tail_is_not_a_line(watch):
+    r, marker = watch(content='ordinary ERROR message\n' + 'x' * (8 * 1024 * 1024 - len('ERROR message\n') - 1) + '\n')
+    assert r.returncode == 0 and marker.exists()
+    assert '同じエラー行の最多 0回' in r.stdout
+
+
+def test_vertical_tab_stays_on_one_line(watch):
+    r, marker = watch(content='connection refused\vconnection refused\n')
+    assert r.returncode == 0 and marker.exists()
+    assert '関連 1行' in r.stdout

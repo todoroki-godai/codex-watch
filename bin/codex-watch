@@ -126,8 +126,8 @@ if (re.fullmatch(r'[0-9]+', estimate) and int(estimate) > 0
 PYOVERDUE
 )"
     if [[ -n "$overdue_elapsed" ]]; then
-      touch "$OVERDUE_FILE"
-      hints="$(python3 - "$LOG" <<'PYHINTS' 2>/dev/null
+      hint_file=$(mktemp)
+      python3 - "$LOG" >"$hint_file" 2>/dev/null <<'PYHINTS' &
 import collections, os, re, signal, sys
 signal.signal(signal.SIGALRM, lambda *_: sys.exit(124))
 signal.alarm(10)
@@ -139,8 +139,12 @@ environment = re.compile(r"timed out|time(?:d)?[ -]?out (?:after|expired|exceede
 try:
     with open(sys.argv[1], 'rb') as log:
         size = os.fstat(log.fileno()).st_size
-        log.seek(max(0, size - 8 * 1024 * 1024))
-        lines = log.read(8 * 1024 * 1024).decode('utf-8', errors='replace').splitlines()
+        start = max(0, size - 8 * 1024 * 1024)
+        log.seek(start)
+        data = log.read(8 * 1024 * 1024)
+        if start:
+            data = data.partition(b'\n')[2]
+        lines = data.decode('utf-8', errors='replace').split('\n')
 except OSError:
     print('手がかり: 数えられず（読取）')
     sys.exit(0)
@@ -156,7 +160,25 @@ for line in lines:
 suffix = '（末尾8MB）' if size > 8 * 1024 * 1024 else ''
 print(f'手がかり（文言の一致数・原因の判定ではない）: 時間切れ・接続・ロック関連 {env}行・権限で断られた {perm}行・同じエラー行の最多 {max(errors.values(), default=0)}回{suffix}')
 PYHINTS
-)" || { rc=$?; if [[ $rc -eq 124 ]]; then hints='手がかり: 数えられず（時間）'; else hints='手がかり: 数えられず（異常）'; fi; }
+      hint_pid=$!
+      trap 'kill -KILL "$hint_pid" 2>/dev/null || true; rm -f "$hint_file"' EXIT
+      for ((i=0; i<100; i++)); do
+        kill -0 "$hint_pid" 2>/dev/null || break
+        /bin/sleep 0.1
+      done
+      if kill -0 "$hint_pid" 2>/dev/null; then
+        kill -KILL "$hint_pid" 2>/dev/null || true
+        wait "$hint_pid" 2>/dev/null || true
+        hints='手がかり: 数えられず（時間）'
+      elif wait "$hint_pid"; then
+        hints=$(cat "$hint_file")
+      else
+        rc=$?
+        if [[ $rc -eq 124 ]]; then hints='手がかり: 数えられず（時間）'; else hints='手がかり: 数えられず（異常）'; fi
+      fi
+      trap - EXIT
+      rm -f "$hint_file"
+      touch "$OVERDUE_FILE"
       echo "OVERDUE: $RUN_ID 見込み${ESTIMATE_MIN}分の2倍を超過（経過${overdue_elapsed}分）。git log・status と出力を読んで判断する／${hints}"
       exit 0
     fi
