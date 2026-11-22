@@ -144,10 +144,12 @@ def test_whitespace_only_model_is_rejected_without_config_probe(dispatch, tmp_pa
 
 
 @pytest.mark.parametrize("launcher", ["impl", "review"])
-def test_empty_model_resolves_astra_and_keeps_reason_in_state(dispatch, tmp_path, launcher):
-    result = dispatch(launcher, ASTRA, CODEX_ASTRA_REASON=REASON,
-                      **{f"CODEX_{launcher.upper()}_MODEL": ""})
-    check_dispatch(result, tmp_path, launcher, ASTRA, REASON)
+@pytest.mark.parametrize("model", [ASTRA, "GPT-6.2-ASTRA-2026-11-21"])
+def test_empty_model_rejects_configured_astra_even_with_reason(dispatch, tmp_path, launcher, model):
+    option = f"CODEX_{launcher.upper()}_MODEL"
+    result = dispatch(launcher, model, CODEX_ASTRA_REASON=REASON, **{option: ""})
+    check_rejected(result, tmp_path)
+    assert f"拒否: 設定から astra が選ばれました。astra は {option} で明示してください。" in result.stderr.splitlines()
     argv, isolated, config, auth_exists, env_keys = json.loads((tmp_path / "probe").read_text())
     assert argv[argv.index("--disable") + 1] == "plugins"
     assert Path(isolated) != tmp_path / "original"
@@ -155,6 +157,14 @@ def test_empty_model_resolves_astra_and_keeps_reason_in_state(dispatch, tmp_path
     assert not config and not auth_exists
     assert not {"OPENAI_API_KEY", "GH_TOKEN", "CODEX_ASTRA_REASON"}.intersection(env_keys)
     assert (tmp_path / "original" / "auth.json").read_text() == "synthetic token"
+
+
+@pytest.mark.parametrize("launcher", ["impl", "review"])
+@pytest.mark.parametrize("model", [SOL, TERRA])
+def test_empty_model_dispatches_configured_sol_or_terra(dispatch, tmp_path, launcher, model):
+    result = dispatch(launcher, model, **{f"CODEX_{launcher.upper()}_MODEL": ""})
+    check_dispatch(result, tmp_path, launcher, model)
+    assert (tmp_path / "probe").exists()
 
 
 def test_explicit_model_skips_rpc_and_design_first_round_is_proven(dispatch, tmp_path):
