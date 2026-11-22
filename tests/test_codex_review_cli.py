@@ -454,13 +454,26 @@ def test_cli_dispatch_content_hash_changes_with_uncommitted_diff(fake_bin: Path,
     assert clean_hash != dirty_hash
 
 
-@pytest.mark.parametrize("body,exit_code,reason", [
-    ("## 過剰の点検\nなし\n", 0, "受領可"),
-    ("本文\n", 4, "## 過剰の点検"),
+@pytest.mark.parametrize("prompt_generation,body,exit_code,reason", [
+    ("current", "## 過剰の点検\nなし\n", 0, "受領可"),
+    ("current", "本文\n", 4, "## 過剰の点検"),
+    ("legacy", "本文\n", 0, "受領可"),
+    ("missing", "本文\n", 0, "受領可"),
 ])
-def test_receipt_cli_on_matching_claim(tmp_path: Path, body, exit_code, reason):
+def test_receipt_cli_on_matching_claim(tmp_path: Path, prompt_generation, body, exit_code, reason):
+    instruction = "本文に `## 過剰の点検` の見出しを独立した行で必ず置く。\n"
+    round_line = "今回のレビュー: 巡1（種別: コード）\n"
+    original = tmp_path / "original.prompt"
+    original.write_text(instruction)
+    effective = tmp_path / "run1.prompt"
+    if prompt_generation == "current":
+        effective.write_text(instruction + round_line)
+    elif prompt_generation == "legacy":
+        # 依頼者の本文にレビュアー向け定型文の引用があっても、共通前置きの条件ではない。
+        effective.write_text(round_line + "以前の文言を引用します。\n" + instruction)
     state_file = tmp_path / "run1.state"
-    state_file.write_text("head_sha=" + "a" * 40 + "\ncontent_hash=" + "1" * 64 + "\n")
+    state_file.write_text(f"head_sha={'a' * 40}\ncontent_hash={'1' * 64}\n"
+                          f"prompt={original}\neffective_prompt={effective}\n")
     report_file = tmp_path / "run1.report"
     report_file.write_text(f"実装着手可\nread_sha={'a' * 40}\ncontent_hash={'1' * 64}\n{body}")
 

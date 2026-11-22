@@ -128,7 +128,10 @@ def received_fields(d, receipt, reasons):
     try:
         with Path(d['report']).open(newline='') as report_file:
             report = report_file.read()
-        checked = check_receipt(d.get('head_sha', ''), d.get('content_hash', ''), report)
+        checked = check_receipt(
+            d.get('head_sha', ''), d.get('content_hash', ''), report,
+            effective_prompt=d.get('effective_prompt', ''),
+        )
         ok = checked.status == 'ok'
     except (OSError, ValueError, KeyError):
         ok = False

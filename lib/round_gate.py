@@ -378,6 +378,8 @@ def has_overkill_section(report_text: str) -> bool:
         if marker:
             fence = marker[1]
             continue
+        if re.fullmatch(r"={3,}\s+(?:[A-Z0-9_-]+\s+)*DONE\s+={3,}|[A-Z0-9_-]+-DONE", line.strip()):
+            break
         if re.match(r"^ {0,3}#{1,6}(?:[ \t]|$)", line):
             in_section = line.rstrip(" \t") == "## 過剰の点検"
         elif in_section and line.strip():
@@ -385,12 +387,32 @@ def has_overkill_section(report_text: str) -> bool:
     return False
 
 
-def check_receipt(expected_head_sha: str, expected_content_hash: str, report_text: str) -> ReceiptCheck:
+def overkill_required(effective_prompt: str) -> bool:
+    """発注時の共通前置きに必須の指示がある run だけを対象にする。"""
+    if not effective_prompt:
+        return False
+    # 発注済みの依頼文も読むため、codex-review が出した当時の文言を使う。
+    instruction = "本文に `## 過剰の点検` の見出しを独立した行で必ず置く。"
+    try:
+        with Path(effective_prompt).open(encoding="utf-8") as prompt:
+            for line in prompt:
+                if line.startswith("今回のレビュー: "):
+                    break  # 以降は巡ごとの補足と依頼者が渡した本文
+                if line.startswith(instruction):
+                    return True
+    except (OSError, UnicodeError):
+        pass  # 前置きを確認できない履歴は従来の受領条件で照合する
+    return False
+
+
+def check_receipt(
+    expected_head_sha: str, expected_content_hash: str, report_text: str, *, effective_prompt: str = "",
+) -> ReceiptCheck:
     """レビュー本文が申告した「読んだ版」を、発注時に固定した値と機械で突合する。
 
     SHA・内容ハッシュは欠落・不一致・例外で rejected（従来の fail-closed）。
     一致した報告には1行目の形式検査も行い、その検査だけの例外は fail-open とする。
-    過剰の点検は節の有無だけを検査し、欠落は rejected。内容は自己申告で迂回可能。
+    発注時の前置きで過剰の点検を要求した run は、有効な本文行がないと rejected。
     """
     try:
         if not expected_head_sha or not expected_content_hash:
@@ -429,7 +451,7 @@ def check_receipt(expected_head_sha: str, expected_content_hash: str, report_tex
         verdict = check_verdict_line(report_text)
         if verdict.status == "rejected":
             return verdict
-        if not has_overkill_section(report_text):
+        if overkill_required(effective_prompt) and not has_overkill_section(report_text):
             return ReceiptCheck("rejected", "本文に `## 過剰の点検` の見出しと空でない行を書いて出し直してください。")
         return ReceiptCheck("ok", "受領可: read_sha/content_hash が発注時の値と一致しました。")
     except Exception as e:  # fail-closed: 想定外の例外も受領不可にする
@@ -1606,7 +1628,10 @@ def main(argv: list[str] | None = None) -> int:
                 report_text = report_file.read()
         except OSError:
             report_text = ""  # ファイル不在も「申告なし」と同じ扱い（check_receipt が rejected にする）
-        result = check_receipt(d.get("head_sha", ""), d.get("content_hash", ""), report_text)
+        result = check_receipt(
+            d.get("head_sha", ""), d.get("content_hash", ""), report_text,
+            effective_prompt=d.get("effective_prompt", ""),
+        )
         exit_code = EXIT_PASS if result.status == "ok" else EXIT_BLOCKED
         if args.json:
             print(json.dumps({"status": result.status, "reason": result.reason}, ensure_ascii=False))

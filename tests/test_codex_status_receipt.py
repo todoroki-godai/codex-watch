@@ -79,7 +79,7 @@ def test_status_shows_receipt_ok_line_on_matching_claim(tmp_path: Path):
         "run-ok",
         head_sha=SHA,
         content_hash=HASH,
-        report_body=f"実装着手可\nread_sha={SHA}\ncontent_hash={HASH}\n本文...\n## 過剰の点検\nなし\n",
+        report_body=f"実装着手可\nread_sha={SHA}\ncontent_hash={HASH}\n本文...\n",
     )
     result = _run_status(state_dir, "run-ok")
     assert result.returncode == 0, result.stdout + result.stderr

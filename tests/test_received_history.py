@@ -23,7 +23,7 @@ def evidence(case, tags=('alpha', 'beta')):
     receipts = []
     for rid, tag in zip(('first', 'second'), tags):
         report = case[1] / (rid + '.report')
-        report.write_text(f'実装着手可\nread_sha={SHA}\ncontent_hash={TREE}\n## 過剰の点検\nなし\n')
+        report.write_text(f'実装着手可\nread_sha={SHA}\ncontent_hash={TREE}\n本文\n')
         (case[1] / (rid + '.state')).write_text(
             f'run_id={rid}\nreview_target={TARGET}\nround=1\nkind_label=設計\n'
             f'started_at_human=date\nhead_sha={SHA}\nreviewer={rid}\n'
@@ -51,6 +51,20 @@ def test_received_all_same_hashes(case):
     (case[1]/'second.state').unlink()
     body = '\n'.join(l for l in body.splitlines() if 'dispatch_id=second' not in l)+'\n'
     assert get(case, body, receipts[:1])[0]['status'] == 'received'
+
+
+def test_history_rechecks_section_required_by_dispatched_prompt(case):
+    body, receipts = evidence(case)
+    prompt = case[1] / 'second.prompt'
+    prompt.write_text('本文に `## 過剰の点検` の見出しを独立した行で必ず置く。\n'
+                      '今回のレビュー: 巡1（種別: 設計）\n')
+    with (case[1] / 'second.state').open('a') as state:
+        state.write(f'effective_prompt={prompt}\n')
+    assert get(case, body, receipts)[0]['status'] == 'pending'
+
+    with (case[1] / 'second.report').open('a') as report:
+        report.write('## 過剰の点検\nなし\n')
+    assert get(case, body, receipts)[0]['status'] == 'received'
 
 
 @pytest.mark.parametrize('mode', ['missing', 'duplicate', 'other'])

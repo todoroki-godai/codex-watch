@@ -582,12 +582,15 @@ def test_check_receipt_ok_on_match():
     pytest.param("> ## 過剰の点検\n> なし\n", id="quoted-heading"),
     pytest.param("~~~markdown\n## 過剰の点検\nなし\n~~~\n", id="fenced-heading"),
     pytest.param("＃＃ 過剰の点検\nなし\n", id="fullwidth-markers"),
+    pytest.param("## 過剰の点検\r\n\t=== REVIEW DONE ===  \r\n", id="padded-marker-crlf"),
+    pytest.param("## 過剰の点検\n=== CODEX QUEUE DONE ===\n", id="multiword-marker"),
+    pytest.param("## 過剰の点検\nOVERKILL2-DONE\n", id="bare-marker"),
+    pytest.param("## 過剰の点検\n=== REVIEW DONE ===\nなし\n", id="body-after-marker"),
+    pytest.param("## 過剰の点検\n```text\nなし\n```\n", id="fenced-body"),
 ])
-def test_check_receipt_rejects_missing_overkill_section(body):
+def test_has_overkill_section_rejects_missing_body(body):
     report = f"実装着手可\nread_sha={SHA_A}\ncontent_hash={HASH_A}\n\n{body}"
-    result = rg.check_receipt(SHA_A, HASH_A, report)
-    assert result.status == "rejected"
-    assert "## 過剰の点検" in result.reason
+    assert not rg.has_overkill_section(report)
 
 
 def test_check_receipt_ok_when_report_uses_uppercase_hex():
