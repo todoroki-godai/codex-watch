@@ -128,7 +128,9 @@ def watch(sandbox, baseline_source):
     executable(fake / 'sleep', 'echo SLEPT >&2\nexit 77\n')
     def run(estimate='1', elapsed=121, marker=False, dead=False, maximum=0,
             baseline=False, verdict=False, command='codex-watch', content=None, missing=False, failure=None,
-            interrupt=False):
+            interrupt=False, bad_tmp=False):
+        if bad_tmp:
+            executable(fake / 'mktemp', 'exit 1\n')
         log = state / 'run.log'
         log.write_text(content if content is not None else ('tokens used\n' if verdict else ''))
         if missing:
@@ -281,7 +283,7 @@ def test_outer_time_limit(watch, sandbox):
     executable(fake / 'python3', f'if [ "$#" -eq 2 ]; then exec {real_python} -c "import time; time.sleep(13)"; fi\nexec {real_python} "$@"\n')
     started = time.monotonic()
     r, marker = watch()
-    assert time.monotonic() - started < 12
+    assert time.monotonic() - started < 10.5
     assert r.returncode == 0 and marker.exists()
     assert len(r.stdout.splitlines()) == 1
     assert r.stdout.endswith('／手がかり: 数えられず（時間）\n')
@@ -308,3 +310,25 @@ def test_vertical_tab_stays_on_one_line(watch):
     r, marker = watch(content='connection refused\vconnection refused\n')
     assert r.returncode == 0 and marker.exists()
     assert '関連 1行' in r.stdout
+
+
+def test_hint_temp_failure(watch, sandbox):
+    r, marker = watch(bad_tmp=True)
+    assert r.returncode == 0 and marker.exists()
+    assert len(r.stdout.splitlines()) == 1
+    assert r.stdout.endswith('／手がかり: 数えられず（一時）\n')
+    assert not list(sandbox[2].glob('*.hints'))
+
+
+def test_tail_starts_at_line_boundary(watch):
+    line = 'connection refused\n'
+    r, marker = watch(content='\n' + line + ' ' * (8 * 1024 * 1024 - len(line)))
+    assert r.returncode == 0 and marker.exists()
+    assert '関連 1行' in r.stdout
+
+
+def test_marker_write_failure_still_notifies(watch, sandbox):
+    executable(sandbox[1] / 'touch', 'exit 1\n')
+    r, marker = watch()
+    assert r.returncode == 0 and not marker.exists()
+    assert len(r.stdout.splitlines()) == 1 and r.stdout.startswith('OVERDUE:')

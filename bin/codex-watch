@@ -126,7 +126,7 @@ if (re.fullmatch(r'[0-9]+', estimate) and int(estimate) > 0
 PYOVERDUE
 )"
     if [[ -n "$overdue_elapsed" ]]; then
-      hint_file=$(mktemp)
+      if hint_file=$(mktemp); then
       python3 - "$LOG" >"$hint_file" 2>/dev/null <<'PYHINTS' &
 import collections, os, re, signal, sys
 signal.signal(signal.SIGALRM, lambda *_: sys.exit(124))
@@ -140,9 +140,12 @@ try:
     with open(sys.argv[1], 'rb') as log:
         size = os.fstat(log.fileno()).st_size
         start = max(0, size - 8 * 1024 * 1024)
+        if start:
+            log.seek(start - 1)
+            partial = log.read(1) != b'\n'
         log.seek(start)
         data = log.read(8 * 1024 * 1024)
-        if start:
+        if start and partial:
             data = data.partition(b'\n')[2]
         lines = data.decode('utf-8', errors='replace').split('\n')
 except OSError:
@@ -162,7 +165,8 @@ print(f'手がかり（文言の一致数・原因の判定ではない）: 時�
 PYHINTS
       hint_pid=$!
       trap 'kill -KILL "$hint_pid" 2>/dev/null || true; rm -f "$hint_file"' EXIT
-      for ((i=0; i<100; i++)); do
+      hint_started=$SECONDS
+      while (( SECONDS - hint_started < 10 )); do
         kill -0 "$hint_pid" 2>/dev/null || break
         /bin/sleep 0.1
       done
@@ -178,7 +182,10 @@ PYHINTS
       fi
       trap - EXIT
       rm -f "$hint_file"
-      touch "$OVERDUE_FILE"
+      else
+        hints='手がかり: 数えられず（一時）'
+      fi
+      touch "$OVERDUE_FILE" 2>/dev/null || true
       echo "OVERDUE: $RUN_ID 見込み${ESTIMATE_MIN}分の2倍を超過（経過${overdue_elapsed}分）。git log・status と出力を読んで判断する／${hints}"
       exit 0
     fi
