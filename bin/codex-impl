@@ -101,8 +101,9 @@ if reason:
     sys.exit(2)
 PYRECEIPT
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=SCRIPTDIR/_codex_common.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_codex_common.sh"
+source "$SCRIPT_DIR/_codex_common.sh"
 check_codex_summary_issue
 
 # --- 安全ガード: 共有 checkout / main 作業コピーへの書き込みを拒否する ---
@@ -191,6 +192,97 @@ STATE_FILE="$STATE_DIR/$RUN_ID.state"
 # 最終メッセージだけを別ファイルへ落とす（log 全文を読まずに結論だけ取るため）。
 REPORT_FILE="$STATE_DIR/$RUN_ID.report"
 
+LAUNCH_PROMPT="$PROMPT_FILE"
+BROWSER_PORT=""
+if [[ "${CODEX_IMPL_NO_BROWSER:-0}" != "1" ]]; then
+  BROWSER_DIR="$WORKDIR/_work/codex-browser/$RUN_ID"
+  BROWSER_PORT="$(python3 - "$PROMPT_FILE" "$BROWSER_DIR" "$SCRIPT_DIR/../templates/browser-cdp.md" <<'PYBROWSER'
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+from urllib.parse import urlsplit
+
+prompt_file, profile, template = map(Path, sys.argv[1:])
+prompt = prompt_file.read_bytes()
+body = prompt.decode('utf-8').lower()
+words = ('playwright', 'chromium', 'connectovercdp', 'style-diff', 'run.sh dev', 'run.sh stg',
+         'https://dev.', 'https://stg.', '見本照合', '撮影', 'スクリーンショット', 'screenshot')
+if not any(word in body for word in words):
+    sys.exit(0)
+if 'connectovercdp' in body and re.search(r'127\.0\.0\.1:[0-9]+', body):
+    sys.exit(0)
+
+if 'CODEX_IMPL_CHROMIUM' in os.environ:
+    chromium = Path(os.environ['CODEX_IMPL_CHROMIUM'])
+else:
+    cache = Path.home() / 'Library/Caches/ms-playwright'
+    revisions = [path for path in cache.glob('chromium_headless_shell-*')
+                 if path.is_dir() and re.fullmatch(r'[0-9]+', path.name.rsplit('-', 1)[1])]
+    revision = max(revisions, key=lambda path: int(path.name.rsplit('-', 1)[1]), default=None)
+    chromium = next(revision.glob('*/chrome-headless-shell'), None) if revision else None
+if chromium is None or not chromium.is_file() or not os.access(chromium, os.X_OK):
+    sys.exit('Chromium の実行ファイルがありません。CODEX_IMPL_CHROMIUM で指定してください。')
+
+try:
+    block = template.read_text(encoding='utf-8').split('## 依頼文に貼る定型\n', 1)[1].split('```', 2)[1]
+    block = '\n'.join(line for line in block.strip('\n').splitlines()
+                      if not line.startswith('- （ログインが要る画面のときだけ足す）'))
+    # A pre-existing profile could contain a DevToolsActivePort from a different run.
+    profile.mkdir(mode=0o700, parents=True)
+    log = profile / 'chrome.log'
+    with log.open('wb') as output:
+        browser = subprocess.Popen(
+            ['nohup', 'timeout', '-k', '10', '5400', str(chromium.absolute()),
+             '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',
+             f'--user-data-dir={profile}', '--no-first-run', 'about:blank'],
+            stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+
+    marker = profile / 'DevToolsActivePort'
+    deadline = time.monotonic() + 10
+    while deadline - time.monotonic() >= 0.001:
+        try:
+            lines = marker.read_text(encoding='utf-8').splitlines()
+        except FileNotFoundError:
+            lines = []
+        if len(lines) >= 2 and lines[1]:
+            port, browser_path = lines[:2]
+            if not re.fullmatch(r'[0-9]{1,5}', port) or not 1 <= int(port) <= 65535:
+                sys.exit(f'Chromium のポートが不正です: {marker}')
+            remaining = deadline - time.monotonic()
+            if remaining < 0.001:
+                continue
+            with subprocess.Popen(
+                ['curl', '-q', '--silent', '--fail', '--noproxy', '*',
+                 '--max-time', f'{remaining:.3f}', f'http://127.0.0.1:{port}/json/version'],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            ) as request:
+                response, _ = request.communicate()
+            if request.returncode == 0 and time.monotonic() < deadline:
+                remote_path = urlsplit(json.loads(response)['webSocketDebuggerUrl']).path
+                if remote_path != browser_path:
+                    sys.exit(f'Chromium のブラウザパスが一致しません: {marker}')
+                break
+        if browser.poll() is not None:
+            sys.exit(f'Chromium が準備前に終了しました: {log}')
+        time.sleep(0.05)
+    else:
+        sys.exit(f'Chromium の準備が10秒以内に完了しませんでした: {log}')
+    suffix = block.replace('<ポート>', port).replace('<許す URL の一覧>', 'この依頼文に書かれた URL だけ')
+    (profile / 'prompt.md').write_bytes(prompt + ('\n\n' + suffix + '\n').encode('utf-8'))
+    print(port)
+except (OSError, ValueError, KeyError, IndexError, TypeError, AttributeError) as error:
+    sys.exit(f'Chromium の準備に失敗しました: {error}')
+PYBROWSER
+)"
+  if [[ -n "$BROWSER_PORT" ]]; then LAUNCH_PROMPT="$BROWSER_DIR/prompt.md"; fi
+fi
+
 # Dedicated permission profile: serialize paths as TOML strings, including quotes/backslashes.
 SANDBOX_ARGS=(-c 'default_permissions="codex-impl-dev"'
   -c 'permissions.codex-impl-dev.extends=":workspace"'
@@ -226,7 +318,7 @@ prepare_codex_launch_skills "$WORKDIR" no exec -C "$WORKDIR" \
 printf 'モデル: %s（既定は sol。機械的な作業は luna / terra、全体の設計・レビューの繰り返し・設計し直しは astra を CODEX_IMPL_MODEL で指定）\n' "$REQUESTED_MODEL" >&2
 # 先に原本を stdin に開き、注記と原本を順に渡す。出力は進行中に読めるようログへ直書きする。
 nohup codex exec -C "$WORKDIR" ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - \
-  < "$PROMPT_FILE" < <(printf '%s\n' '手元で回す試験は、変えたファイルとその近くの試験・依存先込みの lint/typecheck だけ。パッケージ全体・リポジトリ全体の試験は頭が AWS で回すので回さない（依頼文が明示的に求めた場合を除く）。' && cat) \
+  < "$LAUNCH_PROMPT" < <(printf '%s\n' '手元で回す試験は、変えたファイルとその近くの試験・依存先込みの lint/typecheck だけ。パッケージ全体・リポジトリ全体の試験は頭が AWS で回すので回さない（依頼文が明示的に求めた場合を除く）。' && cat) \
   > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
@@ -242,6 +334,7 @@ CODEX_PID=$!
   echo "report=$REPORT_FILE"
   echo "workdir=$WORKDIR"
   echo "prompt=$PROMPT_FILE"
+  if [[ -n "$BROWSER_PORT" ]]; then printf 'browser_port=%s\n' "$BROWSER_PORT"; fi
   echo "mode=workspace-write"
   echo "writable_git_common=${GIT_COMMON_ABS:-}"
   echo "aws=$CODEX_IMPL_AWS_STATE"
