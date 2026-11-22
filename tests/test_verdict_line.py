@@ -30,7 +30,7 @@ POSITIVE = ['実装着手可', '設計修正要', '判定保留: 前の回の内
 
 
 def report(first):
-    return '' if first is None else f'{first}\nread_sha={SHA}\ncontent_hash={HASH}\n本文\n'
+    return '' if first is None else f'{first}\nread_sha={SHA}\ncontent_hash={HASH}\n本文\n## 過剰の点検\nなし\n'
 
 
 @pytest.mark.parametrize('name,first', NEGATIVE, ids=[n for n, _ in NEGATIVE])
@@ -75,7 +75,7 @@ def test_fail_open_does_not_disable_existing_hash_check():
     class Text(str):
         def split(self, sep):
             assert sep == '\n'
-            return [BrokenPrefix('途中経過'), f'read_sha={SHA}', f'content_hash={HASH}']
+            return [BrokenPrefix('途中経過'), f'read_sha={SHA}', f'content_hash={HASH}', '## 過剰の点検', 'なし']
     text = Text('report')
     assert rg.check_receipt(SHA, HASH, text).status == 'ok'
     assert rg.check_receipt('b' * 40, HASH, text).status == 'rejected'
@@ -151,7 +151,7 @@ def test_stray_cr_rejected_through_consumers(tmp_path, case, text):
 
 
 def test_positive_tabs_and_mixed_endings():
-    text = f'判定保留: 理由\t補足\r\nread_sha={SHA}\t\ncontent_hash={HASH}\t\r\n本文\t補足'
+    text = f'判定保留: 理由\t補足\r\nread_sha={SHA}\t\ncontent_hash={HASH}\t\r\n## 過剰の点検\n本文\t補足'
     assert rg.check_receipt(SHA, HASH, text).status == 'ok'
 
 

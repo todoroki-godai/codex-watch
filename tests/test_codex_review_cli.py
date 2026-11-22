@@ -158,6 +158,11 @@ def test_cli_generated_prompt_requires_evidence_for_must(fake_bin: Path, tmp_pat
     assert "行が無い・中身が空のときだけ自分で数え直し、0件なら落とす（(B)(C) は除く）。" in conditions
     assert prompt.count(conditions) == 1
     assert prompt.index(conditions) < prompt.index("dummy prompt")
+    assert "`## 過剰の点検`" in prompt
+    assert "関数・検査・設定・分岐・ファイル" in prompt
+    assert "`仕様` / `本人の指示` / `自前`" in prompt
+    assert "削れる候補と、削ったとき失うもの" in prompt
+    assert "`なし` と1行" in prompt
 
 
 @pytest.mark.parametrize(("model", "expected_model"),
@@ -449,22 +454,36 @@ def test_cli_dispatch_content_hash_changes_with_uncommitted_diff(fake_bin: Path,
     assert clean_hash != dirty_hash
 
 
-def test_receipt_cli_ok_on_matching_claim(tmp_path: Path):
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
-    import round_gate as rg  # noqa: E402
-
+@pytest.mark.parametrize("prompt_generation,body,exit_code,reason", [
+    ("current", "## 過剰の点検\nなし\n", 0, "受領可"),
+    ("current", "本文\n", 4, "## 過剰の点検"),
+    ("legacy", "本文\n", 0, "受領可"),
+    ("missing", "本文\n", 0, "受領可"),
+])
+def test_receipt_cli_on_matching_claim(tmp_path: Path, prompt_generation, body, exit_code, reason):
+    instruction = "本文に `## 過剰の点検` の見出しを独立した行で必ず置く。\n"
+    round_line = "今回のレビュー: 巡1（種別: コード）\n"
+    original = tmp_path / "original.prompt"
+    original.write_text(instruction)
+    effective = tmp_path / "run1.prompt"
+    if prompt_generation == "current":
+        effective.write_text(instruction + round_line)
+    elif prompt_generation == "legacy":
+        # 依頼者の本文にレビュアー向け定型文の引用があっても、共通前置きの条件ではない。
+        effective.write_text(round_line + "以前の文言を引用します。\n" + instruction)
     state_file = tmp_path / "run1.state"
-    state_file.write_text("head_sha=" + "a" * 40 + "\ncontent_hash=" + "1" * 64 + "\n")
+    state_file.write_text(f"head_sha={'a' * 40}\ncontent_hash={'1' * 64}\n"
+                          f"prompt={original}\neffective_prompt={effective}\n")
     report_file = tmp_path / "run1.report"
-    report_file.write_text(f"実装着手可\nread_sha={'a' * 40}\ncontent_hash={'1' * 64}\n判定: 実装着手可\n")
+    report_file.write_text(f"実装着手可\nread_sha={'a' * 40}\ncontent_hash={'1' * 64}\n{body}")
 
     result = subprocess.run(
         ["python3", str(Path(__file__).resolve().parent.parent / "lib" / "round_gate.py"),
          "receipt", "--state-file", str(state_file), "--report", str(report_file)],
         capture_output=True, text=True, timeout=15,
     )
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "受領可" in result.stdout
+    assert result.returncode == exit_code, result.stdout + result.stderr
+    assert reason in result.stdout
 
 
 def test_receipt_cli_rejects_on_mismatched_claim(tmp_path: Path):

@@ -34,7 +34,7 @@ def rebuild(tmp_path, log_text, original):
 ])
 @pytest.mark.parametrize('original_kind', ['preamble', 'combined', 'tail'])
 def test_rebuild_preamble_receipt(tmp_path, verdict, preamble, original_kind):
-    body = f'{verdict}\nread_sha={SHA}\ncontent_hash={HASH}\n本文\n'
+    body = f'{verdict}\nread_sha={SHA}\ncontent_hash={HASH}\n本文\n## 過剰の点検\nなし\n'
     original = {'preamble': preamble, 'combined': preamble + '\n\n\n' + body, 'tail': '後続本文'}[original_kind]
     log = f'user\n依頼\ncodex\n{preamble}\nhook: done\ncodex\n{body}hook: done\ncodex\n後続本文\n'
     text, displayed, report = rebuild(tmp_path, log, original)
@@ -68,7 +68,7 @@ def test_rebuild_without_verdict_section_preserves_output(tmp_path, body):
 
 
 def test_first_verdict_section_keeps_later_verdict_sections(tmp_path):
-    body = f'設計修正要\nread_sha={SHA}\ncontent_hash={HASH}'
+    body = f'設計修正要\nread_sha={SHA}\ncontent_hash={HASH}\n## 過剰の点検\nなし'
     text, verdict, _ = rebuild(tmp_path, f'codex\n前置き\ncodex\n{body}\ncodex\n実装着手可\n後続\n', '後続')
     assert text == body + '\n実装着手可\n後続'
     assert verdict == '設計修正要'

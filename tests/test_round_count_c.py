@@ -1,4 +1,8 @@
 """C contract, from round-count-c design §2–5 (normal path first)."""
+from pathlib import Path
+import subprocess
+import sys
+
 import pytest
 from test_prerelease import case, run_cli, rg, pre, TARGET, GOAL
 
@@ -114,9 +118,30 @@ def test_cli_predecessor(case, monkeypatch):
     gh.write_text(text)
     result = run_cli(case)
     assert result.returncode == 0, result.stdout + result.stderr
-    state = rg.read_state_file(next(case['state'].glob('0-fixture-*.state')))
+    state_file = next(case['state'].glob('0-fixture-*.state'))
+    state = rg.read_state_file(state_file)
     assert state['round'] == '3'
-    assert '今回のレビュー: 巡3（種別: コード）' in open(state['effective_prompt']).read()
+    prompt = Path(state['effective_prompt']).read_text()
+    assert '今回のレビュー: 巡3（種別: コード）' in prompt
+    assert '`## 過剰の点検`' in prompt
+    assert 'この巡の直しで足した分' in prompt
+
+    report = Path(state['report'])
+    header = f"実装着手可\nread_sha={state['head_sha']}\ncontent_hash={state['content_hash']}\n"
+    for body, expected in (
+        ('## 過剰の点検\nなし\n', 0),
+        ('本文\n', 4),
+        ('## 過剰の点検\n \t\n', 4),
+        ('## 過剰の点検\n\n', 4),
+    ):
+        report.write_text(header + body + '=== REVIEW DONE ===\n')
+        receipt = subprocess.run(
+            [sys.executable, str(case['package'] / 'lib/round_gate.py'),
+             'receipt', '--state-file', str(state_file), '--report', str(report)],
+            capture_output=True, text=True, timeout=15,
+        )
+        assert receipt.returncode == expected, (body, receipt.stdout, receipt.stderr)
+        assert ('受領可' if expected == 0 else '## 過剰の点検') in receipt.stdout
 
 
 @pytest.mark.parametrize('mode', ['full', 'short', 'ambiguous', 'conflict', 'reservation'])
