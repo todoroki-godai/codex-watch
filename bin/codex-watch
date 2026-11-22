@@ -126,8 +126,67 @@ if (re.fullmatch(r'[0-9]+', estimate) and int(estimate) > 0
 PYOVERDUE
 )"
     if [[ -n "$overdue_elapsed" ]]; then
+      if hint_file=$(mktemp); then
+      python3 - "$LOG" >"$hint_file" 2>/dev/null <<'PYHINTS' &
+import collections, os, re, signal, sys
+signal.signal(signal.SIGALRM, lambda *_: sys.exit(124))
+signal.alarm(10)
+ansi = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+prefix = re.compile(r"^\[?\d{4}-\d\d-\d\dT\S+\s+")
+error = re.compile(r"^(?:(?:\S+Error|ERROR|FAIL(?:ED)?|fatal|error|(?:zsh|bash):)\b|Error(?:\b|:)|✗|×)|\b(?:Permission denied|Operation not permitted)\b", re.I)
+permission = re.compile(r"Permission denied|Operation not permitted|Read-only file system|sandbox(?:ed)? (?:denied|violation|restriction)|denied by (?:the )?sandbox|\b(?:EACCES|EPERM|SandboxDenied)\b", re.I)
+environment = re.compile(r"timed out|time(?:d)?[ -]?out (?:after|expired|exceeded)|\bETIMEDOUT\b|connection (?:refused|reset|closed unexpectedly|failed|timed out)|could not connect|failed to connect|\b(?:ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|P1001)\b|could not (?:acquire|obtain) (?:a )?lock|database is locked|lock wait timeout|unable to create .*\.lock|\.lock['\"]?: File exists", re.I)
+try:
+    with open(sys.argv[1], 'rb') as log:
+        size = os.fstat(log.fileno()).st_size
+        start = max(0, size - 8 * 1024 * 1024)
+        if start:
+            log.seek(start - 1)
+            partial = log.read(1) != b'\n'
+        log.seek(start)
+        data = log.read(8 * 1024 * 1024)
+        if start and partial:
+            data = data.partition(b'\n')[2]
+        lines = data.decode('utf-8', errors='replace').split('\n')
+except OSError:
+    print('手がかり: 数えられず（読取）')
+    sys.exit(0)
+errors = collections.Counter()
+env = perm = 0
+for line in lines:
+    line = ansi.sub('', line).strip()
+    clean = prefix.sub('', line)
+    if error.search(clean):
+        errors[' '.join(clean.split())] += 1
+    env += bool(environment.search(line))
+    perm += bool(permission.search(line))
+suffix = '（末尾8MB）' if size > 8 * 1024 * 1024 else ''
+print(f'手がかり（文言の一致数・原因の判定ではない）: 時間切れ・接続・ロック関連 {env}行・権限で断られた {perm}行・同じエラー行の最多 {max(errors.values(), default=0)}回{suffix}')
+PYHINTS
+      hint_pid=$!
+      trap 'kill -KILL "$hint_pid" 2>/dev/null || true; rm -f "$hint_file"' EXIT
+      hint_started=$SECONDS
+      while (( SECONDS - hint_started < 10 )); do
+        kill -0 "$hint_pid" 2>/dev/null || break
+        /bin/sleep 0.1
+      done
+      if kill -0 "$hint_pid" 2>/dev/null; then
+        kill -KILL "$hint_pid" 2>/dev/null || true
+        wait "$hint_pid" 2>/dev/null || true
+        hints='手がかり: 数えられず（時間）'
+      elif wait "$hint_pid"; then
+        hints=$(cat "$hint_file")
+      else
+        rc=$?
+        if [[ $rc -eq 124 ]]; then hints='手がかり: 数えられず（時間）'; else hints='手がかり: 数えられず（異常）'; fi
+      fi
+      trap - EXIT
+      rm -f "$hint_file"
+      else
+        hints='手がかり: 数えられず（一時）'
+      fi
       touch "$OVERDUE_FILE"
-      echo "OVERDUE: $RUN_ID 見込み${ESTIMATE_MIN}分の2倍を超過（経過${overdue_elapsed}分）。git log・status と出力を読んで判断する"
+      echo "OVERDUE: $RUN_ID 見込み${ESTIMATE_MIN}分の2倍を超過（経過${overdue_elapsed}分）。git log・status と出力を読んで判断する／${hints}"
       exit 0
     fi
   fi
