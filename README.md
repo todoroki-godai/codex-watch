@@ -18,9 +18,9 @@
 
 `CODEX_SUMMARY` の先頭60字以内に課題番号 `#N` を入れる（番号の無い仕事は `#0`）。無ければ起動しない。
 
-`codex-impl` の既定は `gpt-6.1-terra`、`codex-review` の既定は `gpt-6.2-sol` です。それぞれ `CODEX_IMPL_MODEL`、`CODEX_REVIEW_MODEL` で上書きできます。空文字を明示すると Codex の設定を読み、確定したモデルで起動します。
+`codex-impl` と `codex-review` の既定は `gpt-6.2-sol` です。それぞれ `CODEX_IMPL_MODEL`、`CODEX_REVIEW_MODEL` で上書きできます。空文字を明示すると Codex の設定を読み、確定したモデルで起動します。
 
-- 機械的な作業やふつうの実装は既定の terra。難しい実装は sol、軽い作業は luna を明示指定。
+- ふつうの実装は既定の sol。機械的な作業では luna または terra を明示指定。
 - ふつうのレビューは既定の sol。軽い確認だけなら terra を明示指定。
 - 全体の設計・レビューの繰り返し・設計し直しは astra を明示指定し、`CODEX_ASTRA_REASON` に理由を書く。
 

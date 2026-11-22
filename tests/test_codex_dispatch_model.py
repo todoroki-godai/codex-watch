@@ -104,8 +104,8 @@ def check_dispatch(result, path, launcher, model, reason=None):
         guidance = ("既定は sol。全体の設計・レビューの繰り返し・設計し直しは astra、"
                     "軽い確認だけなら terra を CODEX_REVIEW_MODEL で指定")
     else:
-        guidance = ("既定は terra。難しい作業は sol、全体の設計・レビューの繰り返し・"
-                    "設計し直しは astra を CODEX_IMPL_MODEL で指定")
+        guidance = ("既定は sol。機械的な作業は luna / terra、全体の設計・レビューの"
+                    "繰り返し・設計し直しは astra を CODEX_IMPL_MODEL で指定")
     assert model_lines == [f"モデル: {model}（{guidance}）"]
     return state
 
@@ -117,7 +117,7 @@ def check_rejected(result, path, prior=()):
     assert tuple((path / "state").glob("*")) == prior
 
 
-@pytest.mark.parametrize(("launcher", "expected_model"), [("impl", TERRA), ("review", SOL)])
+@pytest.mark.parametrize(("launcher", "expected_model"), [("impl", SOL), ("review", SOL)])
 def test_unset_model_uses_launcher_default_without_config_probe(dispatch, tmp_path, launcher, expected_model):
     result = dispatch(launcher, ASTRA)
     check_dispatch(result, tmp_path, launcher, expected_model)
