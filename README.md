@@ -18,10 +18,10 @@
 
 `CODEX_SUMMARY` の先頭60字以内に課題番号 `#N` を入れる（番号の無い仕事は `#0`）。無ければ起動しない。
 
-`codex-impl` と `codex-review` は、それぞれ `CODEX_IMPL_MODEL`、`CODEX_REVIEW_MODEL` にモデルの明示が必要です。通常は `gpt-6.1-terra`、大事な場面・難しい作業は `gpt-6.2-sol`、全体の設計・設計し直しは astra を指定します（astra は理由の指定も必要です）。
+`codex-impl` と `codex-review` は、それぞれ `CODEX_IMPL_MODEL`、`CODEX_REVIEW_MODEL` にモデルの明示が必要です。使い分けは次のとおりです。
 
-- ふつうの実装は既定の sol。機械的な作業では luna または terra を明示指定。
-- ふつうのレビューは既定の sol。軽い確認だけなら terra を明示指定。
+- 実装は通常 terra、大事な場面・難しい作業は sol を明示指定。
+- レビューは通常 sol を明示指定。
 - 全体の設計・レビューの繰り返し・設計し直しは astra を明示指定し、`CODEX_ASTRA_REASON` に理由を書く。
 
 ## 設計の要点
@@ -38,7 +38,7 @@
 - **`codex-review` に画像を渡すには `CODEX_REVIEW_IMAGES` に画像の絶対パスを1行1件で書く**（絶対パスで渡す。相対パスは拒否される）（見本と実画面の見比べ用）。1件ずつ `codex exec -i <パス>` になり、与えた順に付く。
   未設定・空なら起動の行は従来と同一。受理は実在する普通のファイルで拡張子が png/jpg/jpeg/webp のものだけ。
   外れが1件でもあれば、巡数ゲートの記録・状態ファイルより前に理由を出して exit 2 で止める（先頭が `-` のパスと `,` を含むパスも拒否。空白を含むパスは可）。
-  モデルは既存の `CODEX_REVIEW_MODEL`（例: `gpt-6.1-terra`）で指定する。新しい口は無い。
+  モデルは既存の `CODEX_REVIEW_MODEL`（例: `gpt-6.2-sol`）で指定する。新しい口は無い。
 
 `codex-impl` は Codex に渡す依頼文の先頭に、手元の試験を変更箇所周辺に絞る注記を自動で足します。
 パッケージ全体・リポジトリ全体の試験は、依頼文で明示した場合に手元で実行できます。
@@ -106,8 +106,8 @@ git revert --no-commit $(git rev-list --first-parent efe4aad..HEAD)
   `~/.aws` は拒否し、専用設定と空の credentials を指定する。親環境の `AWS_*` と `CODEX_AWS_DOCS_*` は除去する。
   トップレベルと全 profiles の `shell_environment_policy.set` に `AWS_PROFILE` 以外の `AWS_` キーまたは `CODEX_AWS_DOCS_` キーがあれば拒否する。読取・解析不能も拒否し、値は表示しない。存在しない任意設定は許容する。
   `AWS_PROFILE` は CLI で `codex-dev` に上書きする。継承の絞り込み（Should）は既存の環境継承契約への影響があるため今回は範囲外。
-- `gpt-6.1-sol` は codex-cli 0.159.1 の `codex debug models` に掲載（visibility=list）を確認済み（2026-09-30）。前任の `gpt-6-sol` は 0.156.1 で受理・0.154.0 では 400 で即終了した。古い CLI では codex-watch が「報告ファイルが空」と表示する。対処は CLI の更新か `CODEX_IMPL_MODEL=`。
-- `codex-impl` の effort 既定は `medium`。`CODEX_IMPL_EFFORT=` と空文字を明示すると `-c model_reasoning_effort` を付けず config.toml の既定に従う。レビューの既定は変更しない。
+- `gpt-6.1-sol` は codex-cli 0.159.1 の `codex debug models` に掲載（visibility=list）を確認済み（2026-09-30）。前任の `gpt-6-sol` は 0.156.1 で受理・0.154.0 では 400 で即終了した。古い CLI では codex-watch が「報告ファイルが空」と表示する。対処は CLI の更新か利用可能なモデルの指定。
+- `codex-impl` の effort 既定は `medium`。`CODEX_IMPL_EFFORT=` を指定すると `-c model_reasoning_effort` を付けず config.toml の既定に従う。レビューの既定は変更しない。
 - **`codex-review` は発注前に `REVIEW_GOAL_CUT` を必須で検査する**（`pr:`/`issue:` の実発注のみ。
   `none:` 発注と `CODEX_REVIEW_NO_GATE` bypass は対象外）。なぜ要るか — 「目的への寄与がゼロの
   成果物がレビュー巡を費やして最後に撤去される」事故（2026-09-03。denylist 型 lint に
