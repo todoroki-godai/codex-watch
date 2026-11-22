@@ -124,7 +124,7 @@ if [[ "$PROMPT_ROUND" =~ ^[0-9]+$ ]] && (( PROMPT_ROUND >= 2 )); then
   MUST_ONLY=yes
 fi
 MODEL_PREFLIGHT="$(CODEX_ASTRA_REASON="$ASTRA_REASON_INPUT" python3 "$(dirname "$GATE_PY")/codex_dispatch_model.py" \
-  "$WORKDIR" "${CODEX_REVIEW_MODEL-gpt-6.1-terra}" CODEX_REVIEW_MODEL \
+  "$WORKDIR" "${CODEX_REVIEW_MODEL-gpt-6.2-sol}" CODEX_REVIEW_MODEL \
   "$CODEX_REVIEW_KIND_LABEL" "$GATE_JSON" "$MUST_ONLY")" || exit 2
 ASTRA_REASON="${MODEL_PREFLIGHT%%$'\n'*}"
 REQUESTED_MODEL="${MODEL_PREFLIGHT#*$'\n'}"
@@ -285,7 +285,7 @@ if [[ "$CHECK_REVIEW_SKILLS" == yes ]] && ! prepare_review_skills; then
   rm -f -- "$EFFECTIVE_PROMPT" ${RESERVATION_FILE:+"$RESERVATION_FILE"}
   exit 2
 fi
-printf 'モデル: %s（既定は terra。難しい作業は sol、全体の設計・レビューの繰り返し・設計し直しは astra を CODEX_REVIEW_MODEL で指定）\n' "$REQUESTED_MODEL" >&2
+printf 'モデル: %s（既定は sol。全体の設計・レビューの繰り返し・設計し直しは astra、軽い確認だけなら terra を CODEX_REVIEW_MODEL で指定）\n' "$REQUESTED_MODEL" >&2
 nohup codex exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 

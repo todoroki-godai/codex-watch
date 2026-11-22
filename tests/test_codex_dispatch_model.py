@@ -100,10 +100,13 @@ def check_dispatch(result, path, launcher, model, reason=None):
     assert state["run_id"] == run_id
     assert state["requested_model"] == model and state.get("astra_reason") == reason
     model_lines = [line for line in result.stderr.splitlines() if line.startswith("モデル: ")]
-    assert model_lines == [
-        f"モデル: {model}（既定は terra。難しい作業は sol、全体の設計・レビューの繰り返し・"
-        f"設計し直しは astra を CODEX_{launcher.upper()}_MODEL で指定）"
-    ]
+    if launcher == "review":
+        guidance = ("既定は sol。全体の設計・レビューの繰り返し・設計し直しは astra、"
+                    "軽い確認だけなら terra を CODEX_REVIEW_MODEL で指定")
+    else:
+        guidance = ("既定は terra。難しい作業は sol、全体の設計・レビューの繰り返し・"
+                    "設計し直しは astra を CODEX_IMPL_MODEL で指定")
+    assert model_lines == [f"モデル: {model}（{guidance}）"]
     return state
 
 
@@ -114,17 +117,17 @@ def check_rejected(result, path, prior=()):
     assert tuple((path / "state").glob("*")) == prior
 
 
-@pytest.mark.parametrize("launcher", ["impl", "review"])
-def test_unset_model_uses_terra_without_config_probe(dispatch, tmp_path, launcher):
+@pytest.mark.parametrize(("launcher", "expected_model"), [("impl", TERRA), ("review", SOL)])
+def test_unset_model_uses_launcher_default_without_config_probe(dispatch, tmp_path, launcher, expected_model):
     result = dispatch(launcher, ASTRA)
-    check_dispatch(result, tmp_path, launcher, TERRA)
+    check_dispatch(result, tmp_path, launcher, expected_model)
     assert not (tmp_path / "probe").exists()
 
 
 @pytest.mark.parametrize("launcher", ["impl", "review"])
-@pytest.mark.parametrize("model", [SOL, ASTRA, ASTRA.upper()])
+@pytest.mark.parametrize("model", [SOL, ASTRA, TERRA, ASTRA.upper()])
 def test_explicit_model_is_preserved(dispatch, tmp_path, launcher, model):
-    reason = None if model == SOL else REASON
+    reason = REASON if model.lower() == ASTRA else None
     result = dispatch(launcher, CODEX_ASTRA_REASON=reason or "",
                       **{f"CODEX_{launcher.upper()}_MODEL": model})
     check_dispatch(result, tmp_path, launcher, model, reason)

@@ -160,9 +160,11 @@ def test_cli_generated_prompt_requires_evidence_for_must(fake_bin: Path, tmp_pat
     assert prompt.index(conditions) < prompt.index("dummy prompt")
 
 
-@pytest.mark.parametrize("model", [None, ""], ids=["unset", "empty"])
+@pytest.mark.parametrize(("model", "expected_model"),
+                         [(None, "gpt-6.2-sol"), ("", "gpt-6.1-terra")],
+                         ids=["unset", "empty"])
 def test_cli_default_model_and_unset_effort(
-    fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str | None
+    fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str | None, expected_model: str
 ):
     monkeypatch.setenv("CODEX_REVIEW_MODEL", "inherited-model")
     monkeypatch.setenv("CODEX_REVIEW_EFFORT", "high")
@@ -179,7 +181,7 @@ def test_cli_default_model_and_unset_effort(
         time.sleep(0.02)
     assert capture.exists()
     argv = capture.read_text().splitlines()
-    assert argv.count("-m") == 1 and argv[argv.index("-m") + 1] == "gpt-6.1-terra", argv
+    assert argv.count("-m") == 1 and argv[argv.index("-m") + 1] == expected_model, argv
     assert not any(arg.startswith("model_reasoning_effort=") for arg in argv), argv
 
 
