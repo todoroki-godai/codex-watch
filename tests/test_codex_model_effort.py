@@ -21,8 +21,8 @@ model/effort 配線を試験する。
   探索範囲を縮小した。
 
 ここで試験するのは:
-  ① impl の env 未指定時、-m gpt-6.2-sol と effort=medium が1つずつ付くこと
-  ② モデルの env が空文字なら設定で解決した値、明示値はその値で渡ること
+  ① impl のモデル明示時、-m gpt-6.2-sol と effort=medium が1つずつ付くこと
+  ② モデルの明示値がそのまま渡ること
   ③ node_modules が非空なら通り、欠損・空なら拒否し、明示した例外口では通ること
   ④ state には requested_* のみが即時に書かれ、model=/effort=/*_source= は
      書かれないこと（起動側は待たない）
@@ -160,7 +160,7 @@ def _run_impl(
     *,
     argv_capture: Path,
     header_file: Path | None,
-    model_env: str | None = None,
+    model_env: str | None = "gpt-6.2-sol",
     effort_env: str | None = None,
     node_modules: str = "populated",
     allow_missing_node_modules: bool = False,
@@ -238,11 +238,11 @@ def _wait_for_file(path: Path, timeout_s: float = 2.0, contains: str | None = No
 
 
 # ---------------------------------------------------------------------------
-# ① env 未指定時、-m gpt-6.2-sol と effort=medium が1つずつ付く
+# ① モデル明示時、-m gpt-6.2-sol と effort=medium が1つずつ付く
 # ---------------------------------------------------------------------------
 
 
-def test_impl_no_model_env_uses_default_model_once(fake_bin: Path, tmp_path: Path):
+def test_impl_explicit_model_once(fake_bin: Path, tmp_path: Path):
     header_file = tmp_path / "header.txt"
     header_file.write_text(SYNTHETIC_HEADER)
     argv_capture = tmp_path / "argv.txt"
@@ -321,18 +321,6 @@ def test_impl_helper_ignores_inherited_impl_overrides(fake_bin: Path, tmp_path: 
 
     result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, node_modules="missing")
     assert result.returncode == 4, result.stdout + result.stderr
-
-
-def test_impl_explicit_empty_model_uses_config_default(fake_bin: Path, tmp_path: Path):
-    argv_capture = tmp_path / "argv.txt"
-    result = _run_impl(fake_bin, tmp_path, argv_capture=argv_capture, header_file=None, model_env="")
-    assert result.returncode == 0, result.stdout + result.stderr
-    _wait_for_file(argv_capture)
-    argv = argv_capture.read_text().splitlines()
-    assert argv.count("-m") == 1 and argv[argv.index("-m") + 1] == "gpt-6.1-terra"
-    run_id = result.stdout.strip().splitlines()[-1]
-    state = _state_dict(tmp_path / "state" / f"{run_id}.state")
-    assert state["requested_model"] == "gpt-6.1-terra"
 
 
 # ---------------------------------------------------------------------------

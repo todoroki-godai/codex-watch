@@ -106,12 +106,9 @@ def check_dispatch(result, path, launcher, model, reason=None):
     assert state["run_id"] == run_id
     assert state["requested_model"] == model and state.get("astra_reason") == reason
     model_lines = [line for line in result.stderr.splitlines() if line.startswith("モデル: ")]
-    if launcher == "review":
-        guidance = ("既定は sol。全体の設計・レビューの繰り返し・設計し直しは astra、"
-                    "軽い確認だけなら terra を CODEX_REVIEW_MODEL で指定")
-    else:
-        guidance = ("既定は sol。機械的な作業は luna / terra、全体の設計・レビューの"
-                    "繰り返し・設計し直しは astra を CODEX_IMPL_MODEL で指定")
+    option = f"CODEX_{launcher.upper()}_MODEL"
+    guidance = (f"通常は terra、大事な場面・難しい作業は sol、全体の設計・設計し直しは "
+                f"astra（理由の指定が必要）を {option} で指定")
     assert model_lines == [f"モデル: {model}（{guidance}）"]
     return state
 
@@ -123,11 +120,26 @@ def check_rejected(result, path, prior=()):
     assert tuple((path / "state").glob("*")) == prior
 
 
-@pytest.mark.parametrize(("launcher", "expected_model"), [("impl", SOL), ("review", SOL)])
-def test_unset_model_uses_launcher_default_without_config_probe(dispatch, tmp_path, launcher, expected_model):
-    result = dispatch(launcher, ASTRA)
-    check_dispatch(result, tmp_path, launcher, expected_model)
+@pytest.mark.parametrize("launcher", ["impl", "review"])
+@pytest.mark.parametrize("model", [None, "", " \t　"], ids=["unset", "empty", "whitespace"])
+def test_missing_model_rejected_without_codex(dispatch, tmp_path, launcher, model):
+    option = f"CODEX_{launcher.upper()}_MODEL"
+    settings = {} if model is None else {option: model}
+    result = dispatch(launcher, **settings)
+    check_rejected(result, tmp_path)
+    assert "拒否: モデルの指定がありません" in result.stderr
+    assert option in result.stderr
+    assert "gpt-6.1-terra" in result.stderr and "gpt-6.2-sol" in result.stderr
+    assert "astra" in result.stderr and "理由" in result.stderr
     assert not (tmp_path / "probe").exists()
+
+
+def test_missing_model_preflight_exit_code(tmp_path):
+    result = subprocess.run(["python3", str(BIN_DIR.parent / "lib/codex_dispatch_model.py"),
+                             str(tmp_path), "", "CODEX_IMPL_MODEL"],
+                            capture_output=True, text=True, timeout=12)
+    assert result.returncode == 2
+    assert "拒否: モデルの指定がありません" in result.stderr
 
 
 @pytest.mark.parametrize("body", [
@@ -137,53 +149,20 @@ def test_unset_model_uses_launcher_default_without_config_probe(dispatch, tmp_pa
 ], ids=["utf8-with-trailing-newlines", "crlf-without-final-newline", "large-with-existing-line"])
 def test_impl_prepends_local_test_line_to_child_stdin(dispatch, tmp_path, body):
     original = body.encode("utf-8")
-    result = dispatch("impl", prompt_bytes=original)
+    result = dispatch("impl", prompt_bytes=original, CODEX_IMPL_MODEL=SOL)
     state = check_dispatch(result, tmp_path, "impl", SOL)
     assert (tmp_path / "stdin").read_bytes() == (LOCAL_TEST_LINE + "\n").encode("utf-8") + original
     assert Path(state["prompt"]).read_bytes() == original
 
 
 @pytest.mark.parametrize("launcher", ["impl", "review"])
-@pytest.mark.parametrize("model", [SOL, ASTRA, TERRA, ASTRA.upper()])
+@pytest.mark.parametrize("model", [SOL, ASTRA, TERRA, ASTRA.upper(), "unknown-model"])
 def test_explicit_model_is_preserved(dispatch, tmp_path, launcher, model):
     reason = REASON if model.lower() == ASTRA else None
     result = dispatch(launcher, CODEX_ASTRA_REASON=reason or "",
                       **{f"CODEX_{launcher.upper()}_MODEL": model})
     check_dispatch(result, tmp_path, launcher, model, reason)
     assert not (tmp_path / "probe").exists()
-
-
-@pytest.mark.parametrize("launcher", ["impl", "review"])
-def test_whitespace_only_model_is_rejected_without_config_probe(dispatch, tmp_path, launcher):
-    option = f"CODEX_{launcher.upper()}_MODEL"
-    result = dispatch(launcher, **{option: " \t　"})
-    check_rejected(result, tmp_path)
-    assert f"{option} には有効なモデル名" in result.stderr
-    assert not (tmp_path / "probe").exists()
-
-
-@pytest.mark.parametrize("launcher", ["impl", "review"])
-@pytest.mark.parametrize("model", [ASTRA, "GPT-6.2-ASTRA-2026-11-21"])
-def test_empty_model_rejects_configured_astra_even_with_reason(dispatch, tmp_path, launcher, model):
-    option = f"CODEX_{launcher.upper()}_MODEL"
-    result = dispatch(launcher, model, CODEX_ASTRA_REASON=REASON, **{option: ""})
-    check_rejected(result, tmp_path)
-    assert f"拒否: 設定から astra が選ばれました。astra は {option} で明示してください。" in result.stderr.splitlines()
-    argv, isolated, config, auth_exists, env_keys = json.loads((tmp_path / "probe").read_text())
-    assert argv[argv.index("--disable") + 1] == "plugins"
-    assert Path(isolated) != tmp_path / "original"
-    assert not Path(isolated).exists()
-    assert not config and not auth_exists
-    assert not {"OPENAI_API_KEY", "GH_TOKEN", "CODEX_ASTRA_REASON"}.intersection(env_keys)
-    assert (tmp_path / "original" / "auth.json").read_text() == "synthetic token"
-
-
-@pytest.mark.parametrize("launcher", ["impl", "review"])
-@pytest.mark.parametrize("model", [SOL, TERRA])
-def test_empty_model_dispatches_configured_sol_or_terra(dispatch, tmp_path, launcher, model):
-    result = dispatch(launcher, model, **{f"CODEX_{launcher.upper()}_MODEL": ""})
-    check_dispatch(result, tmp_path, launcher, model)
-    assert (tmp_path / "probe").exists()
 
 
 def test_explicit_model_skips_rpc_and_design_first_round_is_proven(dispatch, tmp_path):
@@ -224,16 +203,6 @@ def test_existing_must_only_round_blocks_astra_even_with_reason(dispatch, tmp_pa
     check_rejected(result, tmp_path, prior=(earlier,))
     assert earlier.read_text() == snapshot
     assert "Must 解消だけ" in result.stderr
-
-
-@pytest.mark.parametrize("reply", ["null", "invalid", "timeout", "gpt-6.2-ast\0ra"],
-                         ids=["null", "invalid", "timeout", "nul-in-model"])
-def test_missing_or_failed_resolution_stops_before_impl_aws(dispatch, tmp_path, reply):
-    result = dispatch("impl", reply, CODEX_IMPL_MODEL="")
-    check_rejected(result, tmp_path)
-    assert "CODEX_IMPL_MODEL" in result.stderr
-    if reply == "timeout":
-        assert "時間切れ" in result.stderr
 
 
 def test_review_dry_run_skips_resolution_and_dispatch(dispatch, tmp_path):

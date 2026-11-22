@@ -166,9 +166,9 @@ def test_cli_generated_prompt_requires_evidence_for_must(fake_bin: Path, tmp_pat
 
 
 @pytest.mark.parametrize(("model", "expected_model"),
-                         [(None, "gpt-6.2-sol"), ("", "gpt-6.1-terra")],
-                         ids=["unset", "empty"])
-def test_cli_default_model_and_unset_effort(
+                         [("gpt-6.2-sol", "gpt-6.2-sol"), ("gpt-6.1-terra", "gpt-6.1-terra")],
+                         ids=["sol", "terra"])
+def test_cli_explicit_model_and_unset_effort(
     fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str | None, expected_model: str
 ):
     monkeypatch.setenv("CODEX_REVIEW_MODEL", "inherited-model")

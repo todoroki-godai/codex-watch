@@ -202,19 +202,11 @@ def astra_reason(model, raw, kind="", gate_json="", must_only="no"):
 
 def main():
     workdir, model, model_option, *review = sys.argv[1:]
-    if not model:
-        try:
-            model = resolve_model(workdir)
-        except TimeoutError:
-            print(f"拒否: モデルの設定照会が時間切れです。{model_option} でモデルを明示してください。", file=sys.stderr)
-            return 2
-        except (OSError, ValueError, FilterError, KeyError, TypeError, AttributeError):
-            # Native errors and TOML diagnostics can include values from configuration.
-            print(f"拒否: モデルを安全に確定できません。{model_option} でモデルを明示してください。", file=sys.stderr)
-            return 2
-        if ASTRA_MODEL.fullmatch(model.strip().casefold()):
-            print(f"拒否: 設定から astra が選ばれました。astra は {model_option} で明示してください。", file=sys.stderr)
-            return 2
+    if not model.strip():
+        print(f"拒否: モデルの指定がありません。{model_option} を付けて起動し直してください。", file=sys.stderr)
+        print("通常は gpt-6.1-terra、大事な場面・難しい作業は gpt-6.2-sol、", file=sys.stderr)
+        print("全体の設計・設計し直しは astra（理由の指定が必要）を使用してください。", file=sys.stderr)
+        return 2
     if not valid_model(model):
         print(f"拒否: {model_option} には有効なモデル名を1行で指定してください。", file=sys.stderr)
         return 2
