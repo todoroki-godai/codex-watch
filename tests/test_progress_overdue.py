@@ -256,7 +256,7 @@ def test_hint_tail_excludes_old_data(watch):
 def test_actual_time_limit(watch, sandbox):
     tmp, fake, state, env = sandbox
     real_python = shutil.which('python3')
-    executable(fake / 'python3', f"if [ \"$#\" -eq 2 ]; then sed '/signal.alarm(10)/a\\\nimport time; time.sleep(11)' | {real_python} \"$@\"; else exec {real_python} \"$@\"; fi\n")
+    executable(fake / 'python3', f"if [ \"$#\" -eq 2 ]; then sed '/^environment = re.compile/a\\\nimport time; time.sleep(11)' | {real_python} \"$@\"; else exec {real_python} \"$@\"; fi\n")
     r, marker = watch()
     assert r.returncode == 0 and marker.exists()
     assert len(r.stdout.splitlines()) == 1
