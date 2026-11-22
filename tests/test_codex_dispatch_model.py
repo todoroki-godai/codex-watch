@@ -18,6 +18,10 @@ SOL = "gpt-6.2-sol"
 TERRA = "gpt-6.1-terra"
 REASON = "③ 永続データ移行の復元手順に波及する"
 FIRST_DESIGN = "① データ復元設計の境界を検討する"
+LOCAL_TEST_LINE = (
+    "手元で回す試験は、変えたファイルとその近くの試験・依存先込みの lint/typecheck だけ。"
+    "パッケージ全体・リポジトリ全体の試験は頭が AWS で回すので回さない（依頼文が明示的に求めた場合を除く）。"
+)
 
 
 @pytest.fixture()
@@ -29,7 +33,7 @@ def dispatch(tmp_path, fake_bin):
     work = tmp_path / "work"
     work.mkdir()
     _init_git_repo(work)
-    prompt = tmp_path / "prompt"
+    prompt = tmp_path / "prompt with spaces.md"
     prompt.write_text("直しの出所: なし\n点検:\n- 突き合わせ: 済\n- 出所の付記: 済\n"
                       "- 直し残しの検索: 済\n- Must: 済\n")
     body = tmp_path / "body"
@@ -60,7 +64,7 @@ if sys.argv[1] == "app-server":
         model = None if mode == "null" else mode
         print(json.dumps({{"id": 2, "result": {{"config": {{"model": model}}}}}}), flush=True)
 elif sys.argv[1] == "exec":
-    sys.stdin.read()
+    (root / "stdin").write_bytes(sys.stdin.buffer.read())
     seen = root / "exec.tmp"
     seen.write_text(json.dumps([sys.argv[1:], sorted(os.environ)]))
     seen.rename(root / "exec")
@@ -78,7 +82,9 @@ else:
                CODEX_REVIEW_KIND_LABEL="設計", REVIEW_TARGET="issue:example-org/example-repo#1",
                REVIEW_GOAL_CUT=VALID_GOAL_CUT)
 
-    def run(launcher, model_reply=TERRA, **settings):
+    def run(launcher, model_reply=TERRA, *, prompt_bytes=None, **settings):
+        if prompt_bytes is not None:
+            prompt.write_bytes(prompt_bytes)
         (tmp_path / "reply").write_text(model_reply)
         return subprocess.run([str(BIN_DIR / f"codex-{launcher}"), str(work), str(prompt)],
                               env=dict(env, **settings), capture_output=True, text=True, timeout=12)
@@ -104,8 +110,8 @@ def check_dispatch(result, path, launcher, model, reason=None):
         guidance = ("既定は sol。全体の設計・レビューの繰り返し・設計し直しは astra、"
                     "軽い確認だけなら terra を CODEX_REVIEW_MODEL で指定")
     else:
-        guidance = ("既定は terra。難しい作業は sol、全体の設計・レビューの繰り返し・"
-                    "設計し直しは astra を CODEX_IMPL_MODEL で指定")
+        guidance = ("既定は sol。機械的な作業は luna / terra、全体の設計・レビューの"
+                    "繰り返し・設計し直しは astra を CODEX_IMPL_MODEL で指定")
     assert model_lines == [f"モデル: {model}（{guidance}）"]
     return state
 
@@ -117,11 +123,24 @@ def check_rejected(result, path, prior=()):
     assert tuple((path / "state").glob("*")) == prior
 
 
-@pytest.mark.parametrize(("launcher", "expected_model"), [("impl", TERRA), ("review", SOL)])
+@pytest.mark.parametrize(("launcher", "expected_model"), [("impl", SOL), ("review", SOL)])
 def test_unset_model_uses_launcher_default_without_config_probe(dispatch, tmp_path, launcher, expected_model):
     result = dispatch(launcher, ASTRA)
     check_dispatch(result, tmp_path, launcher, expected_model)
     assert not (tmp_path / "probe").exists()
+
+
+@pytest.mark.parametrize("body", [
+    "直しの出所: なし\n　日本語と `$(exit 99)`\n\n",
+    "直しの出所: なし\r\n依頼文はパッケージ全体の試験を明示的に求める",
+    f"直しの出所: なし\n{LOCAL_TEST_LINE}\n" + "詳細 " * 24_000 + "\n",
+], ids=["utf8-with-trailing-newlines", "crlf-without-final-newline", "large-with-existing-line"])
+def test_impl_prepends_local_test_line_to_child_stdin(dispatch, tmp_path, body):
+    original = body.encode("utf-8")
+    result = dispatch("impl", prompt_bytes=original)
+    state = check_dispatch(result, tmp_path, "impl", SOL)
+    assert (tmp_path / "stdin").read_bytes() == (LOCAL_TEST_LINE + "\n").encode("utf-8") + original
+    assert Path(state["prompt"]).read_bytes() == original
 
 
 @pytest.mark.parametrize("launcher", ["impl", "review"])

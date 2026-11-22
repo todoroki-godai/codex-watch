@@ -264,7 +264,7 @@ def test_positive_permissions_environment(launch):
         assert '--profile' not in process
     assert env['AWS_REGION'] == 'ap-northeast-1'
     assert env['AWS_EC2_METADATA_DISABLED'] == 'true'
-    assert argv[argv.index('-m')+1] == 'gpt-6.1-terra'
+    assert argv[argv.index('-m')+1] == 'gpt-6.2-sol'
     assert fields['mode'] == 'workspace-write'
 
 

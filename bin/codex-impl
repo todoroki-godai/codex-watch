@@ -144,9 +144,9 @@ if [[ "${CODEX_IMPL_ALLOW_MISSING_NODE_MODULES:-0}" != "1" ]]; then
   fi
 fi
 
-# 未設定なら terra。空文字を指定したときだけ Codex の設定を読む。
+# 未設定なら sol。空文字を指定したときだけ Codex の設定を読む。
 MODEL_PREFLIGHT="$(CODEX_ASTRA_REASON="$ASTRA_REASON_INPUT" python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_dispatch_model.py" \
-  "$WORKDIR" "${CODEX_IMPL_MODEL-gpt-6.1-terra}" CODEX_IMPL_MODEL)" || exit 2
+  "$WORKDIR" "${CODEX_IMPL_MODEL-gpt-6.2-sol}" CODEX_IMPL_MODEL)" || exit 2
 ASTRA_REASON="${MODEL_PREFLIGHT%%$'\n'*}"
 REQUESTED_MODEL="${MODEL_PREFLIGHT#*$'\n'}"
 unset ASTRA_REASON_INPUT MODEL_PREFLIGHT
@@ -223,9 +223,11 @@ prepare_codex_launch_skills "$WORKDIR" no exec -C "$WORKDIR" \
   ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} \
   ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" -
 
-printf 'モデル: %s（既定は terra。難しい作業は sol、全体の設計・レビューの繰り返し・設計し直しは astra を CODEX_IMPL_MODEL で指定）\n' "$REQUESTED_MODEL" >&2
-# パイプを挟まずファイルへ直書きする（パイプの右側はEOFまでバッファするため進行中に観測できない）。
-nohup codex exec -C "$WORKDIR" ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$PROMPT_FILE" > "$LOG_FILE" 2>&1 &
+printf 'モデル: %s（既定は sol。機械的な作業は luna / terra、全体の設計・レビューの繰り返し・設計し直しは astra を CODEX_IMPL_MODEL で指定）\n' "$REQUESTED_MODEL" >&2
+# 先に原本を stdin に開き、注記と原本を順に渡す。出力は進行中に読めるようログへ直書きする。
+nohup codex exec -C "$WORKDIR" ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - \
+  < "$PROMPT_FILE" < <(printf '%s\n' '手元で回す試験は、変えたファイルとその近くの試験・依存先込みの lint/typecheck だけ。パッケージ全体・リポジトリ全体の試験は頭が AWS で回すので回さない（依頼文が明示的に求めた場合を除く）。' && cat) \
+  > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
 # 実効値（実際に起動された model / effort）はここでは解決しない・待たない。
