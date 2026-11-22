@@ -112,9 +112,11 @@ def launch(sandbox):
 def test_estimate_record(launch, body, override, expected):
     value, r = launch(body, override)
     assert value == expected
-    assert len(r.stderr.splitlines()) == (0 if expected else 1)
+    *warnings, model_notice = r.stderr.splitlines()
+    assert model_notice.startswith('モデル: ')
+    assert len(warnings) == (0 if expected else 1)
     if not expected:
-        assert r.stderr.startswith('警告:')
+        assert warnings[0].startswith('警告:')
 
 
 @pytest.fixture

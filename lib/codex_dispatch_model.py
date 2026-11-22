@@ -212,6 +212,9 @@ def main():
             # Native errors and TOML diagnostics can include values from configuration.
             print(f"拒否: モデルを安全に確定できません。{model_option} でモデルを明示してください。", file=sys.stderr)
             return 2
+        if ASTRA_MODEL.fullmatch(model.strip().casefold()):
+            print(f"拒否: 設定から astra が選ばれました。astra は {model_option} で明示してください。", file=sys.stderr)
+            return 2
     if not valid_model(model):
         print(f"拒否: {model_option} には有効なモデル名を1行で指定してください。", file=sys.stderr)
         return 2
