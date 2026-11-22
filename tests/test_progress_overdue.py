@@ -327,8 +327,10 @@ def test_tail_starts_at_line_boundary(watch):
     assert '関連 1行' in r.stdout
 
 
-def test_marker_write_failure_still_notifies(watch, sandbox):
+def test_marker_write_failure_does_not_notify(watch, sandbox):
+    # 本線と同じ動き: 知らせ済みの印を残せないなら知らせない（張り直しのたびに同じ知らせが重ならないため）。
     executable(sandbox[1] / 'touch', 'exit 1\n')
-    r, marker = watch()
-    assert r.returncode == 0 and not marker.exists()
-    assert len(r.stdout.splitlines()) == 1 and r.stdout.startswith('OVERDUE:')
+    for _ in range(2):
+        r, marker = watch()
+        assert r.returncode != 0 and not marker.exists()
+        assert 'OVERDUE:' not in r.stdout

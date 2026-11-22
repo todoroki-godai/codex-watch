@@ -185,7 +185,7 @@ PYHINTS
       else
         hints='手がかり: 数えられず（一時）'
       fi
-      touch "$OVERDUE_FILE" 2>/dev/null || true
+      touch "$OVERDUE_FILE"
       echo "OVERDUE: $RUN_ID 見込み${ESTIMATE_MIN}分の2倍を超過（経過${overdue_elapsed}分）。git log・status と出力を読んで判断する／${hints}"
       exit 0
     fi
