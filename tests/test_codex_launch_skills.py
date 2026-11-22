@@ -187,7 +187,7 @@ def test_off_adds_no_skill_args(launch, kind):
         "-c", 'shell_environment_policy.ignore_default_excludes=true',
         "-c", 'shell_environment_policy.set.AWS_PROFILE="codex-dev"',
         "-c", 'permissions.codex-impl-dev.filesystem={"~/.aws"="deny"}',
-        "-m", "gpt-6.2-sol", "-c", 'model_reasoning_effort="medium"',
+        "-m", "gpt-6.1-terra", "-c", 'model_reasoning_effort="medium"',
     ]
     assert args == [*common, *options, "-o", args[-2], "-"]
     assert not (root / "version-called").exists()

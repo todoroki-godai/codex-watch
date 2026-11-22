@@ -160,14 +160,15 @@ def test_cli_generated_prompt_requires_evidence_for_must(fake_bin: Path, tmp_pat
     assert prompt.index(conditions) < prompt.index("dummy prompt")
 
 
-def test_cli_unset_model_and_effort_use_config_defaults(
-    fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("model", [None, ""], ids=["unset", "empty"])
+def test_cli_default_model_and_unset_effort(
+    fake_bin: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str | None
 ):
     monkeypatch.setenv("CODEX_REVIEW_MODEL", "inherited-model")
     monkeypatch.setenv("CODEX_REVIEW_EFFORT", "high")
     result = _run(
         fake_bin, tmp_path, review_target="issue:example-org/example-repo#1",
-        review_goal_cut=VALID_GOAL_CUT, gate_check=False, model=None,
+        review_goal_cut=VALID_GOAL_CUT, gate_check=False, model=model,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     capture = tmp_path / "argv.txt"

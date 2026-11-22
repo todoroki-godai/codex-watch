@@ -1,4 +1,4 @@
-"""Launcher regressions for Astra preflight. Every external command is a stub."""
+"""Launcher regressions for model selection and Astra preflight."""
 import json
 import os
 from pathlib import Path
@@ -14,6 +14,7 @@ from test_codex_review_cli import (
 )
 
 ASTRA = "gpt-6.2-astra"
+SOL = "gpt-6.2-sol"
 TERRA = "gpt-6.1-terra"
 REASON = "③ 永続データ移行の復元手順に波及する"
 FIRST_DESIGN = "① データ復元設計の境界を検討する"
@@ -85,7 +86,7 @@ else:
     return run
 
 
-def check_dispatch(result, path, model, reason=None):
+def check_dispatch(result, path, launcher, model, reason=None):
     assert result.returncode == 0, result.stderr
     deadline = time.monotonic() + 2
     while not (path / "exec").exists() and time.monotonic() < deadline:
@@ -98,6 +99,11 @@ def check_dispatch(result, path, model, reason=None):
                  (path / "state" / f"{run_id}.state").read_text().splitlines())
     assert state["run_id"] == run_id
     assert state["requested_model"] == model and state.get("astra_reason") == reason
+    model_lines = [line for line in result.stderr.splitlines() if line.startswith("モデル: ")]
+    assert model_lines == [
+        f"モデル: {model}（既定は terra。難しい作業は sol、全体の設計・レビューの繰り返し・"
+        f"設計し直しは astra を CODEX_{launcher.upper()}_MODEL で指定）"
+    ]
     return state
 
 
@@ -108,10 +114,37 @@ def check_rejected(result, path, prior=()):
     assert tuple((path / "state").glob("*")) == prior
 
 
-@pytest.mark.parametrize(("launcher", "model_env"), [("review", {}), ("impl", {"CODEX_IMPL_MODEL": ""})])
-def test_resolved_astra_is_pinned_and_reason_stays_in_state(dispatch, tmp_path, launcher, model_env):
-    result = dispatch(launcher, ASTRA, CODEX_ASTRA_REASON=REASON, **model_env)
-    check_dispatch(result, tmp_path, ASTRA, REASON)
+@pytest.mark.parametrize("launcher", ["impl", "review"])
+def test_unset_model_uses_terra_without_config_probe(dispatch, tmp_path, launcher):
+    result = dispatch(launcher, ASTRA)
+    check_dispatch(result, tmp_path, launcher, TERRA)
+    assert not (tmp_path / "probe").exists()
+
+
+@pytest.mark.parametrize("launcher", ["impl", "review"])
+@pytest.mark.parametrize("model", [SOL, ASTRA, ASTRA.upper()])
+def test_explicit_model_is_preserved(dispatch, tmp_path, launcher, model):
+    reason = None if model == SOL else REASON
+    result = dispatch(launcher, CODEX_ASTRA_REASON=reason or "",
+                      **{f"CODEX_{launcher.upper()}_MODEL": model})
+    check_dispatch(result, tmp_path, launcher, model, reason)
+    assert not (tmp_path / "probe").exists()
+
+
+@pytest.mark.parametrize("launcher", ["impl", "review"])
+def test_whitespace_only_model_is_rejected_without_config_probe(dispatch, tmp_path, launcher):
+    option = f"CODEX_{launcher.upper()}_MODEL"
+    result = dispatch(launcher, **{option: " \t　"})
+    check_rejected(result, tmp_path)
+    assert f"{option} には有効なモデル名" in result.stderr
+    assert not (tmp_path / "probe").exists()
+
+
+@pytest.mark.parametrize("launcher", ["impl", "review"])
+def test_empty_model_resolves_astra_and_keeps_reason_in_state(dispatch, tmp_path, launcher):
+    result = dispatch(launcher, ASTRA, CODEX_ASTRA_REASON=REASON,
+                      **{f"CODEX_{launcher.upper()}_MODEL": ""})
+    check_dispatch(result, tmp_path, launcher, ASTRA, REASON)
     argv, isolated, config, auth_exists, env_keys = json.loads((tmp_path / "probe").read_text())
     assert argv[argv.index("--disable") + 1] == "plugins"
     assert Path(isolated) != tmp_path / "original"
@@ -123,14 +156,16 @@ def test_resolved_astra_is_pinned_and_reason_stays_in_state(dispatch, tmp_path, 
 
 def test_explicit_model_skips_rpc_and_design_first_round_is_proven(dispatch, tmp_path):
     result = dispatch("review", CODEX_REVIEW_MODEL=ASTRA, CODEX_ASTRA_REASON=FIRST_DESIGN)
-    state = check_dispatch(result, tmp_path, ASTRA, FIRST_DESIGN)
+    state = check_dispatch(result, tmp_path, "review", ASTRA, FIRST_DESIGN)
     assert state["round"] == "1"
     assert not (tmp_path / "probe").exists()
 
 
+@pytest.mark.parametrize("launcher", ["impl", "review"])
 @pytest.mark.parametrize("reason", ["", "③", "③　", "③ 要件\u2028injected=1"])
-def test_astra_family_rejects_missing_or_non_line_reason(dispatch, tmp_path, reason):
-    result = dispatch("impl", CODEX_IMPL_MODEL="GPT-6.2-ASTRA-2026-11-21", CODEX_ASTRA_REASON=reason)
+def test_astra_family_rejects_missing_or_non_line_reason(dispatch, tmp_path, launcher, reason):
+    result = dispatch(launcher, CODEX_ASTRA_REASON=reason,
+                      **{f"CODEX_{launcher.upper()}_MODEL": "GPT-6.2-ASTRA-2026-11-21"})
     check_rejected(result, tmp_path)
     assert "CODEX_ASTRA_REASON" in result.stderr
     assert not (tmp_path / "probe").exists()
@@ -173,6 +208,7 @@ def test_review_dry_run_skips_resolution_and_dispatch(dispatch, tmp_path):
     result = dispatch("review", CODEX_REVIEW_GATE_CHECK="1")
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["total_round"] == 1
+    assert "モデル: " not in result.stderr
     assert not (tmp_path / "probe").exists()
     assert not (tmp_path / "exec").exists()
     assert not list((tmp_path / "state").glob("*"))
