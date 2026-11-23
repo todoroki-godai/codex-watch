@@ -45,12 +45,27 @@ def log_header(path):
 
 
 def find_rollout(sessions, session_id):
-    if session_id:
-        for suffix in (".jsonl", ".jsonl.zst"):
-            found = next(sessions.rglob(f"rollout-*{session_id}{suffix}"), None)
-            if found is not None:
-                return found
-    return None
+    return find_rollouts(sessions, {session_id}).get(session_id) if session_id else None
+
+
+def find_rollouts(sessions, session_ids):
+    """Match rollout filenames in one traversal per suffix; prefer the plain file."""
+    remaining = set(session_ids)
+    result = {}
+    lengths = {len(session_id) for session_id in remaining}
+    for suffix in (".jsonl", ".jsonl.zst"):
+        if not remaining:
+            break
+        for path in sessions.rglob(f"rollout-*{suffix}"):
+            stem = path.name[len("rollout-"):-len(suffix)]
+            for length in lengths:
+                session_id = stem[-length:]
+                if session_id in remaining:
+                    result[session_id] = path
+                    remaining.remove(session_id)
+            if not remaining:
+                break
+    return result
 
 
 def records(path):
