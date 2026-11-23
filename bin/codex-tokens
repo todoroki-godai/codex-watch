@@ -20,7 +20,7 @@ JST = dt.timezone(dt.timedelta(hours=9), "JST")
 UNKNOWN = "不明"
 READ_COMMANDS = {"cat", "sed", "head", "tail", "rg", "grep", "ls", "find"}
 TEST_COMMANDS = {"pytest", "vitest", "jest"}
-OUTPUT_KINDS = ("read", "test", "other")
+OUTPUT_KINDS = ("read", "test", "mixed", "other")
 
 
 def command_kind(command):
@@ -50,8 +50,35 @@ def command_kind(command):
     return "other"
 
 
+
+def exec_kind(source):
+    # Match literal JavaScript strings; dynamic expressions cannot be classified.
+    pattern = r"\bexec_command\s*\(\s*\{\s*cmd\s*:\s*([\"'`])((?:\\.|(?!\1)[^\\])*)\1"
+    commands = re.findall(pattern, source, re.DOTALL)
+    kinds = set()
+    for _, command in commands:
+        try:
+            lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|")
+            lexer.whitespace_split = True
+            words = []
+            for word in list(lexer) + [";"]:
+                if word and all(char in ";&|" for char in word):
+                    if words and words[0] != "cd":
+                        kinds.add(command_kind(words))
+                    words = []
+                else:
+                    words.append(word)
+        except ValueError:
+            kinds.add("other")
+    if not kinds:
+        return "other"
+    return kinds.pop() if len(kinds) == 1 else "mixed"
+
 def tool_kind(payload):
     name = payload.get("name", "")
+    if payload.get("type") == "custom_tool_call" and name == "exec":
+        source = payload.get("input", "")
+        return exec_kind(source) if isinstance(source, str) else "other"
     raw = payload.get("arguments", payload.get("input", ""))
     if name not in {"exec_command", "shell_command", "shell", "exec"}:
         return command_kind(name)
@@ -179,7 +206,7 @@ def main():
     print("週\tモデル\t起動口\t版\tskill 絞り込み\t件数\t要求回数\t"
           "初回入力トークン\t初回入力トークン（キャッシュ抜き）\t"
           "入力合計トークン\t入力合計トークン（キャッシュ抜き）\t出力合計トークン\t"
-          "読みバイト（推定）\t試験バイト（推定）\tその他バイト（推定）")
+          "読みバイト（推定）\t試験バイト（推定）\t混在バイト（推定）\tその他バイト（推定）")
     for group, values in sorted(groups.items()):
         print(*group, len(values), *(median_total(metric) for metric in zip(*values)), sep="\t")
     print(f"走行中\t{active}\n記録なし\t{missing}\n状態欄なし\t{missing_fields}")
