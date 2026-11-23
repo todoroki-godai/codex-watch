@@ -15,7 +15,7 @@ import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 
-CLI_VERSION = "0.169.1"
+CLI_VERSION = "0.171.0"
 SCAN_TIMEOUT = 15
 SYSTEM_CONFIG = Path("/etc/codex")
 REMOTE_MARKETPLACE = "openai-curated-remote"

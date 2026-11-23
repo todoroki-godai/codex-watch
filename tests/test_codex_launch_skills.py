@@ -29,7 +29,7 @@ if args == ['--version']:
     if variant == 'version-exit-error':
         sys.exit(7)
     print('unknown' if variant == 'bad-version' else
-          'codex-cli 0.169.2' if variant == 'new-version' else 'codex-cli 0.169.1')
+          'codex-cli 0.171.1' if variant == 'new-version' else 'codex-cli 0.171.0')
 elif args[0] == 'exec':
     payload = {'argv': args, 'prompt': sys.stdin.read()}
     (root / 'capture.tmp').write_text(json.dumps(payload))
@@ -253,7 +253,7 @@ def assert_skip_state(root, result, reason):
 
 @pytest.mark.parametrize("kind", ["impl", "review"])
 @pytest.mark.parametrize(("variant", "version", "reason"), [
-    ("new-version", "0.169.2", "未検証の版"),
+    ("new-version", "0.171.1", "未検証の版"),
     ("bad-version", "版不明", "版を識別できません"),
     ("version-exit-error", "版不明", "版を識別できません"),
 ], ids=["new-version", "bad-version", "version-exit-error"])
@@ -562,7 +562,7 @@ def test_unreadable_directory_launches_without_filter(launch, kind):
             result = run(kind)
             assert configs(child(result)) == {}
             assert str(path) in result.stderr and "読み取り" in result.stderr
-            assert "0.169.1" in result.stderr and "codex --version" in result.stderr
+            assert "0.171.0" in result.stderr and "codex --version" in result.stderr
             assert result.stderr.startswith("警告:")
             assert len([line for line in result.stderr.splitlines() if "絞り込み" in line]) == 1
             assert_skip_state(root, result, "inventory_unreadable")
