@@ -1,4 +1,5 @@
 """Both launchers with a fake Codex, credentials and HOME."""
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -20,7 +21,7 @@ dummy prompt
 - 直し残しの検索: 確認済
 """
 FAKE_CODEX = r'''
-import json, pathlib, sys
+import json, os, pathlib, subprocess, sys, time
 root = pathlib.Path(__file__).resolve().parent.parent
 args = sys.argv[1:]
 variant = (root / 'variant').read_text()
@@ -31,7 +32,31 @@ if args == ['--version']:
     print('unknown' if variant == 'bad-version' else
           'codex-cli 0.171.1' if variant == 'new-version' else 'codex-cli 0.171.0')
 elif args[0] == 'exec':
-    payload = {'argv': args, 'prompt': sys.stdin.read()}
+    payload = {'argv': args, 'prompt': sys.stdin.read(),
+               'cwd': os.getcwd(), 'codex_home': os.environ['CODEX_HOME'], 'executable': sys.argv[0]}
+    if '-o' not in args:
+        with (root / 'probe-calls').open('a') as stream:
+            stream.write(json.dumps(payload) + '\n')
+        plan = json.loads((root / 'probe-plan').read_text())
+        if plan.get('timeout'):
+            subprocess.Popen([sys.executable, '-c',
+                              'import time; time.sleep(1.5); open("probe-orphan", "w").close()'],
+                             cwd=root)
+            time.sleep(5)
+        session = '019a0000-0000-7000-8000-000000000001'
+        print(f'session id: {session}')
+        if plan.get('messages') is not None:
+            path = pathlib.Path(os.environ['CODEX_HOME']) / f'sessions/2026/11/23/rollout-2026-11-23T00-00-00-{session}.jsonl'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(''.join(json.dumps({
+                'type': 'response_item', 'payload': {
+                    'type': 'message', 'role': role,
+                    'content': [{'type': 'input_text', 'text': message}],
+                },
+            }) + '\n' for role, message in plan['messages']))
+        sys.exit(plan.get('exit', 0))
+    with (root / 'launch-calls').open('a') as stream:
+        stream.write(json.dumps(payload) + '\n')
     (root / 'capture.tmp').write_text(json.dumps(payload))
     (root / 'capture.tmp').replace(root / 'capture')
     if variant == 'child-error':
@@ -93,7 +118,7 @@ else:
         path.symlink_to(target, target_is_directory=True)
         return path
 
-    env = dict(HOME=str(home), PATH=f"{fake}:{os.environ['PATH']}",
+    env = dict(HOME=str(home), CODEX_HOME=str(codex_home), PATH=f"{fake}:{os.environ['PATH']}",
                CODEX_WATCH_DIR=str(root / "state"), CODEX_SUMMARY="#0",
                CODEX_IMPL_ALLOW_MAIN="1", CODEX_IMPL_ALLOW_MISSING_NODE_MODULES="1", CODEX_IMPL_MODEL="gpt-6.2-sol",
                CODEX_REVIEW_KIND_LABEL="コード", CODEX_REVIEW_NO_GATE="local test", CODEX_REVIEW_MODEL='gpt-6.2-sol',
@@ -190,7 +215,8 @@ def test_off_adds_no_skill_args(launch, kind):
         "-m", "gpt-6.2-sol", "-c", 'model_reasoning_effort="medium"',
     ]
     assert args == [*common, *options, "-o", args[-2], "-"]
-    assert not (root / "version-called").exists()
+    assert (root / "version-called").exists()
+    assert not (root / "probe-calls").exists()
 
 
 @pytest.mark.parametrize("direction", ["into-agents", "out-of-agents"])
@@ -236,7 +262,7 @@ def test_review_rechecks_nested_alias_after_keep_paths(launch, variant, target, 
         alias.symlink_to({str(replacement.parent)!r}, target_is_directory=True)
 {marker}"""))
 
-    result = run("review", variant, CODEX_SKILLS_ALLOW="extra")
+    result = run("review", variant, CODEX_SKILLS_ALLOW="extra", CODEX_SKILLS_AUTOVERIFY="off")
     assert alias.resolve() == replacement.parent
     assert result.returncode == 2, result.stderr
     assert "extra" in result.stderr and reason in result.stderr
@@ -260,7 +286,7 @@ def assert_skip_state(root, result, reason):
 def test_unverified_version_launches_without_filter(launch, kind, variant, version, reason):
     root, skill, _, run, child = launch
     skill("unlisted", "home/.codex/skills/unlisted/SKILL.md")
-    result = run(kind, variant)
+    result = run(kind, variant, CODEX_SKILLS_AUTOVERIFY="off")
     assert configs(child(result)) == {}
     assert result.stderr.startswith("警告: skill と記憶の絞り込みを省略"), result.stderr
     assert len([line for line in result.stderr.splitlines() if "絞り込み" in line]) == 1
@@ -271,7 +297,7 @@ def test_unverified_version_launches_without_filter(launch, kind, variant, versi
 def test_unverified_version_skips_inventory_for_ordinary_launch(launch):
     root, _, _, run, child = launch
     (root / "home/.codex/skills").write_text("private fixture content")
-    result = run("impl", "new-version")
+    result = run("impl", "new-version", CODEX_SKILLS_AUTOVERIFY="off")
     assert configs(child(result)) == {}
     assert "未検証の版" in result.stderr and "読み取り失敗" not in result.stderr
     assert_skip_state(root, result, "unverified_version")
@@ -280,7 +306,7 @@ def test_unverified_version_skips_inventory_for_ordinary_launch(launch):
 def test_unverified_version_checks_safe_review_addition(launch):
     root, skill, _, run, child = launch
     skill("extra", "home/.codex/skills/extra/SKILL.md")
-    result = run("review", "new-version", CODEX_SKILLS_ALLOW="extra")
+    result = run("review", "new-version", CODEX_SKILLS_ALLOW="extra", CODEX_SKILLS_AUTOVERIFY="off")
     observed = child(result)
     assert configs(observed) == {}
     assert "を読み込んではならない" in observed["prompt"]
@@ -307,7 +333,7 @@ def test_file_at_skill_location_launches_without_filter(launch, kind):
     assert "ディレクトリではありません" in result.stderr
     assert "private fixture content" not in result.stderr
     assert len([line for line in result.stderr.splitlines() if "絞り込み" in line]) == 1
-    assert_skip_state(root, result, "inventory_unreadable")
+    assert_skip_state(root, result, "unverified_version")
 
 
 @pytest.mark.parametrize("kind", ["impl", "review"])
@@ -322,7 +348,7 @@ def test_unsupported_skill_header_launches_without_filter(launch, kind):
     warnings = [line for line in result.stderr.splitlines() if "絞り込み" in line]
     assert len(warnings) == 1 and warnings[0].startswith("警告:")
     assert str(path) in warnings[0] and "見出しを解決できません" in warnings[0]
-    assert_skip_state(root, result, "inventory_unreadable")
+    assert_skip_state(root, result, "unverified_version")
 
 
 @pytest.mark.parametrize("variant", ["verified", "new-version"])
@@ -478,7 +504,7 @@ def test_unreadable_remote_cache_launches_without_filter(launch, shape):
         assert configs(child(result)) == {}
         assert result.stderr.startswith("警告:")
         assert str(cache) in result.stderr
-        assert_skip_state(root, result, "inventory_unreadable")
+        assert_skip_state(root, result, "unverified_version")
     finally:
         if shape == "unreadable":
             cache.chmod(0o700)
@@ -565,7 +591,7 @@ def test_unreadable_directory_launches_without_filter(launch, kind):
             assert "0.171.0" in result.stderr and "codex --version" in result.stderr
             assert result.stderr.startswith("警告:")
             assert len([line for line in result.stderr.splitlines() if "絞り込み" in line]) == 1
-            assert_skip_state(root, result, "inventory_unreadable")
+            assert_skip_state(root, result, "unverified_version")
         finally:
             path.chmod(0o700)
 
@@ -590,3 +616,215 @@ def test_review_rejects_case_alias_on_case_insensitive_home(launch):
     assert result.returncode != 0
     assert "CODEX_REVIEW_ALLOW_SKILLS=1" in result.stderr
     assert not (root / "capture").exists()
+
+
+def skills_message(*pairs, alias_dir=None):
+    lines = ["<skills_instructions>", "## Skills"]
+    if alias_dir is not None:
+        lines.extend(["### Skill roots", f"- `r0` = `{alias_dir}`"])
+    lines.append("### Available skills")
+    lines.extend(f"- {name}: fixture (file: {path})" for name, path in pairs)
+    return "\n".join([*lines, "</skills_instructions>"])
+
+
+def plan_probe(root, messages=None, **options):
+    (root / "probe-plan").write_text(json.dumps({"messages": messages, **options}))
+
+
+def version_file(root):
+    return root / "state/cli-versions/0.171.1.json"
+
+
+def state_fields(root, result):
+    return dict(line.split("=", 1) for line in
+                (root / "state" / (result.stdout.strip() + ".state")).read_text().splitlines()
+                if "=" in line)
+
+
+def check_launch(root, result, child, status, count, *, version="0.171.1"):
+    observed = child(result)
+    fields = state_fields(root, result)
+    assert fields["cli_version"] == version
+    assert fields["launch_skills_filter"] == status
+    assert len((root / "launch-calls").read_text().splitlines()) == count
+    assert ("skills" in configs(observed)) == status.startswith("on")
+    return observed
+
+
+@pytest.mark.parametrize("kind", ["impl", "review"])
+def test_autoverify_exact_matches_and_reuses_result(launch, kind):
+    root, skill, link, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    dropped = skill("agent-browser", "home/.agents/skills/agent-browser.backup/SKILL.md")
+    # Exercise normalization as well as the role and first-message boundaries.
+    alias = link("outside/alias", kept.parent) / "SKILL.md"
+    plan_probe(root, [
+        ("user", skills_message()),
+        ("developer", "unrelated developer message"),
+        ("developer", skills_message(("agent-browser", f"r0/{alias.name}"), alias_dir=alias.parent)),
+        ("developer", skills_message(("agent-browser", dropped))),
+    ])
+    result = run(kind, "new-version")
+    observed = check_launch(root, result, child, "on:autoverified", 1)
+    assert configs(observed) == {"skills": {"config": [{"path": str(dropped), "enabled": False}]}}
+    probe, = map(json.loads, (root / "probe-calls").read_text().splitlines())
+    work = str(root / "project/nested")
+    assert probe["cwd"] == observed["cwd"]
+    assert probe["codex_home"] == observed["codex_home"] == str(root / "home/.codex")
+    assert probe["executable"] == observed["executable"] == str(root / "fake-bin/codex")
+    assert probe["argv"][:9] == [
+        "exec", "-C", work, "-s", "read-only", "-m", "gpt-6.1-terra",
+        "-c", 'model_reasoning_effort="low"',
+    ]
+    assert probe["argv"][-1] == "-"
+    assert configs(probe) == configs(observed)
+    assert "OK" in probe["prompt"] and probe["prompt"] not in observed["prompt"]
+    assert json.loads(version_file(root).read_text()) == {
+        "status": "verified", "probe_run": "019a0000-0000-7000-8000-000000000001", "transient": 0,
+    }
+
+    newer = skill("extra", "home/.codex/skills/new/SKILL.md")
+    result = run(kind, "new-version")
+    observed = check_launch(root, result, child, "on:autoverified", 2)
+    assert configs(observed) == {"skills": {"config": [
+        {"path": str(path), "enabled": False} for path in sorted([newer, dropped])
+    ]}}
+    assert len((root / "probe-calls").read_text().splitlines()) == 1
+
+
+@pytest.mark.parametrize("mode", ["verified", "filter-off", "autoverify-off"])
+def test_autoverify_bypass(launch, mode):
+    root, skill, _, run, child = launch
+    skill("unlisted", "home/.codex/skills/unlisted/SKILL.md")
+    variant, env, status, version = {
+        "verified": ("verified", {}, "on", "0.171.0"),
+        "filter-off": ("new-version", {"CODEX_SKILLS_FILTER": "off"}, "off", "0.171.1"),
+        "autoverify-off": ("new-version", {"CODEX_SKILLS_AUTOVERIFY": "off"},
+                           "skipped:unverified_version", "0.171.1"),
+    }[mode]
+    observed = check_launch(root, run("impl", variant, **env), child, status, 1, version=version)
+    assert ("memories" in configs(observed)) == (mode == "verified")
+    assert not (root / "probe-calls").exists()
+    assert not version_file(root).exists()
+
+
+@pytest.mark.parametrize("catalog", ["same-name-other-path", "empty", "omitted"])
+def test_autoverify_mismatch_is_final(launch, catalog):
+    root, skill, _, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    dropped = skill("agent-browser", "home/.agents/skills/agent-browser.backup/SKILL.md")
+    message = {
+        "same-name-other-path": skills_message(("agent-browser", dropped)),
+        "empty": skills_message(),
+        "omitted": skills_message(("agent-browser", kept)).replace(
+            "</skills_instructions>", "- 1 additional skill omitted from this bounded skills list.\n</skills_instructions>"
+        ),
+    }[catalog]
+    plan_probe(root, [("developer", message)])
+    for attempt in (1, 2):
+        result = run("impl", "new-version")
+        check_launch(root, result, child, "skipped:autoverify_failed", attempt)
+        warnings = [line for line in result.stderr.splitlines() if "自動確認" in line]
+        assert len(warnings) == (1 if attempt == 1 else 0)
+        assert len((root / "probe-calls").read_text().splitlines()) == 1
+    assert json.loads(version_file(root).read_text())["status"] == "failed"
+
+
+@pytest.mark.parametrize("problem", ["no-section", "no-record", "timeout", "no-removals", "nonzero"])
+def test_autoverify_transient_budget(launch, problem):
+    root, skill, _, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    if problem != "no-removals":
+        skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    if problem == "no-section":
+        plan_probe(root, [
+            ("developer", "<skills_instructions>no catalog</skills_instructions>"),
+            ("developer", skills_message(("agent-browser", kept))),
+        ])
+    elif problem == "timeout":
+        plan_probe(root, timeout=True)
+        helper = root / "wrapper/lib/codex_launch_skills.py"
+        source = helper.read_text()
+        assert source.count("PROBE_TIMEOUT = 120") == 1
+        helper.write_text(source.replace("PROBE_TIMEOUT = 120", "PROBE_TIMEOUT = 0.75"))
+    elif problem == "nonzero":
+        plan_probe(root, [("developer", skills_message(("agent-browser", kept)))], exit=1)
+    else:
+        plan_probe(root)
+
+    for attempt in range(1, 5):
+        result = run("impl", "new-version")
+        status = "failed" if attempt >= 3 else "transient"
+        check_launch(root, result, child, f"skipped:autoverify_{status}", attempt)
+        state = json.loads(version_file(root).read_text())
+        assert state["status"] == ("pending" if attempt < 3 else "failed")
+        assert state["transient"] == min(attempt, 3)
+        assert sum("自動確認" in line for line in result.stderr.splitlines()) == (attempt == 3)
+    if problem == "no-removals":
+        assert not (root / "probe-calls").exists()
+    else:
+        assert len((root / "probe-calls").read_text().splitlines()) == 3
+    if problem == "timeout":
+        time.sleep(1.6)
+        assert not (root / "probe-orphan").exists()
+
+
+@pytest.mark.parametrize("failure", ["FilterError", "SIGALRM"])
+def test_autoverify_preparation_failure_falls_back(launch, failure):
+    root, skill, _, run, child = launch
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    helper = root / "wrapper/lib/codex_launch_skills.py"
+    marker = "    disabled = disabled_paths(user, codex_home, skills)"
+    source = helper.read_text()
+    assert source.count(marker) == 1
+    statement = ('raise FilterError("fixture preparation failed")' if failure == "FilterError"
+                 else "os.kill(os.getpid(), signal.SIGALRM)")
+    helper.write_text(source.replace(marker, f"    {statement}\n{marker}"))
+    check_launch(root, run("impl", "new-version"), child, "skipped:autoverify_transient", 1)
+    assert json.loads(version_file(root).read_text())["transient"] == 1
+    assert not (root / "probe-calls").exists()
+
+
+def test_autoverify_never_waits_on_busy_version_lock(launch):
+    root, skill, _, run, child = launch
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    state = version_file(root)
+    state.parent.mkdir(parents=True)
+    with state.with_suffix(".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = run("impl", "new-version")
+        check_launch(root, result, child, "skipped:unverified_version", 1)
+    assert "自動確認" not in result.stderr
+    assert not state.exists()
+    assert not (root / "probe-calls").exists()
+
+
+def test_autoverify_rereads_state_after_lock(launch):
+    root, skill, _, run, child = launch
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    state = version_file(root)
+    state.parent.mkdir(parents=True)
+    state.write_text(json.dumps({"status": "pending", "transient": 2, "probe_run": None}))
+    failed = {"status": "failed", "transient": 3, "probe_run": "previous"}
+    helper = root / "wrapper/lib/codex_launch_skills.py"
+    source = helper.read_text()
+    # Simulate the competing process committing the third failure before our flock.
+    helper.write_text(source.replace('    try:\n        main()\n', f'''
+    real_flock = fcntl.flock
+    def flock_after_competitor(fd, flags):
+        state = Path({str(state)!r})
+        with state.with_suffix(".lock").open("a") as competitor:
+            real_flock(competitor, flags)
+            write_version_state(state, {failed!r})
+        real_flock(fd, flags)
+
+    fcntl.flock = flock_after_competitor
+    try:
+        main()
+'''))
+    plan_probe(root)
+    result = run("impl", "new-version")
+    check_launch(root, result, child, "skipped:autoverify_failed", 1)
+    assert not (root / "probe-calls").exists()
+    assert "自動確認" not in result.stderr
+    assert json.loads(state.read_text()) == failed

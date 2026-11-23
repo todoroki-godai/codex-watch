@@ -89,14 +89,40 @@ MUTATIONS = (
     ("review-recheck-allows-different-target", "                if resolved != skill.actual:",
      "                if False:", f"{RECHECK}[different-public-target]"),
     ("unreadable-review-falls-back",
-     "            if check_review:\n                raise FilterError",
-     "            if False:\n                raise FilterError",
+     "            if check_review:\n                review_inventory_error(error)",
+     "            if False:\n                review_inventory_error(error)",
      "test_unsupported_skill_header_blocks_review_addition[verified]"),
     ("toml-backslash-unescaped", "json.dumps(str(path), ensure_ascii=False)",
      r'json.dumps(str(path), ensure_ascii=False).replace("\\\\", "\\")', DEFAULT),
     ("remote-cache-omitted", "    remote = remote_plugin_keys(scan, cache)",
      "    remote = set()", "test_remote_cache_filters_unregistered_plugins[impl]"),
+    ("autoverify-name-only",
+     '                status = "verified" if observed and observed == plan.expected else "failed"',
+     '                status = "verified" if {name for name, _ in observed} == {name for name, _ in plan.expected} else "failed"',
+     "test_autoverify_mismatch_is_final[same-name-other-path]"),
+    ("autoverify-no-locked-reread",
+     '            state = read_version_state(state_file)',
+     '            state = state.copy()',
+     "test_autoverify_rereads_state_after_lock"),
+    ("autoverify-probe-exception-escapes",
+     '            except Exception:\n                # Probe setup and inspection are opportunistic, including scan SIGALRM.\n                observed = None',
+     '            except Exception:\n                raise',
+     "test_autoverify_preparation_failure_falls_back[FilterError]"),
+    ("autoverify-memories-disabled",
+     '                plan = prepare("keep", True)\n                if plan.removed_count:',
+     '                plan = prepare("off", True)\n                if plan.removed_count:',
+     "test_autoverify_exact_matches_and_reuses_result[impl]"),
+    ("autoverify-unlimited-transient",
+     '                status = "failed" if state["transient"] >= 3 else "pending"',
+     '                status = "pending"',
+     "test_autoverify_transient_budget[no-record]"),
+    ("autoverify-missing-section-is-empty",
+     "            if section is None:\n                return None",
+     "            if section is None:\n                return set()",
+     "test_autoverify_transient_budget[no-section]"),
 )
+POSITIVE = ("autoverify-equivalent-lock-flags", "fcntl.LOCK_EX | fcntl.LOCK_NB",
+            "fcntl.LOCK_NB | fcntl.LOCK_EX", "test_autoverify_exact_matches_and_reuses_result[impl]")
 
 
 def trace_source(source, lines):
@@ -113,7 +139,7 @@ def trace_source(source, lines):
     return source.replace('if __name__ == "__main__":\n', 'if __name__ == "__main__":\n' + trace)
 
 
-def check_case(folder, original, case):
+def check_case(folder, original, case, *, positive=False):
     name, before, after, test = case
     source = folder / name / "source"
     source.mkdir(parents=True)
@@ -124,7 +150,9 @@ def check_case(folder, original, case):
     first = original[:original.index(before)].count("\n") + 1
     # For replacement error paths, require reaching the changed statement.
     last_line_only = {"unreadable-skipped": 3, "review-recheck-error-ignored": 4,
-                      "unsupported-header-stops": 1, "unsupported-header-silently-skipped": 1}
+                      "unsupported-header-stops": 1, "unsupported-header-silently-skipped": 1,
+                      "autoverify-probe-exception-escapes": 1,
+                      "autoverify-missing-section-is-empty": 1}
     lines = ([first + last_line_only[name]] if name in last_line_only
              else list(range(first, first + len(after.splitlines()))))
     (source / HELPER).write_text(trace_source(mutated, lines))
@@ -145,7 +173,13 @@ def check_case(folder, original, case):
     visits = sorted({int(line) for marker in markers for line in marker.read_text().splitlines()})
     failure = re.search(rf"^{re.escape(TEST)}:(\d+): in test_", output, re.MULTILINE)
     assertion = re.search(r"^E\s+(?:assert\b|AssertionError\b)", output, re.MULTILINE)
-    if not (result.returncode == 1 and failure and assertion and visits):
+    if positive:
+        if result.returncode != 0 or not visits:
+            raise RuntimeError(f"{name}: equivalent change failed or was not executed\n{output}")
+        print(f"{name} {HELPER}:{visits} -> {node} passed", flush=True)
+        return {"mutation": name, "diff": diff, "executed_lines": visits, "test": node,
+                "pytest_exit": result.returncode}
+    if not (diff and result.returncode == 1 and failure and assertion and visits):
         raise RuntimeError(f"{name}: fault was not detected at an executed line\n{output}")
     summary = next(line for line in output.splitlines() if line.startswith("FAILED "))
     print(f"{name} {HELPER}:{visits} -> {TEST}:{failure[1]} {summary}", flush=True)
@@ -163,15 +197,17 @@ def main():
     print(f"Isolated logs and diffs: {folder}", flush=True)
     with ThreadPoolExecutor(max_workers=4) as pool:
         rows = list(pool.map(lambda case: check_case(folder, original, case), MUTATIONS))
+    control = check_case(folder, original, POSITIVE, positive=True)
     assert (ROOT / HELPER).read_text() == original
     report = {
         "source_commit": sha,
         "source_sha256": hashlib.sha256(original.encode()).hexdigest(),
         "mutations": rows,
+        "positive_control": control,
         "undetected_mutations": 0,
     }
     (folder / "result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
-    print(f"{len(rows)} mutations detected, 0 survived", flush=True)
+    print(f"{len(rows)} mutations detected, 0 survived, 1 positive control passed", flush=True)
 
 
 if __name__ == "__main__":

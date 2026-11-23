@@ -24,7 +24,8 @@ cases = [
     ('remove-deny', 'bin/codex-impl', "print('permissions.codex-impl-dev.filesystem={\"~/.aws\"=\"deny\"' +\n      ''.join(', ' + json.dumps(p, ensure_ascii=False) + '=\"write\"' for p in paths) + '}')", "print('permissions.codex-impl-dev.filesystem={' + ', '.join(json.dumps(p, ensure_ascii=False) + '=\"write\"' for p in paths) + '}')", 'positive_permissions'),
     ('remove-gitdir', 'bin/codex-impl', 'sys.argv[1:] if p', 'sys.argv[1:2] if p', 'positive_permissions'),
     ('leak-stdout', 'bin/codex-impl', 'unset AWS_ENV_UPDATES', 'echo "$AWS_ENV_UPDATES"\nunset AWS_ENV_UPDATES', 'positive_permissions'),
-    ('restore-sandbox', 'bin/codex-impl', 'nohup codex exec -C', 'nohup codex exec -s workspace-write -C', 'positive_permissions'),
+    ('restore-sandbox', 'bin/codex-impl', 'exec -C "$WORKDIR" ${SANDBOX_ARGS[@]+',
+     'exec -s workspace-write -C "$WORKDIR" ${SANDBOX_ARGS[@]+', 'positive_permissions'),
     # Additional bypass classes: ambient authority, time validity, code/data confusion.
     ('retain-parent-credentials', 'lib/codex_impl_aws.py', "if name.startswith(('AWS_', 'CODEX_AWS_DOCS_')) and", "if False and name.startswith(('AWS_', 'CODEX_AWS_DOCS_')) and", 'failure_has_no_credentials and wrong'),
     ('accept-expired', 'lib/codex_impl_aws.py', 'expiration <= dt.datetime.now(dt.timezone.utc)', 'False', 'failure_has_no_credentials and expired'),
