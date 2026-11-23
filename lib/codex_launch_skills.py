@@ -1,22 +1,29 @@
 """Prepare startup overrides and check review skill additions."""
+from contextlib import closing
 import errno
+import fcntl
 from functools import cmp_to_key
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 
+from codex_rollout import codex_sessions, find_rollout, records, session_from
+
 CLI_VERSION = "0.171.0"
 SCAN_TIMEOUT = 15
+PROBE_TIMEOUT = 120
 SYSTEM_CONFIG = Path("/etc/codex")
 REMOTE_MARKETPLACE = "openai-curated-remote"
 ALLOWLIST = Path(__file__).resolve().parents[1] / "templates/codex-skills-allowlist.tsv"
@@ -619,9 +626,9 @@ def check_arg_size(args):
         raise FilterError("skill 起動引数がシステムの上限を超えます")
 
 
-def read_version():
+def read_version(executable):
     try:
-        result = subprocess.run(["codex", "--version"], capture_output=True, timeout=5)
+        result = subprocess.run([executable, "--version"], capture_output=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return None
     version = re.fullmatch(rb"codex-cli ([0-9][0-9A-Za-z.+-]{0,63})\s*", result.stdout)
@@ -630,19 +637,35 @@ def read_version():
     return version[1].decode("ascii")
 
 
-def skip_filter(version, status, reason):
+def warn_skipped(version, reason, *, inventory_unreadable=False):
     # Paths may contain newlines. Keep the diagnostic to one stderr line.
     reason = " ".join(reason.splitlines())
     check = f"codex --version（検証済み {CLI_VERSION}）"
-    if status == "inventory_unreadable":
+    if inventory_unreadable:
         check += "と表示された置き場の種類・読み取り権限"
     print(f"警告: skill と記憶の絞り込みを省略（Codex CLI {version or '版不明'}、{reason}）。"
           f" {check}を確認してください。", file=sys.stderr)
-    print(f"launch_skills_filter=skipped:{status}")
 
 
 def timed_out(_signal, _frame):
     raise FilterError("skill 列挙の期限を超えました")
+
+
+@dataclass
+class FilterPlan:
+    override: str
+    memory_args: list[str]
+    expected: set[tuple[str, Path]]
+    removed_count: int
+    scan: Scan
+    notices: list[str]
+
+    def emit(self):
+        for notice in self.notices:
+            print(notice, file=sys.stderr)
+        print(self.override)
+        if self.memory_args:
+            print(self.memory_args[1])
 
 
 def prepare_filter(work, memories, argv, requested, check_review, version_supported):
@@ -676,39 +699,204 @@ def prepare_filter(work, memories, argv, requested, check_review, version_suppor
     scan.unchanged()
     if check_review:
         keep_paths([], home, skills, disabled, requested, check_review, recheck=True)
-    for notice in notices:
-        print(notice, file=sys.stderr)
-    print(f"skill 絞り込み: on 列挙={len(paths)} 残す={len(keep)} 外す={len(removed)} "
-          f"記憶={memories} {time.monotonic() - start:.3f}s", file=sys.stderr)
-    print(override)
-    if memory_args:
-        print(memory_args[1])
+    expected = {(skill.name, skill.actual) for skill in skills if skill.actual in keep and skill.name}
+    notices.append(f"skill 絞り込み: on 列挙={len(paths)} 残す={len(keep)} 外す={len(removed)} "
+                   f"記憶={memories} {time.monotonic() - start:.3f}s")
+    return FilterPlan(override, memory_args, expected, len(removed), scan, notices)
+
+
+def listed_skills(path):
+    with closing(records(path)) as payloads:
+        for payload in payloads:
+            if payload.get("type") != "message" or payload.get("role") != "developer":
+                continue
+            text = "\n".join(part.get("text", "") for part in payload.get("content", []))
+            if "<skills_instructions>" not in text:
+                continue
+            instructions = text.split("<skills_instructions>", 1)[1].split("</skills_instructions>", 1)[0]
+            section = re.search(r"^### Available skills[ \t]*\r?$", instructions, re.MULTILINE)
+            if section is None:
+                return None
+            body = re.split(r"^#{1,3}[ \t]", instructions[section.end():], maxsplit=1, flags=re.MULTILINE)[0]
+            roots = dict(re.findall(r"^- `([^`]+)` = `([^`]+)`$", instructions[:section.start()],
+                                    re.MULTILINE))
+            listed = set()
+            for line in body.splitlines():
+                if not line.strip():
+                    continue
+                entry = re.fullmatch(r"- (.+?):[ \t].*\(file: (.+)\)[ \t]*", line)
+                if entry is None:
+                    return set()  # An unrecognized or omitted entry rules out a complete match.
+                name, location = entry.groups()
+                path = Path(location)
+                if not path.is_absolute():
+                    alias, sep, relative = location.partition("/")
+                    if not sep or alias not in roots or not Path(roots[alias]).is_absolute():
+                        return set()
+                    path = Path(roots[alias]) / relative
+                listed.add((name, path.resolve()))
+            return listed
+    return None
+
+
+def run_probe(executable, work, override):
+    command = [executable, "exec", "-C", work, "-s", "read-only", "-m", "gpt-6.1-terra",
+               "-c", 'model_reasoning_effort="low"', "-c", override, "-"]
+    check_arg_size(command)
+    with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True, errors="replace",
+                          start_new_session=True) as probe:
+        try:
+            output, _ = probe.communicate("何も読まず何もせず OK と返してください。\n", timeout=PROBE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(probe.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            probe.wait()
+            raise
+    return probe.returncode, session_from(output)
+
+
+def read_version_state(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"status": "pending", "probe_run": None, "transient": 0}
+
+
+def write_version_state(path, state):
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                     prefix=f".{path.name}.", delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            json.dump(state, stream)
+            stream.close()
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def autoverify(executable, version, work, prepare):
+    """Return the version status and reuse the exact args from a successful probe."""
+    path = Path(os.environ.get("CODEX_WATCH_DIR") or Path.home() / ".codex-watch") / "cli-versions"
+    state_file = path / f"{version}.json"
+    try:
+        state = read_version_state(state_file)
+        if state["status"] in ("verified", "failed"):
+            return state["status"], None
+        path.mkdir(parents=True, exist_ok=True)
+        with (path / f"{version}.lock").open("a") as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return "unverified", None
+            state = read_version_state(state_file)
+            if state["status"] in ("verified", "failed"):
+                return state["status"], None
+
+            observed = plan = probe_run = None
+            try:
+                plan = prepare("keep", True)
+                if plan.removed_count:
+                    returncode, probe_run = run_probe(executable, work, plan.override)
+                    if returncode == 0:
+                        observed = listed_skills(find_rollout(codex_sessions(), probe_run))
+                    if observed is not None:
+                        plan.scan.unchanged()
+            except Exception:
+                # Probe setup and inspection are opportunistic, including scan SIGALRM.
+                observed = None
+            if observed is None:
+                state["transient"] += 1
+                status = "failed" if state["transient"] >= 3 else "pending"
+                reason = "自動確認が3回判定できませんでした"
+            else:
+                status = "verified" if observed and observed == plan.expected else "failed"
+                reason = "自動確認で skill の一覧が一致しませんでした"
+            write_version_state(state_file, {**state, "status": status, "probe_run": probe_run})
+            if status == "failed":
+                warn_skipped(version, reason)
+            return status, plan if status == "verified" else None
+    except Exception:
+        # Lock and ledger errors must not prevent a launch.
+        return "unverified", None
 
 
 def main():
-    work, suppressed, memories, *argv = sys.argv[1:]
+    work, suppressed, memories, mode, *argv = sys.argv[1:]
     requested = requested_names(os.environ.get("CODEX_SKILLS_ALLOW", ""))
     check_review = suppressed == "yes" and bool(requested)
-    version = read_version()
+    executable = shutil.which("codex")
+    if executable is not None:
+        executable = str(Path(executable).absolute())
+    version = read_version(executable) if executable else None
     version_supported = version == CLI_VERSION
-    if version_supported or check_review:
+
+    def prepare(memory_mode, filter_supported):
         try:
-            prepare_filter(work, memories, argv, requested, check_review, version_supported)
-        except (InventoryReadError, OSError) as error:
-            if isinstance(error, OSError):
-                detail = os.strerror(error.errno) if error.errno in errno.errorcode else "入出力エラー"
-                reason = f"{error.filename or '置き場'}: 読み取り・パス解決失敗（{detail}）"
-            else:
-                reason = str(error)
-            if check_review:
-                raise FilterError(f"{reason}。レビューの追加指定が読み込み禁止に当たらないか確認できません") from None
-            skip_filter(version, "inventory_unreadable", reason)
-            return
+            return prepare_filter(work, memory_mode, argv, requested, check_review, filter_supported)
         finally:
             signal.alarm(0)
-    if not version_supported:
+
+    status = "skipped:unverified_version"
+    plan = None
+    if mode == "off":
+        status = "off"
+    elif version_supported:
+        try:
+            plan = prepare(memories, True)
+            status = "on"
+        except (InventoryReadError, OSError) as error:
+            if check_review:
+                review_inventory_error(error)
+            warn_skipped(version, inventory_error_reason(error), inventory_unreadable=True)
+    elif version and os.environ.get("CODEX_SKILLS_AUTOVERIFY") != "off":
+        if check_review:
+            check_review_additions(prepare)
+        verification, plan = autoverify(executable, version, work, prepare)
+        if verification == "verified":
+            try:
+                if plan is None:
+                    plan = prepare("keep", True)
+                status = "on:autoverified"
+            except Exception:
+                # A cached version still needs a readable inventory for this launch.
+                status = "skipped:autoverify_transient"
+        elif verification in ("pending", "failed"):
+            status = "skipped:autoverify_" + ("transient" if verification == "pending" else "failed")
+        if check_review:
+            check_review_additions(prepare)
+    else:
+        if check_review:
+            check_review_additions(prepare)
         reason = "未検証の版" if version else "--version の出力から版を識別できません"
-        skip_filter(version, "unverified_version", reason)
+        warn_skipped(version, reason)
+
+    print(f"cli_version={version or '不明'}")
+    print(f"launch_skills_filter={status}")
+    print(f"executable={executable or 'codex'}")
+    if plan is not None:
+        plan.emit()
+
+
+def inventory_error_reason(error):
+    if isinstance(error, OSError):
+        detail = os.strerror(error.errno) if error.errno in errno.errorcode else "入出力エラー"
+        return f"{error.filename or '置き場'}: 読み取り・パス解決失敗（{detail}）"
+    return str(error)
+
+
+def review_inventory_error(error):
+    reason = inventory_error_reason(error)
+    raise FilterError(f"{reason}。レビューの追加指定が読み込み禁止に当たらないか確認できません") from None
+
+
+def check_review_additions(prepare):
+    try:
+        prepare("keep", False)
+    except (InventoryReadError, OSError) as error:
+        review_inventory_error(error)
 
 
 if __name__ == "__main__":

@@ -310,7 +310,7 @@ PYAWSACCOUNT
   fi
 }
 
-# Called before reservation/dispatch. The helper returns overrides or a skip reason.
+# Called before dispatch. The helper returns launch state followed by any overrides.
 prepare_codex_launch_skills() {
   local workdir="$1" suppressed="$2" mode="${CODEX_SKILLS_FILTER-on}" memories="${CODEX_MEMORIES-off}"
   local overrides override helper
@@ -329,16 +329,15 @@ prepare_codex_launch_skills() {
       echo "CODEX_SKILLS_ALLOW: CODEX_SKILLS_FILTER=off と併用できません" >&2
       return 2
     fi
-    return 0
   fi
   helper="$(dirname "${BASH_SOURCE[0]}")/../lib/codex_launch_skills.py"
-  overrides="$(python3 "$helper" "$workdir" "$suppressed" "$memories" "$@")" || return 2
-  case "$overrides" in
-    launch_skills_filter=skipped:*)
-      CODEX_LAUNCH_SKILLS_STATE="$overrides"
-      return 0 ;;
-  esac
+  overrides="$(python3 "$helper" "$workdir" "$suppressed" "$memories" "$mode" "$@")" || return 2
   while IFS= read -r override; do
-    CODEX_CLI_ARGS+=(-c "$override")
+    case "$override" in
+      cli_version=*|launch_skills_filter=*) CODEX_LAUNCH_SKILLS_STATE+="$override"$'\n' ;;
+      executable=*) CODEX_LAUNCH_EXECUTABLE="${override#executable=}" ;;
+      *) CODEX_CLI_ARGS+=(-c "$override") ;;
+    esac
   done <<< "$overrides"
+  CODEX_LAUNCH_SKILLS_STATE="${CODEX_LAUNCH_SKILLS_STATE%$'\n'}"
 }

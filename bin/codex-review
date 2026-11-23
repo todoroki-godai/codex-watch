@@ -291,7 +291,7 @@ if [[ "$CHECK_REVIEW_SKILLS" == yes ]] && ! prepare_review_skills; then
   exit 2
 fi
 printf 'モデル: %s（通常は sol、全体の設計・レビューの繰り返し・設計し直しは astra（理由の指定が必要）を CODEX_REVIEW_MODEL で指定）\n' "$REQUESTED_MODEL" >&2
-nohup codex exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
+nohup "$CODEX_LAUNCH_EXECUTABLE" exec -C "$WORKDIR" -s read-only ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - < "$EFFECTIVE_PROMPT" > "$LOG_FILE" 2>&1 &
 CODEX_PID=$!
 
 # 実効値（実際に起動された model / effort）はここでは解決しない・待たない。
@@ -361,7 +361,7 @@ esac
   echo "skills_suppressed=$SKILLS_SUPPRESSED"
   codex_github_account_state
   codex_summary_state
-  if [[ -n "$CODEX_LAUNCH_SKILLS_STATE" ]]; then echo "$CODEX_LAUNCH_SKILLS_STATE"; fi
+  printf '%s\n' "$CODEX_LAUNCH_SKILLS_STATE"
   echo "requested_model=$REQUESTED_MODEL"
   if [[ -n "$ASTRA_REASON" ]]; then printf 'astra_reason=%s\n' "$ASTRA_REASON"; fi
   echo "requested_effort=$REQUESTED_EFFORT"
