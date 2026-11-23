@@ -38,6 +38,8 @@ elif args[0] == 'exec':
         with (root / 'probe-calls').open('a') as stream:
             stream.write(json.dumps(payload) + '\n')
         plan = json.loads((root / 'probe-plan').read_text())
+        if plan.get('hook_warning'):
+            print('fixture warning: a startup hook failed', file=sys.stderr)
         if plan.get('timeout'):
             subprocess.Popen([sys.executable, '-c',
                               'import time; time.sleep(1.5); open("probe-orphan", "w").close()'],
@@ -663,7 +665,12 @@ def test_autoverify_exact_matches_and_reuses_result(launch, kind):
         ("developer", "unrelated developer message"),
         ("developer", skills_message(("agent-browser", f"r0/{alias.name}"), alias_dir=alias.parent)),
         ("developer", skills_message(("agent-browser", dropped))),
-    ])
+    ], hook_warning=True)
+    helper = root / "wrapper/lib/codex_launch_skills.py"
+    marker = "def run_probe(executable, work, override):\n"
+    source = helper.read_text()
+    assert source.count(marker) == 1
+    helper.write_text(source.replace(marker, marker + "    assert signal.alarm(0) == 0\n"))
     result = run(kind, "new-version")
     observed = check_launch(root, result, child, "on:autoverified", 1)
     assert configs(observed) == {"skills": {"config": [{"path": str(dropped), "enabled": False}]}}
@@ -679,12 +686,13 @@ def test_autoverify_exact_matches_and_reuses_result(launch, kind):
     assert probe["argv"][-1] == "-"
     assert configs(probe) == configs(observed)
     assert "OK" in probe["prompt"] and probe["prompt"] not in observed["prompt"]
+    assert "a startup hook failed" not in result.stderr
     assert json.loads(version_file(root).read_text()) == {
         "status": "verified", "probe_run": "019a0000-0000-7000-8000-000000000001", "transient": 0,
     }
 
-    newer = skill("extra", "home/.codex/skills/new/SKILL.md")
-    result = run(kind, "new-version")
+    newer = skill("extra", "alternate-codex-home/skills/new/SKILL.md")
+    result = run(kind, "new-version", CODEX_HOME=str(root / "alternate-codex-home"))
     observed = check_launch(root, result, child, "on:autoverified", 2)
     assert configs(observed) == {"skills": {"config": [
         {"path": str(path), "enabled": False} for path in sorted([newer, dropped])
