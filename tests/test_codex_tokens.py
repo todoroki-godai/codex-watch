@@ -95,10 +95,10 @@ def test_report_rollout_tokens_and_tool_bytes(report):
     assert f"{week}\tgpt-6.2-sol\timpl\t0.171.1\ton:autoverified\t2\t" in output
     assert (f"{week}\tgpt-6.2-sol\timpl\t0.171.1\ton:autoverified\t2\t"
             "2/4\t35629/71258\t30125/60250\t159318/318636\t117846/235692\t13219/26438\t"
-            "241/482\t3.5/7\t375/750") in output
+            "241/482\t3.5/7\t0/0\t375/750") in output
     assert (f"{week}\tgpt-6.2-sol\treview\t不明\t不明\t1\t"
             "2/2\t35629/35629\t30125/30125\t159318/159318\t117846/117846\t13219/13219\t"
-            "241/241\t0/0\t375/375") in output
+            "241/241\t0/0\t0/0\t375/375") in output
     assert "走行中\t1\n記録なし\t1\n状態欄なし\t1\n" in output
     assert sum("gpt-6.2-sol" in line for line in run("--days", "10").splitlines()) == 3
 
@@ -117,3 +117,26 @@ def test_compressed_rollout_read_without_cache(report):
     before = sorted(path.parent.iterdir())
     assert f"{week}\tgpt-6.2-sol\timpl\t0.171.1\ton:autoverified\t1\t2/2" in run()
     assert sorted(path.parent.iterdir()) == before
+
+
+def test_exec_javascript_output_categories(report):
+    run_file, run, week, _ = report
+    rollout = run_file(1)
+    calls = [
+        ("read", "await tools.exec_command({cmd:\"cd lib && cat x; rg y z\"}); await tools.exec_command({cmd:'git diff'});", "rrrr"),
+        ("test", 'tools.exec_command({cmd:`python3 -m pytest x | pytest y`}); tools.exec_command({cmd:"npm test"})', "ttttt"),
+        ("mixed", 'tools.exec_command({cmd:"cat x"}); tools.exec_command({cmd:"pytest x"})', "mmmmmm"),
+        ("unknown", 'tools.exec_command({cmd: variable})', "ooooooo"),
+    ]
+    with rollout.open("a") as stream:
+        for call_id, source, output in calls:
+            for payload in (
+                {"type": "custom_tool_call", "call_id": call_id, "name": "exec", "input": source},
+                {"type": "custom_tool_call_output", "call_id": call_id, "output": output},
+            ):
+                stream.write(json.dumps({"type": "response_item", "payload": payload}) + "\n")
+    output = run()
+    assert "混在バイト（推定）" in output
+    assert (f"{week}\tgpt-6.2-sol\timpl\t0.171.1\ton:autoverified\t1\t"
+            "2/2\t35629/35629\t30125/30125\t159318/159318\t117846/117846\t13219/13219\t"
+            "245/245\t5/5\t6/6\t382/382") in output
