@@ -125,13 +125,19 @@ POSITIVE = ("autoverify-equivalent-lock-flags", "fcntl.LOCK_EX | fcntl.LOCK_NB",
             "fcntl.LOCK_NB | fcntl.LOCK_EX", "test_autoverify_exact_matches_and_reuses_result[impl]")
 
 
-def trace_source(source, lines):
+def trace_source(source, lines, *, count_transients=False):
+    capture = f"""
+        if event == "line" and frame.f_code.co_filename == filename and frame.f_lineno == {lines[-1] + 1}:
+            with path.with_name("mutation-transient").open("a") as output:
+                output.write(str(frame.f_locals["state"]["transient"]) + ":" + frame.f_locals["status"] + "\\n")
+""" if count_transients else ""
     trace = f"""
     def trace(frame, event, _arg, filename=__file__, lines={lines!r},
               path=Path(__file__).resolve().parents[2] / "mutation-hit"):
         if event == "line" and frame.f_code.co_filename == filename and frame.f_lineno in lines:
             with path.open("a") as output:
                 output.write(f"{{frame.f_lineno}}\\n")
+{capture}
         return trace
 
     sys.settrace(trace)
@@ -147,6 +153,13 @@ def check_case(folder, original, case, *, positive=False):
         shutil.copytree(ROOT / part, source / part, ignore=shutil.ignore_patterns("__pycache__"))
     assert original.count(before) == 1, name
     mutated = original.replace(before, after)
+    guard_line = None
+    if name == "autoverify-probe-exception-escapes":
+        # Let the original error escape both the probe handler and the ledger guard.
+        boundary = "    except Exception:\n        # Lock and ledger errors must not prevent a launch."
+        assert mutated.count(boundary) == 1
+        guard_line = mutated[:mutated.index(boundary)].count("\n") + 1
+        mutated = mutated.replace(boundary, boundary.replace("Exception", "OSError"))
     first = original[:original.index(before)].count("\n") + 1
     # For replacement error paths, require reaching the changed statement.
     last_line_only = {"unreadable-skipped": 3, "review-recheck-error-ignored": 4,
@@ -155,7 +168,10 @@ def check_case(folder, original, case, *, positive=False):
                       "autoverify-missing-section-is-empty": 1}
     lines = ([first + last_line_only[name]] if name in last_line_only
              else list(range(first, first + len(after.splitlines()))))
-    (source / HELPER).write_text(trace_source(mutated, lines))
+    if guard_line is not None:
+        lines.append(guard_line)
+    count_transients = name == "autoverify-unlimited-transient"
+    (source / HELPER).write_text(trace_source(mutated, lines, count_transients=count_transients))
     base = source.parent / "pytest"
     node = f"{TEST}::{test}"
     command = [sys.executable, "-m", "pytest", "-q", "--tb=short", "-p", "no:cacheprovider",
@@ -181,11 +197,20 @@ def check_case(folder, original, case, *, positive=False):
                 "pytest_exit": result.returncode}
     if not (diff and result.returncode == 1 and failure and assertion and visits):
         raise RuntimeError(f"{name}: fault was not detected at an executed line\n{output}")
+    if guard_line is not None:
+        assert visits == lines
     summary = next(line for line in output.splitlines() if line.startswith("FAILED "))
     print(f"{name} {HELPER}:{visits} -> {TEST}:{failure[1]} {summary}", flush=True)
-    return {"mutation": name, "diff": diff, "executed_lines": visits, "test": node,
-            "assertion_line": int(failure[1]), "pytest_exit": result.returncode,
-            "pytest_failure": summary}
+    evidence = {"mutation": name, "diff": diff, "executed_lines": visits, "test": node,
+                "assertion_line": int(failure[1]), "pytest_exit": result.returncode,
+                "pytest_failure": summary}
+    if count_transients:
+        markers = {path.resolve() for path in base.glob("test_*/mutation-transient")}
+        events = dict(event.split(":", 1) for marker in markers for event in marker.read_text().splitlines())
+        assert events == {"1": "pending", "2": "pending", "3": "pending"}
+        evidence["transient_status_after_increment"] = events
+        evidence["threshold"] = 3
+    return evidence
 
 
 def main():
