@@ -331,7 +331,10 @@ prepare_codex_launch_skills() {
     fi
   fi
   helper="$(dirname "${BASH_SOURCE[0]}")/../lib/codex_launch_skills.py"
-  overrides="$(python3 "$helper" "$workdir" "$suppressed" "$memories" "$mode" "$@")" || return 2
+  overrides="$(python3 "$helper" "$workdir" "$suppressed" "$memories" "$mode" "$@")" || {
+    [[ "$mode" == off ]] || return 2
+    overrides=$'cli_version=不明\nlaunch_skills_filter=off\nexecutable=codex'
+  }
   while IFS= read -r override; do
     case "$override" in
       cli_version=*|launch_skills_filter=*) CODEX_LAUNCH_SKILLS_STATE+="$override"$'\n' ;;

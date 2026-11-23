@@ -800,9 +800,8 @@ def autoverify(executable, version, work, prepare):
             try:
                 plan = prepare("keep", True)
                 if plan.removed_count:
-                    returncode, probe_run = run_probe(executable, work, plan.override)
-                    if returncode == 0:
-                        observed = listed_skills(find_rollout(codex_sessions(), probe_run))
+                    _, probe_run = run_probe(executable, work, plan.override)
+                    observed = listed_skills(find_rollout(codex_sessions(), probe_run))
                     if observed is not None:
                         plan.scan.unchanged()
             except Exception:

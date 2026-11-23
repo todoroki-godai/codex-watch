@@ -24,7 +24,10 @@ def session_from(text):
 def log_header(path):
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
-            first = LOG_VERSION.fullmatch(stream.readline().rstrip())
+            line = stream.readline()
+            while re.match(r"^\d{4}-\d\d-\d\dT[\d:.]+Z\s+(ERROR|WARN|INFO)\s", line):
+                line = stream.readline()
+            first = LOG_VERSION.fullmatch(line.rstrip())
             if first is None or stream.readline().rstrip() != "--------":
                 return None, None, None
             fields = {}

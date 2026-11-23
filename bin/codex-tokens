@@ -155,7 +155,8 @@ def collect(watch, sessions, days):
     now = int(dt.datetime.now(JST).timestamp())
     earliest = now - days * 86400
     rows = []
-    missing_fields = active = missing = 0
+    missing_fields = active = 0
+    missing = Counter()
     for path in watch.glob("*.state"):
         try:
             state = dict(line.split("=", 1) for line in
@@ -183,7 +184,8 @@ def collect(watch, sessions, days):
     for group, session_id in rows:
         usage = measurements(rollouts.get(session_id))
         if usage is None:
-            missing += 1
+            missing["ヘッダーが読めない" if not session_id else
+                    "会話記録が無い" if rollouts.get(session_id) is None else "token_count が無い"] += 1
         else:
             groups[group].append(usage)
     return groups, active, missing, missing_fields
@@ -209,7 +211,10 @@ def main():
           "読みバイト（推定）\t試験バイト（推定）\t混在バイト（推定）\tその他バイト（推定）")
     for group, values in sorted(groups.items()):
         print(*group, len(values), *(median_total(metric) for metric in zip(*values)), sep="\t")
-    print(f"走行中\t{active}\n記録なし\t{missing}\n状態欄なし\t{missing_fields}")
+    print(f"走行中\t{active}")
+    for reason in ("ヘッダーが読めない", "会話記録が無い", "token_count が無い"):
+        print(f"記録なし（{reason}）\t{missing[reason]}")
+    print(f"状態欄なし\t{missing_fields}")
 
 
 if __name__ == "__main__":
