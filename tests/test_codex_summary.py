@@ -83,7 +83,7 @@ EFFECTIVE_PROMPT="$STATE_DIR/fixed.prompt"
     calls = tmp_path / 'codex-calls'
     codex = fake_bin / 'codex'
     codex.write_text(codex.read_text().replace('#!/bin/sh\n',
-        '#!/bin/sh\nprintf "called\\n" >> "' + str(calls) + '"\n', 1))
+        '#!/bin/sh\nprintf "%s\\n" "$1" >> "' + str(calls) + '"\n', 1))
 
     def run(value, *, raw=False, **env_overrides):
         Path(env["FAKE_GH_BODY"]).write_text("")
@@ -173,9 +173,14 @@ def test_positive_controls(launch, value):
 def assert_started(launch, result):
     assert result.returncode == 0, result.stdout + result.stderr
     deadline = time.monotonic() + 3
-    while not launch.calls.exists() and time.monotonic() < deadline:
+    calls = []
+    while time.monotonic() < deadline:
+        if launch.calls.exists():
+            calls = launch.calls.read_text().splitlines()
+            if "exec" in calls:
+                break
         time.sleep(.02)
-    assert launch.calls.read_text().splitlines() == ['called']
+    assert calls == ["--version", "exec"]
     states = list(launch.state_dir.glob('*.state'))
     assert len(states) == 1
     return read_state_file(states[0])

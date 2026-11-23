@@ -628,7 +628,8 @@ def check_arg_size(args):
 
 def read_version(executable):
     try:
-        result = subprocess.run([executable, "--version"], capture_output=True, timeout=5)
+        result = subprocess.run([executable, "--version"], stdin=subprocess.DEVNULL,
+                                capture_output=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return None
     version = re.fullmatch(rb"codex-cli ([0-9][0-9A-Za-z.+-]{0,63})\s*", result.stdout)

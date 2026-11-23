@@ -84,6 +84,7 @@ def real_launch(request, tmp_path, fake_bin):
     # Stub -o as a real report and optionally keep the child alive until teardown.
     codex = fake_bin / 'codex'
     codex.write_text('''#!/bin/sh
+if [ "$1" = --version ]; then echo 'codex-cli 0.171.0'; exit 0; fi
 while [ "$#" -gt 0 ]; do
   if [ "$1" = -o ]; then shift; report="$1"; fi
   shift

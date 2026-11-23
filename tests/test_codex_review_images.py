@@ -57,6 +57,7 @@ def env_dir(tmp_path: Path) -> Path:
     _exe(
         d / "codex",
         "#!/bin/sh\n"
+        "if [ \"$1\" = --version ]; then echo 'codex-cli 0.171.0'; exit 0; fi\n"
         "cat >/dev/null\n"
         "if [ -n \"$ARGV_CAPTURE_FILE\" ]; then\n"
         "  : > \"$ARGV_CAPTURE_FILE.tmp\"\n"

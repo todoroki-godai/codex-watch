@@ -26,6 +26,7 @@ CODEX_REVIEW = BIN_DIR / "codex-review"
 
 VALID_GOAL_CUT = "30.04分/周 | 根拠: pitfall #588 の実測（2026-08-26 cider-power-lp） | 取得日: 2026-08-26"
 CONFIG_MODEL_RESPONSE_SH = (
+    "if [ \"$1\" = --version ]; then echo 'codex-cli 0.171.0'; exit 0; fi\n"
     "if [ \"$1\" = app-server ]; then\n"
     "  read -r request; echo '{\"id\":1,\"result\":{}}'\n"
     "  read -r notification; read -r request\n"
