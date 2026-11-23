@@ -125,18 +125,29 @@ POSITIVE = ("autoverify-equivalent-lock-flags", "fcntl.LOCK_EX | fcntl.LOCK_NB",
             "fcntl.LOCK_NB | fcntl.LOCK_EX", "test_autoverify_exact_matches_and_reuses_result[impl]")
 
 
-def trace_source(source, lines, *, count_transients=False):
+def trace_source(source, reference, lines, *, count_transients=False):
     capture = f"""
-        if event == "line" and frame.f_code.co_filename == filename and frame.f_lineno == {lines[-1] + 1}:
+        if reference_line == {lines[-1] + 1}:
             with path.with_name("mutation-transient").open("a") as output:
                 output.write(str(frame.f_locals["state"]["transient"]) + ":" + frame.f_locals["status"] + "\\n")
 """ if count_transients else ""
     trace = f"""
-    def trace(frame, event, _arg, filename=__file__, lines={lines!r},
+    # A fixture may insert lines into its copy before running Codex. Align the
+    # actual source with the mutant so a neighboring line cannot count as a hit.
+    from difflib import SequenceMatcher
+    original = Path({str(reference)!r}).read_text().splitlines()
+    actual = Path(__file__).read_text().splitlines()
+    reference_lines = {{actual_at + i + 1: original_at + i + 1
+                       for original_at, actual_at, size in SequenceMatcher(
+                           None, original, actual, autojunk=False).get_matching_blocks()
+                       for i in range(size)}}
+
+    def trace(frame, event, _arg, filename=__file__, lines={lines!r}, mapping=reference_lines,
               path=Path(__file__).resolve().parents[2] / "mutation-hit"):
-        if event == "line" and frame.f_code.co_filename == filename and frame.f_lineno in lines:
+        reference_line = mapping.get(frame.f_lineno) if event == "line" and frame.f_code.co_filename == filename else None
+        if reference_line in lines:
             with path.open("a") as output:
-                output.write(f"{{frame.f_lineno}}\\n")
+                output.write(f"{{reference_line}}\\n")
 {capture}
         return trace
 
@@ -165,13 +176,16 @@ def check_case(folder, original, case, *, positive=False):
     last_line_only = {"unreadable-skipped": 3, "review-recheck-error-ignored": 4,
                       "unsupported-header-stops": 1, "unsupported-header-silently-skipped": 1,
                       "autoverify-probe-exception-escapes": 1,
+                      "autoverify-memories-disabled": 0,
                       "autoverify-missing-section-is-empty": 1}
     lines = ([first + last_line_only[name]] if name in last_line_only
              else list(range(first, first + len(after.splitlines()))))
     if guard_line is not None:
         lines.append(guard_line)
     count_transients = name == "autoverify-unlimited-transient"
-    (source / HELPER).write_text(trace_source(mutated, lines, count_transients=count_transients))
+    reference = source.parent / "mutation-source.py"
+    reference.write_text(mutated)
+    (source / HELPER).write_text(trace_source(mutated, reference, lines, count_transients=count_transients))
     base = source.parent / "pytest"
     node = f"{TEST}::{test}"
     command = [sys.executable, "-m", "pytest", "-q", "--tb=short", "-p", "no:cacheprovider",
