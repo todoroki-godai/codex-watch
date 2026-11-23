@@ -756,7 +756,7 @@ def test_autoverify_transient_budget(launch, problem):
         assert source.count("PROBE_TIMEOUT = 120") == 1
         helper.write_text(source.replace("PROBE_TIMEOUT = 120", "PROBE_TIMEOUT = 0.75"))
     elif problem == "nonzero":
-        plan_probe(root, [("developer", skills_message(("agent-browser", kept)))], exit=1)
+        plan_probe(root, exit=1)
     else:
         plan_probe(root)
 
@@ -836,3 +836,20 @@ def test_autoverify_rereads_state_after_lock(launch):
     assert not (root / "probe-calls").exists()
     assert "自動確認" not in result.stderr
     assert json.loads(state.read_text()) == failed
+
+
+@pytest.mark.parametrize("kind", ["impl", "review"])
+def test_off_continues_when_helper_fails(launch, kind):
+    root, _, _, run, child = launch
+    (root / "wrapper/lib/codex_launch_skills.py").write_text("raise SystemExit(2)\n")
+    result = run(kind, "new-version", CODEX_SKILLS_FILTER="off")
+    check_launch(root, result, child, "off", 1, version="不明")
+
+
+def test_nonzero_probe_with_matching_record_verifies(launch):
+    root, skill, _, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    plan_probe(root, [("developer", skills_message(("agent-browser", kept)))], exit=1)
+    check_launch(root, run("impl", "new-version"), child, "on:autoverified", 1)
+    assert json.loads(version_file(root).read_text())["status"] == "verified"

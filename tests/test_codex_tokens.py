@@ -99,7 +99,7 @@ def test_report_rollout_tokens_and_tool_bytes(report):
     assert (f"{week}\tgpt-6.2-sol\treview\t不明\t不明\t1\t"
             "2/2\t35629/35629\t30125/30125\t159318/159318\t117846/117846\t13219/13219\t"
             "241/241\t0/0\t0/0\t375/375") in output
-    assert "走行中\t1\n記録なし\t1\n状態欄なし\t1\n" in output
+    assert "走行中\t1\n記録なし（ヘッダーが読めない）\t0\n記録なし（会話記録が無い）\t1\n記録なし（token_count が無い）\t0\n状態欄なし\t1\n" in output
     assert sum("gpt-6.2-sol" in line for line in run("--days", "10").splitlines()) == 3
 
 
@@ -107,7 +107,7 @@ def test_compressed_record_without_zstd_is_missing(report, tmp_path):
     run_file, run, _, _ = report
     path = run_file(1, present=False)
     path.with_suffix(".jsonl.zst").write_bytes(b"no decoder available")
-    assert "記録なし\t1\n" in run(path=tmp_path)
+    assert "記録なし（token_count が無い）\t1\n" in run(path=tmp_path)
 
 
 @pytest.mark.skipif(shutil.which("zstd") is None, reason="zstd is not installed")
@@ -140,3 +140,29 @@ def test_exec_javascript_output_categories(report):
     assert (f"{week}\tgpt-6.2-sol\timpl\t0.171.1\ton:autoverified\t1\t"
             "2/2\t35629/35629\t30125/30125\t159318/159318\t117846/117846\t13219/13219\t"
             "245/245\t5/5\t6/6\t382/382") in output
+
+
+def test_leading_codex_logs_and_non_log_prefix(report):
+    run_file, run, week, _ = report
+    first = run_file(1)
+    log = first.parents[5] / "watch/1.log"
+    header = log.read_text()
+    log.write_text("2026-11-23T04:55:55.511032Z ERROR codex_core::session::session: failed to load skill x\n"
+                   "2026-11-23T04:55:55.511032Z ERROR codex_core::session::session: failed to load skill y\n" + header)
+    run_file(2)
+    bad = log.with_name("2.log")
+    bad.write_text("依頼文の本文\n" + header.replace("000000000001", "000000000002"))
+    output = run()
+    assert f"{week}\tgpt-6.2-sol\timpl\t0.171.1\ton:autoverified\t1\t" in output
+    assert "記録なし（ヘッダーが読めない）\t1\n" in output
+
+
+def test_missing_reasons_are_separate(report):
+    run_file, run, _, _ = report
+    rollout = run_file(1)
+    rollout.write_text('{}\n')
+    run_file(2, present=False)
+    run_file(3).parents[5].joinpath("watch/3.log").write_text("invalid\n")
+    output = run()
+    for reason in ("ヘッダーが読めない", "会話記録が無い", "token_count が無い"):
+        assert f"記録なし（{reason}）\t1\n" in output
