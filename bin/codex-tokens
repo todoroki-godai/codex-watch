@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Summarize Codex watch runs and model-visible tool output for recent weeks."""
+import argparse
+from collections import Counter, defaultdict
+import datetime as dt
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import statistics
+import sys
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+from codex_rollout import codex_sessions, find_rollouts, log_header, records
+
+
+JST = dt.timezone(dt.timedelta(hours=9), "JST")
+UNKNOWN = "不明"
+READ_COMMANDS = {"cat", "sed", "head", "tail", "rg", "grep", "ls", "find"}
+TEST_COMMANDS = {"pytest", "vitest", "jest"}
+OUTPUT_KINDS = ("read", "test", "other")
+
+
+def command_kind(command):
+    try:
+        words = shlex.split(command) if isinstance(command, str) else command
+    except ValueError:
+        return "other"
+    if not words:
+        return "other"
+    name = Path(words[0]).name
+    args = words[1:]
+    if name in {"bash", "sh", "zsh"} and len(args) >= 2 and "c" in args[0] and args[0].startswith("-"):
+        return command_kind(args[1])
+    if name == "git":
+        while args and args[0] in {"-C", "--no-pager"}:
+            args = args[2:] if args[0] == "-C" else args[1:]
+        if args and args[0] in {"show", "diff"}:
+            return "read"
+    if name in READ_COMMANDS:
+        return "read"
+    if name in TEST_COMMANDS:
+        return "test"
+    if name in {"npm", "pnpm"} and args and args[0] == "test":
+        return "test"
+    if re.fullmatch(r"python(?:\d+(?:\.\d+)?)?", name) and args[:2] == ["-m", "pytest"]:
+        return "test"
+    return "other"
+
+
+def tool_kind(payload):
+    name = payload.get("name", "")
+    raw = payload.get("arguments", payload.get("input", ""))
+    if name not in {"exec_command", "shell_command", "shell", "exec"}:
+        return command_kind(name)
+    try:
+        decoded = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        decoded = raw
+    command = decoded
+    if isinstance(decoded, dict):
+        command = decoded.get("cmd") or decoded.get("command")
+    if isinstance(command, str) or (
+        isinstance(command, list) and all(isinstance(word, str) for word in command)
+    ):
+        return command_kind(command)
+    return "other"
+
+
+def output_bytes(output):
+    body = output if isinstance(output, str) else json.dumps(output, ensure_ascii=False, separators=(",", ":"))
+    return len(body.encode("utf-8", errors="replace"))
+
+
+def measurements(path):
+    first = last = None
+    requests = 0
+    calls = {}
+    outputs = Counter()
+    try:
+        for payload in records(path):
+            kind = payload.get("type")
+            call_id = payload.get("call_id")
+            if kind == "token_count" and payload.get("info"):
+                info = payload["info"]
+                usage = info.get("total_token_usage")
+                if not usage or not usage.get("input_tokens") or usage == last:
+                    continue
+                if first is None:
+                    first = info.get("last_token_usage") or usage
+                last = usage
+                requests += 1
+            elif kind in ("function_call", "custom_tool_call") and call_id:
+                calls[call_id] = tool_kind(payload)
+            elif kind in ("function_call_output", "custom_tool_call_output"):
+                outputs[call_id] += output_bytes(payload.get("output", ""))
+    except OSError:
+        return None
+
+    if first is None:
+        return None
+    grouped_bytes = Counter()
+    for call_id, size in outputs.items():
+        grouped_bytes[calls.get(call_id, "other")] += size
+    first_input = first["input_tokens"]
+    total_input = last["input_tokens"]
+    return (requests, first_input, first_input - first.get("cached_input_tokens", 0),
+            total_input, total_input - last.get("cached_input_tokens", 0), last.get("output_tokens", 0),
+            *(grouped_bytes[kind] for kind in OUTPUT_KINDS))
+
+
+def running(pid):
+    try:
+        number = int(pid)
+        if number > 0:
+            os.kill(number, 0)
+            return True
+    except PermissionError:
+        return True
+    except (OSError, ValueError, OverflowError):
+        pass
+    return False
+
+
+def collect(watch, sessions, days):
+    now = int(dt.datetime.now(JST).timestamp())
+    earliest = now - days * 86400
+    rows = []
+    missing_fields = active = missing = 0
+    for path in watch.glob("*.state"):
+        try:
+            state = dict(line.split("=", 1) for line in
+                         path.read_text(encoding="utf-8", errors="replace").splitlines() if "=" in line)
+            started = int(state.get("started_at", ""))
+        except (OSError, ValueError):
+            continue
+        if not earliest <= started <= now:
+            continue
+        if not state.get("cli_version") or not state.get("launch_skills_filter"):
+            missing_fields += 1
+        if running(state.get("pid", "")):
+            active += 1
+            continue
+        version, model, session_id = log_header(Path(state.get("log") or path.with_suffix(".log")))
+        version = (version or state["cli_version"]) if state.get("cli_version") else UNKNOWN
+        local_date = dt.datetime.fromtimestamp(started, JST).date()
+        monday = local_date - dt.timedelta(days=local_date.weekday())
+        entry = "review" if "skills_suppressed" in state else "impl"
+        group = (str(monday), model or UNKNOWN, entry, version, state.get("launch_skills_filter") or UNKNOWN)
+        rows.append((group, session_id))
+
+    rollouts = find_rollouts(sessions, {session_id for _, session_id in rows if session_id})
+    groups = defaultdict(list)
+    for group, session_id in rows:
+        usage = measurements(rollouts.get(session_id))
+        if usage is None:
+            missing += 1
+        else:
+            groups[group].append(usage)
+    return groups, active, missing, missing_fields
+
+
+def median_total(values):
+    median = str(statistics.median(values)).removesuffix(".0")
+    return f"{median}/{sum(values)}"
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--days", type=int, default=7, metavar="N", help="直近の日数（既定7日）")
+    args = parser.parse_args()
+    if args.days < 1:
+        parser.error("--days は1以上を指定してください")
+    watch = Path(os.environ.get("CODEX_WATCH_DIR") or Path.home() / ".codex-watch")
+    groups, active, missing, missing_fields = collect(watch, codex_sessions(), args.days)
+    print("各値は中央値/合計。週は JST の月曜始まり。")
+    print("週\tモデル\t起動口\t版\tskill 絞り込み\t件数\t要求回数\t"
+          "初回入力トークン\t初回入力トークン（キャッシュ抜き）\t"
+          "入力合計トークン\t入力合計トークン（キャッシュ抜き）\t出力合計トークン\t"
+          "読みバイト（推定）\t試験バイト（推定）\tその他バイト（推定）")
+    for group, values in sorted(groups.items()):
+        print(*group, len(values), *(median_total(metric) for metric in zip(*values)), sep="\t")
+    print(f"走行中\t{active}\n記録なし\t{missing}\n状態欄なし\t{missing_fields}")
+
+
+if __name__ == "__main__":
+    main()
