@@ -432,6 +432,12 @@ def test_extract_log_header_skips_codex_log_lines_before_header(tmp_path: Path):
     assert out.split("\t") == ["gpt-5.6-sol", "cli_log", "medium", "cli_log"]
 
 
+def test_extract_log_header_skipped_lines_do_not_count_toward_limit(tmp_path: Path):
+    line = "2026-11-23T04:55:55.511032Z ERROR codex_core::session::session: failed to load skill\n"
+    out = _run_extract(line * 195 + SYNTHETIC_HEADER, tmp_path)
+    assert out.split("\t")[:2] == ["gpt-5.6-sol", "cli_log"]
+
+
 def test_extract_log_header_unresolved_when_absent(tmp_path: Path):
     out = _run_extract("no header at all\njust some text\n", tmp_path)
     model, model_source, effort, effort_source = out.split("\t")

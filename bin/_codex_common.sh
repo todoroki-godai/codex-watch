@@ -137,7 +137,7 @@ codex_summary_state() {
 #      任意のテキストファイルを渡されても、ほぼ何も読まずに弾く。Codex 0.171.0 は skill の
 #      読み込み失敗を見出しより前に ERROR 行で出すため、1行目固定だと実ログの大半を読めない）
 #   2. その**直後**が `--------` であること
-#   3. 3行目以降、`^model: ` / `^reasoning effort: ` の行頭一致だけを採用する
+#   3. 開始区切りの直後から、`^model: ` / `^reasoning effort: ` の行頭一致だけを採用する
 #   4. 200行以内に次の `--------` で区間が閉じること（閉じなければ unresolved）
 #
 # $1 = ログファイルパス
@@ -146,7 +146,7 @@ codex_summary_state() {
 extract_codex_log_header() {
   local log_file="$1"
   local model="" effort="" line state=0
-  local line_no=0
+  local line_no=0 skipped=0
   local max_lines=200
 
   if [[ -f "$log_file" ]]; then
@@ -156,6 +156,9 @@ extract_codex_log_header() {
       if (( state == 0 )); then
         # 先頭に続く Codex 自身のログ行（<ISO時刻>Z ERROR|WARN|INFO）だけ読み飛ばす（lib/codex_rollout.py の log_header と同じ規則）。
         if [[ "$line" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z[[:space:]]+(ERROR|WARN|INFO)[[:space:]] ]]; then
+          # 読み飛ばした行は見出しの200行の上限に数えない（Python 側と起点をそろえる）。読み飛ばしにも同じ上限を置く。
+          skipped=$((skipped + 1)); (( skipped > max_lines )) && break
+          line_no=$((line_no - 1))
           continue
         fi
         if [[ "$line" =~ ^"OpenAI Codex v" ]]; then
