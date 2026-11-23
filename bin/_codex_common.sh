@@ -132,10 +132,11 @@ codex_summary_state() {
 #   --------
 #
 # 判定手順（fail-closed。1つでも条件を満たさなければ unresolved に倒す）:
-#   1. **1行目**が `^OpenAI Codex v` に一致すること（1行目固定。一致しなければ
-#      1行読んだだけで即座に unresolved を返す＝ codex のログでも state の `log=` が
-#      指すファイルでもない任意のテキストファイルを渡されても、ほぼ何も読まずに弾く）
-#   2. その**直後（2行目）**が `--------` であること
+#   1. 先頭に続く Codex 自身のログ行（`<ISO時刻>Z ERROR|WARN|INFO `）だけを読み飛ばし、
+#      その次の行が `^OpenAI Codex v` に一致すること（一致しなければ即座に unresolved を返す＝
+#      任意のテキストファイルを渡されても、ほぼ何も読まずに弾く。Codex 0.171.0 は skill の
+#      読み込み失敗を見出しより前に ERROR 行で出すため、1行目固定だと実ログの大半を読めない）
+#   2. その**直後**が `--------` であること
 #   3. 3行目以降、`^model: ` / `^reasoning effort: ` の行頭一致だけを採用する
 #   4. 200行以内に次の `--------` で区間が閉じること（閉じなければ unresolved）
 #
@@ -152,12 +153,16 @@ extract_codex_log_header() {
     while (( line_no < max_lines )) && IFS= read -r line; do
       line_no=$((line_no + 1))
 
-      if (( line_no == 1 )); then
+      if (( state == 0 )); then
+        # 先頭に続く Codex 自身のログ行（<ISO時刻>Z ERROR|WARN|INFO）だけ読み飛ばす（lib/codex_rollout.py の log_header と同じ規則）。
+        if [[ "$line" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z[[:space:]]+(ERROR|WARN|INFO)[[:space:]] ]]; then
+          continue
+        fi
         if [[ "$line" =~ ^"OpenAI Codex v" ]]; then
           state=1
           continue
         fi
-        # 1行目固定: 一致しなければここで即座に読むのをやめる（fail-closed）。
+        # ログ行の次が見出しでなければ、ここで即座に読むのをやめる（fail-closed）。
         break
       fi
 

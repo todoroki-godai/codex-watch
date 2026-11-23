@@ -421,6 +421,17 @@ def test_extract_log_header_reads_effective_values(tmp_path: Path):
     assert effort_source == "cli_log"
 
 
+def test_extract_log_header_skips_codex_log_lines_before_header(tmp_path: Path):
+    # Codex 0.171.0 の実ログの先頭と同じ形（見出しの前に ERROR 行が続く）。
+    prefixed = (
+        "2026-11-23T04:55:55.511032Z ERROR codex_core::session::session: failed to load skill /x/SKILL.md: missing YAML frontmatter\n"
+        "2026-11-23T04:55:55.512000Z WARN codex_core::config: something\n"
+        + SYNTHETIC_HEADER
+    )
+    out = _run_extract(prefixed, tmp_path)
+    assert out.split("\t") == ["gpt-5.6-sol", "cli_log", "medium", "cli_log"]
+
+
 def test_extract_log_header_unresolved_when_absent(tmp_path: Path):
     out = _run_extract("no header at all\njust some text\n", tmp_path)
     model, model_source, effort, effort_source = out.split("\t")
