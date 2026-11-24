@@ -104,10 +104,23 @@ class Scan:
         if path not in self.observed:
             self.observed[path] = self.fingerprint(path)
 
-    def unchanged(self):
+    def unchanged(self, *, reinstalled=None, siblings=None):
         for path, before in self.observed.items():
+            if reinstalled is not None and path == reinstalled:
+                info = metadata(path, follow=False)
+                if info is not None and stat.S_ISDIR(info.st_mode):
+                    continue
+            if reinstalled is not None and path == reinstalled.parent:
+                after = self.fingerprint(path)
+                if (before[0] and after[0] and before[0][:3] == after[0][:3]
+                        and before[1] and after[1] and before[1][:3] == after[1][:3]
+                        and siblings == self.siblings(reinstalled)):
+                    continue
             if self.fingerprint(path) != before:
                 raise FilterError(f"{path}: 列挙中に設定または置き場が変更されました")
+
+    def siblings(self, system):
+        return {p.name: self.fingerprint(p) for p in system.parent.iterdir() if p != system}
 
     def config(self, path):
         self.watch(path)
@@ -778,13 +791,21 @@ def write_version_state(path, state):
             temporary.unlink(missing_ok=True)
 
 
+def final_version_state(state):
+    if state["status"] == "verified":
+        return True
+    if state["status"] != "failed":
+        return False
+    return state.get("transient", 0) < 3 or time.time() - state.get("failed_at", 0) < 86400
+
+
 def autoverify(executable, version, work, prepare):
     """Return the version status and reuse the exact args from a successful probe."""
     path = Path(os.environ.get("CODEX_WATCH_DIR") or Path.home() / ".codex-watch") / "cli-versions"
     state_file = path / f"{version}.json"
     try:
         state = read_version_state(state_file)
-        if state["status"] in ("verified", "failed"):
+        if final_version_state(state):
             return state["status"], None
         path.mkdir(parents=True, exist_ok=True)
         with (path / f"{version}.lock").open("a") as lock:
@@ -793,27 +814,47 @@ def autoverify(executable, version, work, prepare):
             except BlockingIOError:
                 return "unverified", None
             state = read_version_state(state_file)
-            if state["status"] in ("verified", "failed"):
+            if final_version_state(state):
                 return state["status"], None
 
             observed = plan = probe_run = None
+            detail = "外す実体0件"
             try:
                 plan = prepare("keep", True)
                 if plan.removed_count:
+                    codex_home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+                    system = (codex_home.resolve() if os.environ.get("CODEX_HOME") else codex_home.absolute()) / "skills/.system"
+                    info = metadata(system, follow=False)
+                    parent = metadata(system.parent, follow=False)
+                    reinstall = system if (system in plan.scan.observed and info and stat.S_ISDIR(info.st_mode)
+                                           and parent and stat.S_ISDIR(parent.st_mode)) else None
+                    siblings = plan.scan.siblings(reinstall) if reinstall else None
+                    plan.scan.unchanged()
                     _, probe_run = run_probe(executable, work, plan.override)
-                    observed = listed_skills(find_rollout(codex_sessions(), probe_run))
+                    rollout = find_rollout(codex_sessions(), probe_run)
+                    detail = "記録なし" if rollout is None else "節なし"
+                    observed = listed_skills(rollout)
                     if observed is not None:
-                        plan.scan.unchanged()
-            except Exception:
+                        plan.scan.unchanged(reinstalled=reinstall, siblings=siblings)
+            except Exception as exc:
                 # Probe setup and inspection are opportunistic, including scan SIGALRM.
                 observed = None
+                detail = f"{type(exc).__name__}: {str(exc).splitlines()[0] if str(exc) else ''}"
             if observed is None:
                 state["transient"] += 1
                 status = "failed" if state["transient"] >= 3 else "pending"
                 reason = "自動確認が3回判定できませんでした"
+                state["last_reason"] = detail
+                if status == "failed":
+                    state["failed_at"] = time.time()
             else:
                 status = "verified" if observed and observed == plan.expected else "failed"
                 reason = "自動確認で skill の一覧が一致しませんでした"
+                state.pop("failed_at", None)
+                if status == "failed":
+                    state["transient"] = 0
+                else:
+                    state.pop("last_reason", None)
             write_version_state(state_file, {**state, "status": status, "probe_run": probe_run})
             if status == "failed":
                 warn_skipped(version, reason)

@@ -21,7 +21,7 @@ dummy prompt
 - 直し残しの検索: 確認済
 """
 FAKE_CODEX = r'''
-import json, os, pathlib, subprocess, sys, time
+import json, os, pathlib, shutil, subprocess, sys, time
 root = pathlib.Path(__file__).resolve().parent.parent
 args = sys.argv[1:]
 variant = (root / 'variant').read_text()
@@ -38,6 +38,23 @@ elif args[0] == 'exec':
         with (root / 'probe-calls').open('a') as stream:
             stream.write(json.dumps(payload) + '\n')
         plan = json.loads((root / 'probe-plan').read_text())
+        if plan.get('reinstall_system'):
+            system = pathlib.Path(os.environ['CODEX_HOME']) / 'skills/.system'
+            backup = root / 'system-backup'
+            shutil.copytree(system, backup)
+            shutil.rmtree(system)
+            shutil.copytree(backup, system)
+            shutil.rmtree(backup)
+        if plan.get('change_config'):
+            (pathlib.Path(os.environ['CODEX_HOME']) / 'config.toml').write_text('[skills]\n# changed\n')
+        if plan.get('add_skill'):
+            path = pathlib.Path(os.environ['CODEX_HOME']) / 'skills/added/SKILL.md'
+            path.parent.mkdir()
+            path.write_text('---\nname: added\n---\n')
+        if plan.get('replace_system_link'):
+            system = pathlib.Path(os.environ['CODEX_HOME']) / 'skills/.system'
+            system.unlink()
+            system.symlink_to(root / 'other-system', target_is_directory=True)
         if plan.get('hook_warning'):
             print('fixture warning: a startup hook failed', file=sys.stderr)
         if plan.get('timeout'):
@@ -700,6 +717,76 @@ def test_autoverify_exact_matches_and_reuses_result(launch, kind):
     assert len((root / "probe-calls").read_text().splitlines()) == 1
 
 
+def test_autoverify_system_reinstalled(launch):
+    root, skill, _, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    skill("bundled", "home/.codex/skills/.system/bundled/SKILL.md")
+    plan_probe(root, [("developer", skills_message(("agent-browser", kept)))], reinstall_system=True)
+    check_launch(root, run("impl", "new-version"), child, "on:autoverified", 1)
+
+
+def test_autoverify_config_change_is_transient(launch):
+    root, skill, _, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    (root / "home/.codex/skills/.system").mkdir()
+    plan_probe(root, [("developer", skills_message(("agent-browser", kept)))],
+               reinstall_system=True, change_config=True)
+    check_launch(root, run("impl", "new-version"), child, "skipped:autoverify_transient", 1)
+    assert "FilterError:" in json.loads(version_file(root).read_text())["last_reason"]
+
+
+def test_autoverify_new_sibling_is_transient(launch):
+    root, skill, _, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    (root / "home/.codex/skills/.system").mkdir()
+    plan_probe(root, [("developer", skills_message(("agent-browser", kept)))],
+               reinstall_system=True, add_skill=True)
+    check_launch(root, run("impl", "new-version"), child, "skipped:autoverify_transient", 1)
+
+
+def test_autoverify_system_symlink_change_is_transient(launch):
+    root, skill, link, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    (root / "other-system").mkdir()
+    (root / "initial-system").mkdir()
+    link("home/.codex/skills/.system", root / "initial-system")
+    plan_probe(root, [("developer", skills_message(("agent-browser", kept)))], replace_system_link=True)
+    check_launch(root, run("impl", "new-version"), child, "skipped:autoverify_transient", 1)
+
+
+def test_autoverify_retry_failure_resets_wait(launch):
+    root, skill, _, run, child = launch
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    state = version_file(root)
+    state.parent.mkdir(parents=True)
+    state.write_text(json.dumps({"status": "failed", "transient": 3, "failed_at": time.time() - 86500}))
+    plan_probe(root)
+    for attempt in (1, 2):
+        check_launch(root, run("impl", "new-version"), child, "skipped:autoverify_failed", attempt)
+    assert len((root / "probe-calls").read_text().splitlines()) == 1
+    assert json.loads(state.read_text())["last_reason"] == "記録なし"
+
+
+@pytest.mark.parametrize("age,retry", [(86300, False), (86500, True), (None, True)])
+def test_autoverify_failed_retry(launch, age, retry):
+    root, skill, _, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    skill("extra", "home/.codex/skills/unlisted/SKILL.md")
+    state = {"status": "failed", "transient": 3, "probe_run": None}
+    if age is not None:
+        state["failed_at"] = time.time() - age
+    version_file(root).parent.mkdir(parents=True)
+    version_file(root).write_text(json.dumps(state))
+    plan_probe(root, [("developer", skills_message(("agent-browser", kept)))])
+    check_launch(root, run("impl", "new-version"), child,
+                 "on:autoverified" if retry else "skipped:autoverify_failed", 1)
+    assert (root / "probe-calls").exists() == retry
+
+
 @pytest.mark.parametrize("mode", ["verified", "filter-off", "autoverify-off"])
 def test_autoverify_bypass(launch, mode):
     root, skill, _, run, child = launch
@@ -767,6 +854,12 @@ def test_autoverify_transient_budget(launch, problem):
         state = json.loads(version_file(root).read_text())
         assert state["status"] == ("pending" if attempt < 3 else "failed")
         assert state["transient"] == min(attempt, 3)
+        assert state["last_reason"] == {
+            "no-section": "節なし", "no-record": "記録なし", "nonzero": "記録なし",
+            "no-removals": "外す実体0件",
+        }.get(problem, state["last_reason"])
+        if problem == "timeout":
+            assert state["last_reason"].startswith("TimeoutExpired:")
         assert sum("自動確認" in line for line in result.stderr.splitlines()) == (attempt == 3)
     if problem == "no-removals":
         assert not (root / "probe-calls").exists()
@@ -789,7 +882,9 @@ def test_autoverify_preparation_failure_falls_back(launch, failure):
                  else "os.kill(os.getpid(), signal.SIGALRM)")
     helper.write_text(source.replace(marker, f"    {statement}\n{marker}"))
     check_launch(root, run("impl", "new-version"), child, "skipped:autoverify_transient", 1)
-    assert json.loads(version_file(root).read_text())["transient"] == 1
+    state = json.loads(version_file(root).read_text())
+    assert state["transient"] == 1
+    assert state["last_reason"].startswith("FilterError:")
     assert not (root / "probe-calls").exists()
 
 
@@ -813,7 +908,7 @@ def test_autoverify_rereads_state_after_lock(launch):
     state = version_file(root)
     state.parent.mkdir(parents=True)
     state.write_text(json.dumps({"status": "pending", "transient": 2, "probe_run": None}))
-    failed = {"status": "failed", "transient": 3, "probe_run": "previous"}
+    failed = {"status": "failed", "transient": 3, "probe_run": "previous", "failed_at": time.time()}
     helper = root / "wrapper/lib/codex_launch_skills.py"
     source = helper.read_text()
     # Simulate the competing process committing the third failure before our flock.
