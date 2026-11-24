@@ -198,7 +198,8 @@ def test_fallback_cases(case, n, count, candidate, extra):
     if extra: saved(case['state'], 'c', 'コード', 1, 'a'*40)
     body = f'巡{n}の人間承認\n総上限: 5'
     result = gate(case, body)
-    assert (result['status'], result['total_round']) == ('pass', max(count+extra+1, n))
+    total = max(count+extra+1, n)
+    assert (result['status'], result['total_round']) == ('pass' if total <= 3 else 'blocked', total)
 
 
 def test_fallback_cli(case, monkeypatch):
@@ -208,11 +209,12 @@ def test_fallback_cli(case, monkeypatch):
     case['body_file'].write_text(body.replace('総上限: 3', '総上限: 5'))
     monkeypatch.delenv('REVIEW_PRERELEASE_RECORD')
     result = run_cli(case)
-    assert result.returncode == 0, result.stdout + result.stderr
-    state = rg.read_state_file(next(case['state'].glob('0-fixture-*.state')))
-    assert state['round'] == '4'
-    assert '今回のレビュー: 巡4（種別: コード）' in open(state['effective_prompt']).read()
-    assert '| 4 | コード |' in case['body_file'].read_text()
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert not list(case['state'].glob('0-fixture-*.state'))
+    case['body_file'].write_text(case['body_file'].read_text() + '\n裁定: 縮小')
+    result = run_cli(case)
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert not list(case['state'].glob('0-fixture-*.state'))
 
 
 @pytest.mark.parametrize('mode', ['kind', 'read'])

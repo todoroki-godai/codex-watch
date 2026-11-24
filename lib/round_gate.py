@@ -6,7 +6,7 @@
 契約の要旨（詳細は各関数の docstring）:
 - 巡の単位は「同一 target × 同一 HEAD SHA」（state dir のヘッダ束ねで判定）。
 - 前身の巡数は env REVIEW_PREDECESSOR + 本文の継承行（PR番号のみ抽出）から辿って合算する。
-- ゲートが本文から読むのは3種の正規表現だけ（継承 PR 番号 / 承認行の巡番号+総上限 / 裁定行の有無）。
+- ゲートが本文から読むのは継承 PR 番号と承認行の巡番号・総上限。
   巡数そのものを本文の表やコードブロックから数えることはしない（design 注記どおり）。
   「本文の巡数と台帳の巡数、大きい方を採る」は、承認行が明示する巡番号 vs 台帳(state dir) の
   比較として実装する（承認行は人間が書いた「その時点の巡番号」の記録なので、state dir 消失時の
@@ -33,9 +33,9 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 RE_INHERIT = re.compile(r"前身[^#]*PR[^#]*#([0-9]+)")
+RE_ADJUDICATED_SPLIT = re.compile(r"切り出し（本人裁定[:：][^）\n]*[^\s）][^）\n]*）・設計0巡・コード0巡から")
 RE_APPROVAL = re.compile(r"巡[ \t]*([0-9]+)[ \t]*の人間承認")
 RE_TOTAL_CAP = re.compile(r"総上限[:：][^0-9]*([0-9]+)")
-RE_VERDICT = re.compile(r"裁定[:：]|裁定（人間）")
 
 RE_TARGET = re.compile(r"^(pr|issue):([A-Za-z0-9_.\-]+)/([A-Za-z0-9_.\-]+)#([0-9]+)$")
 RE_NONE_TARGET = re.compile(r"^none:(.*)$", re.DOTALL)
@@ -50,6 +50,7 @@ GOAL_CUT_EXAMPLE = (
     "取得日: 2026-08-26"
 )
 
+MAX_REVIEW_ROUNDS = 3
 MAX_CHAIN_DEPTH = 5
 MAX_NONE_DISPATCHES = 3
 MAX_SAME_HEAD_DISPATCHES = 3  # 同一 target × 同一 HEAD（＝同一巡）内で許される発注本数の上限
@@ -270,6 +271,8 @@ def parse_inherited_pr_numbers(body: str) -> list[int]:
     """継承行から前身 PR 番号を抽出する（順序保持・重複除去）。"""
     seen: list[int] = []
     for m in RE_INHERIT.finditer(body or ""):
+        if re.match(r"[ \t]*から" + RE_ADJUDICATED_SPLIT.pattern, body[m.end():]):
+            continue
         n = int(m.group(1))
         if n not in seen:
             seen.append(n)
@@ -285,10 +288,6 @@ def parse_total_cap(body: str) -> int | None:
     """承認行が宣言する総上限。複数あれば最大値（最新の承認が上限を引き上げた場合を許容）。"""
     caps = [int(m.group(1)) for m in RE_TOTAL_CAP.finditer(body or "")]
     return max(caps) if caps else None
-
-
-def has_verdict(body: str) -> bool:
-    return RE_VERDICT.search(body or "") is not None
 
 
 def body_own_round(body: str) -> int:
@@ -825,11 +824,11 @@ def decide(total_for_decision: int, body: str, prerelease_context: dict | None =
     if total_for_decision <= 2:
         return Decision("pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 通過")
 
-    if 3 <= total_for_decision <= 5 and prerelease_context:
+    if 3 <= total_for_decision <= MAX_REVIEW_ROUNDS and prerelease_context:
         cap = prerelease_context['record']['total_cap']
         if total_for_decision <= cap:
             return Decision("pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 公開前のPJ裁定で通過")
-    if total_for_decision <= 5:
+    if total_for_decision <= MAX_REVIEW_ROUNDS:
         approvals = parse_approval_rounds(body)
         cap = parse_total_cap(body)
         if not approvals:
@@ -850,16 +849,12 @@ def decide(total_for_decision: int, body: str, prerelease_context: dict | None =
             "pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 承認済み（総上限{cap}）で通過"
         )
 
-    # 6以上
-    if has_verdict(body):
-        return Decision(
-            "pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 裁定行ありで通過"
-        )
+    # 上限超過は本文の内容にかかわらず停止する。
     return Decision(
         "blocked",
         EXIT_BLOCKED,
         total_for_decision,
-        f"巡{total_for_decision}: 6巡以上は裁定行（縮小／切り出し／撤回のいずれか）が必要です",
+        f"巡{total_for_decision}: 上限{MAX_REVIEW_ROUNDS}巡を超えています。縮小して入れる／切り出す（本人裁定の切り出し行で0巡から）／撤回のどれかを人間が決めてください（4巡目は出しません）",
     )
 
 

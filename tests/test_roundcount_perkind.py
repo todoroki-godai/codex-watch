@@ -24,15 +24,11 @@ def repro(tmp_path, monkeypatch):
     return data, state, gate
 
 
-@pytest.mark.parametrize('record', ['', '2078-design-round4'])
-def test_repro_design4(repro, monkeypatch, record):
+def test_repro_design4(repro):
     data, state, gate = repro
-    def forbidden(*args, **kwargs):
-        pytest.fail('Human approval must precede the prerelease exception')
-    monkeypatch.setattr(pre, 'evaluate', forbidden)
-    result = gate(record=record)
-    assert (result['status'], result['total_round'], result['authority']) == ('pass', 4, 'human')
-    assert result['record_target'] == data['target']
+    result = gate()
+    assert (result['status'], result['total_round']) == ('blocked', 4)
+    assert result['record_target'] == ''
     assert result['prerelease_evidence'] == {}
 
 
@@ -48,7 +44,7 @@ def test_pending_boundaries(repro, kind, n, approval, offset):
     body = (f'巡{n}の人間承認\n' if approval else '') + f'総上限: {n + offset}'
     result = gate(body, kind)
     assert result['total_round'] == n
-    assert result['status'] == ('pass' if approval and offset >= 0 else 'blocked')
+    assert result['status'] == ('pass' if n == 3 and approval and offset >= 0 else 'blocked')
 
 
 def test_pending_kind(repro):
