@@ -1,5 +1,6 @@
 """Keep launcher fixtures offline and independent of the startup filter."""
 import os
+import shutil
 import pytest
 
 
@@ -7,6 +8,9 @@ import pytest
 def offline_launchers(tmp_path, monkeypatch):
     folder = tmp_path / 'offline-aws'
     folder.mkdir()
+    node = shutil.which('node')
+    if node:
+        (folder / 'node').symlink_to(node)
     for program in ('aws', 'codex'):
         stub = folder / program
         stub.write_text('#!/bin/sh\nexit 1\n')
