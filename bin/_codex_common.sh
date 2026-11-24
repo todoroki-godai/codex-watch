@@ -324,6 +324,15 @@ prepare_codex_launch_skills() {
   local overrides override helper
   CODEX_LAUNCH_SKILLS_STATE=
   shift 2
+  if [[ -n "${CODEX_WATCH_CODEX+x}" ]]; then
+    case "$CODEX_WATCH_CODEX" in
+      /*) ;;
+      *) echo "CODEX_WATCH_CODEX は絶対パスで指定してください" >&2; return 2 ;;
+    esac
+    case "$CODEX_WATCH_CODEX" in
+      *$'\n'*|*$'\r'*) echo "CODEX_WATCH_CODEX に改行は使えません" >&2; return 2 ;;
+    esac
+  fi
   case "$mode" in
     on|off) ;;
     *) echo "CODEX_SKILLS_FILTER: on または off を指定してください" >&2; return 2 ;;
@@ -341,12 +350,13 @@ prepare_codex_launch_skills() {
   helper="$(dirname "${BASH_SOURCE[0]}")/../lib/codex_launch_skills.py"
   overrides="$(python3 "$helper" "$workdir" "$suppressed" "$memories" "$mode" "$@")" || {
     [[ "$mode" == off ]] || return 2
-    overrides=$'cli_version=不明\nlaunch_skills_filter=off\nexecutable=codex'
+    overrides=$'cli_version=不明\nlaunch_skills_filter=off\nexecutable='"${CODEX_WATCH_CODEX:-codex}"
   }
   while IFS= read -r override; do
     case "$override" in
       cli_version=*|launch_skills_filter=*) CODEX_LAUNCH_SKILLS_STATE+="$override"$'\n' ;;
-      executable=*) CODEX_LAUNCH_EXECUTABLE="${override#executable=}" ;;
+      executable=*) CODEX_LAUNCH_EXECUTABLE="${override#executable=}"
+        CODEX_LAUNCH_SKILLS_STATE+="codex_path=$CODEX_LAUNCH_EXECUTABLE"$'\n' ;;
       *) CODEX_CLI_ARGS+=(-c "$override") ;;
     esac
   done <<< "$overrides"
