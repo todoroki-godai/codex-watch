@@ -662,6 +662,40 @@ def read_version(executable):
     return version[1].decode("ascii")
 
 
+def select_codex():
+    override = os.environ.get("CODEX_WATCH_CODEX")
+    if override is not None:
+        if not os.path.isabs(override) or any(c in override for c in "\r\n"):
+            raise FilterError("CODEX_WATCH_CODEX は絶対パスで指定してください")
+        return override, read_version(override)
+    first = shutil.which("codex")
+    paths = [Path(part or ".") / "codex" for part in os.get_exec_path()]
+    nvm = Path(os.environ.get("NVM_DIR") or Path.home() / ".nvm")
+    paths.extend(sorted((nvm / "versions/node").glob("*/bin/codex")))
+    seen = set()
+    selected, selected_version = None, None
+    first_version = None
+    for path in paths:
+        if any(c in str(path) for c in "\r\n") or not path.is_file() or not os.access(path, os.X_OK):
+            continue
+        path = path.absolute()
+        real = path.resolve()
+        if real in seen:
+            continue
+        seen.add(real)
+        version = read_version(str(path))
+        if first and path == Path(first).absolute():
+            first_version = version
+        if version is None or semver(version) is None:
+            continue
+        if selected_version is None or semver(version)[:3] > semver(selected_version)[:3]:
+            selected, selected_version = str(path), version
+    if selected and first and Path(selected).resolve() != Path(first).resolve():
+        clean = lambda s: " ".join(str(s).splitlines())
+        print(f"PATH 先頭の codex {clean(first_version or '不明')} ではなく、最新の {clean(selected_version)}（{clean(selected)}）で起動します", file=sys.stderr)
+    return selected or (str(Path(first).absolute()) if first else None), selected_version
+
+
 def warn_skipped(version, reason, *, inventory_unreadable=False):
     # Paths may contain newlines. Keep the diagnostic to one stderr line.
     reason = " ".join(reason.splitlines())
@@ -881,10 +915,7 @@ def main():
     work, suppressed, memories, mode, *argv = sys.argv[1:]
     requested = requested_names(os.environ.get("CODEX_SKILLS_ALLOW", ""))
     check_review = suppressed == "yes" and bool(requested)
-    executable = shutil.which("codex")
-    if executable is not None:
-        executable = str(Path(executable).absolute())
-    version = read_version(executable) if executable else None
+    executable, version = select_codex()
     version_supported = version == CLI_VERSION
 
     def prepare(memory_mode, filter_supported):

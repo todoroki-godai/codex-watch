@@ -679,6 +679,58 @@ def state_fields(root, result):
                 if "=" in line)
 
 
+@pytest.mark.parametrize("kind", ["impl", "review"])
+def test_newest_is_used_for_probe_and_launch(launch, kind):
+    root, skill, _, run, child = launch
+    skill("kept", "home/.agents/skills/kept/SKILL.md")
+    skill("dropped", "home/.agents/skills/dropped/SKILL.md")
+    plan_probe(root, [])
+    newer = root / "nvm/versions/node/v2/bin/codex"
+    newer.parent.mkdir(parents=True)
+    # The fake records invocation paths but shares the original fixture data.
+    code = FAKE_CODEX.replace("pathlib.Path(__file__).resolve().parent.parent", f"pathlib.Path({str(root)!r})")
+    code = code.replace("variant = (root / 'variant').read_text()", "variant = 'new-version'")
+    executable(newer, code)
+    result = run(kind, NVM_DIR=str(root / "nvm"))
+    assert child(result)["executable"] == str(newer)
+    assert state_fields(root, result)["codex_path"] == str(newer)
+    assert json.loads((root / 'probe-calls').read_text().splitlines()[0])["executable"] == str(newer)
+    assert '0.171.0' in result.stderr and '0.171.1' in result.stderr
+
+
+@pytest.mark.parametrize("case,expected", [
+    ("numeric", "nvm"), ("tie", "path"), ("invalid", "path"),
+    ("override", "override"), ("single", "path"), ("path_order", "second"),
+])
+def test_candidate_selection(tmp_path, case, expected):
+    path = tmp_path / 'path/codex'
+    second = tmp_path / 'second/codex'
+    nvm = tmp_path / 'nvm/versions/node/v1/bin/codex'
+    override = tmp_path / 'explicit/codex'
+    for candidate in (path, second, nvm, override):
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+    def fake(candidate, version):
+        candidate.write_text(f'#!/bin/sh\nprintf "%s\\n" "{version}"\n')
+        candidate.chmod(0o755)
+    fake(path, 'codex-cli 0.99.0' if case == 'numeric' else 'codex-cli 0.171.0')
+    if case not in ('single', 'path_order'):
+        fake(nvm, {'numeric': 'codex-cli 0.171.0', 'tie': 'codex-cli 0.171.0',
+                   'invalid': 'not a version', 'override': 'codex-cli 9.0.0'}[case])
+    if case == 'path_order':
+        fake(second, 'codex-cli 0.172.0')
+    fake(override, 'codex-cli 0.1.0')
+    env = dict(os.environ, PATH=os.pathsep.join([str(path.parent), str(second.parent)]),
+               NVM_DIR=str(tmp_path / 'nvm'), HOME=str(tmp_path))
+    if case == 'override':
+        env['CODEX_WATCH_CODEX'] = str(override)
+    result = subprocess.run([sys.executable, str(ROOT / 'lib/codex_launch_skills.py'),
+                             str(tmp_path), 'no', 'off', 'off'], env=env,
+                            capture_output=True, text=True, check=True)
+    fields = dict(line.split('=', 1) for line in result.stdout.splitlines())
+    assert fields['executable'] == str({'path': path, 'second': second, 'nvm': nvm, 'override': override}[expected])
+    assert len(result.stderr.splitlines()) == (1 if case in ('numeric', 'path_order') else 0)
+
+
 def check_launch(root, result, child, status, count, *, version="0.171.1"):
     observed = child(result)
     fields = state_fields(root, result)
