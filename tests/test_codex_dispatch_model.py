@@ -13,6 +13,7 @@ from test_codex_review_cli import (
     BIN_DIR, VALID_GOAL_CUT, _init_git_repo, _write_executable, fake_bin,
 )
 
+HASH_LINE = "同じかの確かめ（作った結果・写し・反映先が元と一致するか）は、両側を同じ並び・同じ形で要約したハッシュと件数の一致で済ませ、全件を読んで1件ずつ照合しない。ずれたときだけ中身を開いて差を探す。"
 ASTRA = "gpt-6.2-astra"
 SOL = "gpt-6.2-sol"
 TERRA = "gpt-6.1-terra"
@@ -140,7 +141,7 @@ def test_impl_prepends_local_test_line_to_child_stdin(dispatch, tmp_path, body):
     original = body.encode("utf-8")
     result = dispatch("impl", prompt_bytes=original, CODEX_IMPL_MODEL=SOL)
     state = check_dispatch(result, tmp_path, "impl", SOL)
-    assert (tmp_path / "stdin").read_bytes() == (LOCAL_TEST_LINE + "\n").encode("utf-8") + original
+    assert (tmp_path / "stdin").read_bytes() == (LOCAL_TEST_LINE + "\n").encode("utf-8") + original + ("\n" + HASH_LINE + "\n").encode("utf-8")
     assert Path(state["prompt"]).read_bytes() == original
 
 
@@ -202,3 +203,24 @@ def test_review_dry_run_skips_resolution_and_dispatch(dispatch, tmp_path):
     assert not (tmp_path / "probe").exists()
     assert not (tmp_path / "exec").exists()
     assert not list((tmp_path / "state").glob("*"))
+
+
+def test_review_does_not_append_hash_line(dispatch, tmp_path):
+    result = dispatch('review', CODEX_REVIEW_MODEL=SOL)
+    check_dispatch(result, tmp_path, 'review', SOL)
+    assert HASH_LINE.encode() not in (tmp_path / 'stdin').read_bytes()
+
+
+def test_impl_continues_when_hash_template_missing(dispatch, tmp_path, monkeypatch):
+    import shutil
+    import test_codex_dispatch_model as module
+
+    copy = tmp_path / 'launcher-copy'
+    for name in ('bin', 'lib', 'templates'):
+        shutil.copytree(BIN_DIR.parent / name, copy / name)
+    (copy / 'templates/hash-check.md').unlink()
+    monkeypatch.setattr(module, 'BIN_DIR', copy / 'bin')
+    result = dispatch('impl', CODEX_IMPL_MODEL=SOL)
+    check_dispatch(result, tmp_path, 'impl', SOL)
+    assert '警告: ハッシュ照合のテンプレートを読めません。' in result.stderr
+    assert HASH_LINE.encode() not in (tmp_path / 'stdin').read_bytes()

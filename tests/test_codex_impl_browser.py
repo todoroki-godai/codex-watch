@@ -14,6 +14,7 @@ from test_codex_impl_aws import executable
 ROOT = Path(os.environ.get('CODEX_BROWSER_TEST_ROOT', Path(__file__).resolve().parents[1]))
 TEMPLATE = Path(__file__).resolve().parents[1] / 'templates/browser-cdp.md'
 SOURCE = '直しの出所: なし\n'
+HASH_SUFFIX = ('\n同じかの確かめ（作った結果・写し・反映先が元と一致するか）は、両側を同じ並び・同じ形で要約したハッシュと件数の一致で済ませ、全件を読んで1件ずつ照合しない。ずれたときだけ中身を開いて差を探す。\n').encode()
 BROWSER = r'''
 import json, os, sys, time
 from pathlib import Path
@@ -147,7 +148,7 @@ def assert_browser_launch(launch, tmp_path, result, original, port):
     assert set((tmp_path / f'queries-{port}').read_text().splitlines()) == {str(port)}
     block = TEMPLATE.read_text().split('## 依頼文に貼る定型\n\n```\n', 1)[1].split('\n- （ログイン', 1)[0]
     expected = block.replace('<ポート>', str(port)).replace('<許す URL の一覧>', 'この依頼文に書かれた URL だけ')
-    assert launched_prompt(tmp_path, port) == original + b'\n\n' + expected.encode() + b'\n'
+    assert launched_prompt(tmp_path, port) == original + b'\n\n' + expected.encode() + b'\n' + HASH_SUFFIX
     return argv[0]
 
 
@@ -172,7 +173,7 @@ def test_skip(launch, tmp_path, body, opt_out):
     run, work, _, state = launch
     result, original = run(body, opt_out=opt_out, override=tmp_path / 'absent')
     assert result.returncode == 0, result.stderr
-    assert launched_prompt(tmp_path, 41321) == original
+    assert launched_prompt(tmp_path, 41321) == original + HASH_SUFFIX
     assert 'browser_port=' not in (state / f'{result.stdout.strip()}.state').read_text()
     assert not (work / '_work').exists()
     assert not list(tmp_path.glob('browser-*'))
