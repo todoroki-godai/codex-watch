@@ -2,7 +2,7 @@
 import check_round_count_c_mutations as runner
 
 runner.OUT = runner.ROOT / '.tmp/roundcount-perkind/mutations'
-runner.TEST_FILES.append('tests/test_roundcount_perkind.py')
+runner.TEST_FILES.extend(['tests/test_roundcount_perkind.py', 'tests/test_round_gate.py'])
 runner.CASES += [
     ('N14-next-approval-disabled', 'lib/round_gate.py',
      'if (not kinds and pending_new_head is not None',
@@ -25,8 +25,8 @@ runner.CASES += [
      'and 3 <= n <= 5 and ledger_total == n', 'and 3 <= n <= 5 and ledger_total <= n',
      'future_approval_not_completed', 'and 3 <= n <= 5', 'extra6 authorize an uncompleted future round'),
     ('N20-hard-ceiling', 'lib/round_gate.py',
-     'if total_for_decision <= 5:', 'if total_for_decision <= 6:',
-     'sixth_round', 'if total_for_decision <= 6:', '④ lift per-kind hard ceiling'),
+     'if total_for_decision <= MAX_REVIEW_ROUNDS:', 'if total_for_decision <= MAX_REVIEW_ROUNDS + 1:',
+     '4_plus_needs_verdict', 'if total_for_decision <= MAX_REVIEW_ROUNDS + 1:', '④ lift per-kind hard ceiling'),
     ('P3-equivalent-next-approval', 'lib/round_gate.py',
      'and 3 <= n <= 5 and ledger_total == n', 'and n in (3, 4, 5) and n == ledger_total',
      'repro_design4 or pending_boundaries', 'and n in (3, 4, 5)', 'positive'),

@@ -61,11 +61,8 @@ def test_parse_total_cap_real_data():
 
 
 def test_has_verdict_real_data():
-    assert rg.has_verdict(BODY_563) is True  # "### 裁定: ①縮小してマージ"
-    # #559 は「巡2 後の裁定（人間）: 縮小してマージ」という**巡ごとの裁定メモ**を含む。
-    # regex は固定3種のみ（design §3）で文脈を判定しないため、ここも True になる
-    # （族2巡打ち切りの最終裁定と、巡単位の裁定メモを区別できないのは既知の限界。残課題に明記）。
-    assert rg.has_verdict(BODY_559) is True
+    assert rg.has_verdict(BODY_563) is False  # 見出しは記録行ではない
+    assert rg.has_verdict(BODY_559) is False  # 文中の裁定は記録行ではない
     assert rg.has_verdict(BODY_537) is False
 
 
@@ -139,7 +136,7 @@ def test_decide_3_needs_approval_and_cap():
 def test_decide_4_plus_needs_verdict_even_with_approval():
     body_with_approval_only = "巡3の人間承認\n総上限: 10巡"
     assert rg.decide(4, body_with_approval_only).status == "blocked"
-    body_with_verdict = body_with_approval_only + "\n### 裁定: 縮小してマージ"
+    body_with_verdict = body_with_approval_only + "\n- 裁定: 縮小してマージ"
     assert rg.decide(4, body_with_verdict).status == "pass"
 
 
@@ -1580,3 +1577,21 @@ def test_split_decision_does_not_authorize_later_round():
     body = "前身 PR #1 から切り出し（本人裁定: 別課題へ）・設計0巡・コード0巡から"
     assert rg.decide(4, body).status == "blocked"
     assert rg.decide(4, body + "\n裁定: 縮小").status == "pass"
+
+
+@pytest.mark.parametrize("body, expected_round, expected_exit", [
+    ("前身 PR #1 を開き直し。例: 切り出し（本人裁定: 別）・設計0巡・コード0巡から", 4, rg.EXIT_BLOCKED),
+    ("前身\nPR #1 を開き直し", 4, rg.EXIT_BLOCKED),
+    ("前身 PR #1 から切り出し（本人裁定: 別）・設計0巡・コード0巡から", 1, rg.EXIT_PASS),
+    ("前身 PR #1 を開き直し\n本文で裁定: という書式を説明", 4, rg.EXIT_BLOCKED),
+    ("前身 PR #1 を開き直し\n- 裁定（人間）: 縮小", 4, rg.EXIT_PASS),
+])
+def test_review_regressions_at_dispatch(tmp_path, monkeypatch, body, expected_round, expected_exit):
+    monkeypatch.setattr(rg, "git_remote_repo", lambda workdir: ("o", "r"))
+    monkeypatch.setattr(rg, "git_head_sha", lambda workdir: "new")
+    for i in range(3):
+        write_state(tmp_path, f"pred{i}", "pr:o/r#1", f"sha{i}", i)
+    fetch = make_fetcher({"pr:o/r#1": "", "issue:o/r#2": body})
+    result = rg.run_gate("issue:o/r#2", "/tmp", tmp_path, "", "", fetch_body=fetch, goal_cut=VALID_GOAL_CUT)
+    assert result["total_round"] == expected_round
+    assert result["exit_code"] == expected_exit
