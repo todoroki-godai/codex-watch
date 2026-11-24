@@ -36,7 +36,7 @@ RE_INHERIT = re.compile(r"前身[^#]*PR[^#]*#([0-9]+)")
 RE_ADJUDICATED_SPLIT = re.compile(r"切り出し（本人裁定[:：][^）\n]*[^\s）][^）\n]*）・設計0巡・コード0巡から")
 RE_APPROVAL = re.compile(r"巡[ \t]*([0-9]+)[ \t]*の人間承認")
 RE_TOTAL_CAP = re.compile(r"総上限[:：][^0-9]*([0-9]+)")
-RE_VERDICT = re.compile(r"^[ \t]*(?:[-*][ \t]+)?裁定(?:（人間）)?[:：]", re.MULTILINE)
+RE_VERDICT = re.compile(r"^[ \t]*(?:[-*][ \t]+)?裁定(?:（人間）)?[:：][^\S\n]*\S", re.MULTILINE)
 
 RE_TARGET = re.compile(r"^(pr|issue):([A-Za-z0-9_.\-]+)/([A-Za-z0-9_.\-]+)#([0-9]+)$")
 RE_NONE_TARGET = re.compile(r"^none:(.*)$", re.DOTALL)
@@ -292,7 +292,7 @@ def parse_total_cap(body: str) -> int | None:
 
 
 def has_verdict(body: str) -> bool:
-    return RE_VERDICT.search(RE_ADJUDICATED_SPLIT.sub("", body or "")) is not None
+    return RE_VERDICT.search(re.sub(r"(?ms)^[ \t]*```[^\n]*\n.*?^[ \t]*```[^\n]*(?:\n|$)", "", RE_ADJUDICATED_SPLIT.sub("", body or ""))) is not None
 
 
 def body_own_round(body: str) -> int:

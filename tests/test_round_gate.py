@@ -1586,7 +1586,10 @@ def test_split_decision_does_not_authorize_later_round():
     ("前身\nPR #1 を開き直し", 4, rg.EXIT_BLOCKED),
     ("前身 PR #1 から切り出し（本人裁定: 別）・設計0巡・コード0巡から", 1, rg.EXIT_PASS),
     ("前身 PR #1 を開き直し\n本文で裁定: という書式を説明", 4, rg.EXIT_BLOCKED),
+    ("前身 PR #1 を開き直し\n裁定: 　", 4, rg.EXIT_BLOCKED),
+    ("前身 PR #1 を開き直し\n```\n裁定: 例\n```", 4, rg.EXIT_BLOCKED),
     ("前身 PR #1 を開き直し\n- 裁定（人間）: 縮小", 4, rg.EXIT_PASS),
+    ("前身 PR #1 を開き直し\n```\n裁定: 例\n```\n- 裁定（人間）: 縮小して入れる", 4, rg.EXIT_PASS),
 ])
 def test_review_regressions_at_dispatch(tmp_path, monkeypatch, body, expected_round, expected_exit):
     monkeypatch.setattr(rg, "git_remote_repo", lambda workdir: ("o", "r"))
