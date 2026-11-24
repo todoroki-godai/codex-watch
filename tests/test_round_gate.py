@@ -1574,3 +1574,9 @@ def test_prerelease_does_not_bypass_round_cap():
     context = {"record": {"total_cap": 5}}
     assert rg.decide(3, "", context).status == "pass"
     assert rg.decide(4, "", context).status == "blocked"
+
+
+def test_split_decision_does_not_authorize_later_round():
+    body = "前身 PR #1 から切り出し（本人裁定: 別課題へ）・設計0巡・コード0巡から"
+    assert rg.decide(4, body).status == "blocked"
+    assert rg.decide(4, body + "\n裁定: 縮小").status == "pass"
