@@ -45,7 +45,7 @@ def sandbox(tmp_path):
 def launch(sandbox):
     tmp, fake, state, env = sandbox
     tree = tmp / 'source'
-    for folder in ('bin', 'lib'):
+    for folder in ('bin', 'lib', 'templates'):
         shutil.copytree(ROOT / folder, tree / folder)
     # The real AWS helper uses the sandbox's failing fake aws and temporary HOME.
     executable(fake / 'codex', 'cat >/dev/null\n')
