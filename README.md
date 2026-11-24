@@ -169,11 +169,11 @@ git revert --no-commit $(git rev-list --first-parent efe4aad..HEAD)
 
 旧手順の空入力ハッシュを記録した state は計算失敗と区別できないため受領不可とし、再発注します。旧手順の差分ありの値も、新手順で計算した申告値とは不一致となり受領不可です。state には手順の版がないため旧値を一般に識別できず、旧手順のまま申告した場合は一致してしまう可能性があります。手順変更前の run は再発注してください。既存 state は変更しません。
 
-## 公開前の巡3〜5（A）
+## 公開前の巡3（A）
 
 巡数は同じ対象・同じ種別（設計／コード）の distinct HEAD と同種の前身の合計です。判定・前置き・stateは同じ値を使います。
 種別なしの `巡Nの人間承認` と総上限は両種別へ適用しますが、Nを両方の消化数にはしません。保存済みround=Nの種別が一意で、同種の保存済み実績がN以上であることを確認します。
-未発注のN（3〜5）は、保存済みround=Nの候補がなく、今回種別の保存済み実績（同種の前身を含む）N−1と新規HEADの1巡が揃えば今回種別へ帰属します。それ以外の帰属不能・不足は従来の混算に戻します。承認なしの3巡目以上・総上限超過は通しません。
+未発注のN（3）は、保存済みround=Nの候補がなく、今回種別の保存済み実績（同種の前身を含む）N−1と新規HEADの1巡が揃えば今回種別へ帰属します。それ以外の帰属不能・不足は従来の混算に戻します。通常の承認なしの3巡目や、裁定行なしの4巡目以降は通しません。
 通常承認を先に判定するため、この経路は公開状態APIの失敗では止まりません。公開前特例の記録済み固定総上限の変更拒否は維持します。
 人間承認が無い場合だけ、`REVIEW_PRERELEASE_RECORD=<裁定ID>` で対象PR/課題本文の
 `## 公開前裁定` 節にある単一の JSON コードブロックを参照できます。環境変数は参照IDです。
@@ -202,7 +202,7 @@ GitHubの既定枝commitとローカルorigin/mainの両方でblobを照合し�
 - `base_sha`, `head_sha`, `content_hash`（既存 `round_gate.py content-hash --workdir <dir>` の値）
 - `files`（基点からのGit差分の全通常ファイル）、`files_hash`（ソートした一覧を `json.dumps(..., ensure_ascii=False, separators=(',', ':'))` してUTF-8のSHA256）
 - `plan`, `reason`, `rollback`, `cost`, `dispatch_reason`, `history_ref: "## 巡の履歴"`
-- `decided_at`（timezone付きISO8601、未来不可）、`total_cap`（整数3〜5、今回巡以上）
+- `decided_at`（timezone付きISO8601、未来不可）、`total_cap`（記録形式は整数3〜5、実際の巡の上限は3）
 - `blocking`, `invariants`, `remaining_checks`, `predecessors`（明示の配列。blockingとpredecessorsは空のみ）
 - `operation: "local-read-only-review"`, `explicit_confirmation: false`
 - 巡5では `round5_options: ["縮小", "前身継承で切り出し", "撤回して再設計"]`

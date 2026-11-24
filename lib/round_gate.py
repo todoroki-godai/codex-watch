@@ -50,6 +50,7 @@ GOAL_CUT_EXAMPLE = (
     "取得日: 2026-08-26"
 )
 
+MAX_REVIEW_ROUNDS = 3
 MAX_CHAIN_DEPTH = 5
 MAX_NONE_DISPATCHES = 3
 MAX_SAME_HEAD_DISPATCHES = 3  # 同一 target × 同一 HEAD（＝同一巡）内で許される発注本数の上限
@@ -269,10 +270,13 @@ def check_goal_cut(raw: str, mandatory_gate: str = "") -> GoalCutCheck:
 def parse_inherited_pr_numbers(body: str) -> list[int]:
     """継承行から前身 PR 番号を抽出する（順序保持・重複除去）。"""
     seen: list[int] = []
-    for m in RE_INHERIT.finditer(body or ""):
-        n = int(m.group(1))
-        if n not in seen:
-            seen.append(n)
+    for line in (body or "").splitlines():
+        if re.search(r"切り出し（本人裁定[:：][^）]+）・設計0巡・コード0巡から", line):
+            continue
+        for m in RE_INHERIT.finditer(line):
+            n = int(m.group(1))
+            if n not in seen:
+                seen.append(n)
     return seen
 
 
@@ -825,11 +829,11 @@ def decide(total_for_decision: int, body: str, prerelease_context: dict | None =
     if total_for_decision <= 2:
         return Decision("pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 通過")
 
-    if 3 <= total_for_decision <= 5 and prerelease_context:
+    if 3 <= total_for_decision <= MAX_REVIEW_ROUNDS and prerelease_context:
         cap = prerelease_context['record']['total_cap']
         if total_for_decision <= cap:
             return Decision("pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 公開前のPJ裁定で通過")
-    if total_for_decision <= 5:
+    if total_for_decision <= MAX_REVIEW_ROUNDS:
         approvals = parse_approval_rounds(body)
         cap = parse_total_cap(body)
         if not approvals:
@@ -850,7 +854,7 @@ def decide(total_for_decision: int, body: str, prerelease_context: dict | None =
             "pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 承認済み（総上限{cap}）で通過"
         )
 
-    # 6以上
+    # 上限超過
     if has_verdict(body):
         return Decision(
             "pass", EXIT_PASS, total_for_decision, f"巡{total_for_decision}: 裁定行ありで通過"
@@ -859,7 +863,7 @@ def decide(total_for_decision: int, body: str, prerelease_context: dict | None =
         "blocked",
         EXIT_BLOCKED,
         total_for_decision,
-        f"巡{total_for_decision}: 6巡以上は裁定行（縮小／切り出し／撤回のいずれか）が必要です",
+        f"巡{total_for_decision}: {MAX_REVIEW_ROUNDS + 1}巡以上は裁定行（縮小／切り出し／撤回のいずれか）が必要です",
     )
 
 

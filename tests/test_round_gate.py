@@ -125,22 +125,22 @@ def test_decide_pass_1_and_2():
     assert rg.decide(2, "").status == "pass"
 
 
-def test_decide_3_to_5_needs_approval_and_cap():
+def test_decide_3_needs_approval_and_cap():
     # 承認なし → block
     assert rg.decide(3, "本文になにもなし").status == "blocked"
     # 承認はあるが総上限が無い → block
     assert rg.decide(3, "巡3の人間承認をする").status == "blocked"
     # 承認 + 十分な総上限 → pass
-    assert rg.decide(3, "巡3の人間承認\n総上限: 5巡").status == "pass"
+    assert rg.decide(3, "巡3の人間承認\n総上限: 3巡").status == "pass"
     # 承認はあるが総上限を超過 → block
-    assert rg.decide(6, "巡3の人間承認\n総上限: 5巡").status == "blocked"
+    assert rg.decide(3, "巡3の人間承認\n総上限: 2巡").status == "blocked"
 
 
-def test_decide_6_plus_needs_verdict_even_with_approval():
-    body_with_approval_only = "巡6の人間承認\n総上限: 10巡"
-    assert rg.decide(6, body_with_approval_only).status == "blocked"
+def test_decide_4_plus_needs_verdict_even_with_approval():
+    body_with_approval_only = "巡3の人間承認\n総上限: 10巡"
+    assert rg.decide(4, body_with_approval_only).status == "blocked"
     body_with_verdict = body_with_approval_only + "\n### 裁定: 縮小してマージ"
-    assert rg.decide(6, body_with_verdict).status == "pass"
+    assert rg.decide(4, body_with_verdict).status == "pass"
 
 
 def test_decide_real_pr563_at_round3_passes():
@@ -1550,3 +1550,27 @@ def test_untracked_hash_input_has_exact_git_output(tmp_path):
     data = git("rev-parse", "HEAD") + git("status", "--porcelain", "-uall")
     data += git("diff", "HEAD") + git("hash-object", "new")
     assert rg.git_content_hash(str(repo)) == hashlib.sha256(data).hexdigest()
+
+
+@pytest.mark.parametrize("line, expected", [
+    ("前身 PR #1 から切り出し（本人裁定: 別課題へ）・設計0巡・コード0巡から", 1),
+    ("前身 PR #1 から切り出し・設計0巡・コード0巡から", 4),
+    ("前身 PR #1 で設計3巡・コード3巡を継承\n本人裁定: 別課題へ", 4),
+    ("前身 PR #1 を開き直し", 4),
+    ("前身 PR #1 から名称変更", 4),
+])
+def test_inheritance_reset_only_for_same_line_human_decision(tmp_path, line, expected):
+    pred = rg.Target("pr", "o", "r", 1)
+    target = rg.Target("issue", "o", "r", 2)
+    for i in range(3):
+        write_state(tmp_path, f"pred{i}", pred.key(), f"sha{i}", i)
+    fetch = make_fetcher({pred.key(): "", target.key(): line})
+    total = rg.target_total_rounds(target, tmp_path, fetch, [], pending_new_head="new")
+    assert total == expected
+    assert rg.decide(total, "巡3の人間承認\n総上限: 3巡").status == ("pass" if expected == 1 else "blocked")
+
+
+def test_prerelease_does_not_bypass_round_cap():
+    context = {"record": {"total_cap": 5}}
+    assert rg.decide(3, "", context).status == "pass"
+    assert rg.decide(4, "", context).status == "blocked"
