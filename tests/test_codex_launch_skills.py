@@ -55,6 +55,25 @@ elif args[0] == 'exec':
             system = pathlib.Path(os.environ['CODEX_HOME']) / 'skills/.system'
             system.unlink()
             system.symlink_to(root / 'other-system', target_is_directory=True)
+        if plan.get('replace_real_system_link'):
+            system = pathlib.Path(os.environ['CODEX_HOME']) / 'skills/.system'
+            shutil.copytree(system, root / 'other-system', dirs_exist_ok=True)
+            shutil.rmtree(system)
+            system.symlink_to(root / 'other-system', target_is_directory=True)
+        if plan.get('replace_system_parent'):
+            parent = pathlib.Path(os.environ['CODEX_HOME']) / 'skills'
+            parent.rename(root / 'old-skills')
+            parent.mkdir()
+            for child in (root / 'old-skills').iterdir():
+                child.rename(parent / child.name)
+        if plan.get('change_system_content'):
+            path = pathlib.Path(os.environ['CODEX_HOME']) / 'skills/.system/bundled/SKILL.md'
+            path.write_text(path.read_text() + '\nchanged\n')
+        if plan.get('replace_system_content'):
+            system = pathlib.Path(os.environ['CODEX_HOME']) / 'skills/.system'
+            shutil.rmtree(system)
+            (system / 'different').mkdir(parents=True)
+            (system / 'different/SKILL.md').write_text('different')
         if plan.get('hook_warning'):
             print('fixture warning: a startup hook failed', file=sys.stderr)
         if plan.get('timeout'):
@@ -724,6 +743,19 @@ def test_autoverify_system_reinstalled(launch):
     skill("bundled", "home/.codex/skills/.system/bundled/SKILL.md")
     plan_probe(root, [("developer", skills_message(("agent-browser", kept)))], reinstall_system=True)
     check_launch(root, run("impl", "new-version"), child, "on:autoverified", 1)
+
+
+@pytest.mark.parametrize("change", ["replace_real_system_link", "replace_system_parent",
+                                    "change_system_content", "replace_system_content"])
+def test_autoverify_system_change_is_transient(launch, change):
+    root, skill, _, run, child = launch
+    kept = skill("agent-browser", "home/.agents/skills/agent-browser/SKILL.md")
+    skill("extra", "home/.agents/skills/unlisted/SKILL.md")
+    skill("bundled", "home/.codex/skills/.system/bundled/SKILL.md")
+    (root / "other-system").mkdir()
+    plan_probe(root, [("developer", skills_message(("agent-browser", kept)))], **{change: True})
+    check_launch(root, run("impl", "new-version"), child, "skipped:autoverify_transient", 1)
+    assert "FilterError:" in json.loads(version_file(root).read_text())["last_reason"]
 
 
 def test_autoverify_config_change_is_transient(launch):

@@ -2,6 +2,7 @@
 from contextlib import closing
 import errno
 import fcntl
+import hashlib
 from functools import cmp_to_key
 import json
 import os
@@ -104,11 +105,13 @@ class Scan:
         if path not in self.observed:
             self.observed[path] = self.fingerprint(path)
 
-    def unchanged(self, *, reinstalled=None, siblings=None):
+    def unchanged(self, *, reinstalled=None, siblings=None, system_contents=None):
         for path, before in self.observed.items():
             if reinstalled is not None and path == reinstalled:
                 info = metadata(path, follow=False)
                 if info is not None and stat.S_ISDIR(info.st_mode):
+                    if system_contents != self.system_contents(path):
+                        raise FilterError(f"{path}: 列挙中に設定または置き場が変更されました")
                     continue
             if reinstalled is not None and path == reinstalled.parent:
                 after = self.fingerprint(path)
@@ -121,6 +124,14 @@ class Scan:
 
     def siblings(self, system):
         return {p.name: self.fingerprint(p) for p in system.parent.iterdir() if p != system}
+
+    def system_contents(self, system):
+        def digest(child):
+            try:
+                return hashlib.sha256((child / "SKILL.md").read_bytes()).digest()
+            except (FileNotFoundError, NotADirectoryError):
+                return None
+        return {child.name: digest(child) for child in system.iterdir()}
 
     def config(self, path):
         self.watch(path)
@@ -829,13 +840,15 @@ def autoverify(executable, version, work, prepare):
                     reinstall = system if (system in plan.scan.observed and info and stat.S_ISDIR(info.st_mode)
                                            and parent and stat.S_ISDIR(parent.st_mode)) else None
                     siblings = plan.scan.siblings(reinstall) if reinstall else None
+                    system_contents = plan.scan.system_contents(reinstall) if reinstall else None
                     plan.scan.unchanged()
                     _, probe_run = run_probe(executable, work, plan.override)
                     rollout = find_rollout(codex_sessions(), probe_run)
                     detail = "記録なし" if rollout is None else "節なし"
                     observed = listed_skills(rollout)
                     if observed is not None:
-                        plan.scan.unchanged(reinstalled=reinstall, siblings=siblings)
+                        plan.scan.unchanged(reinstalled=reinstall, siblings=siblings,
+                                            system_contents=system_contents)
             except Exception as exc:
                 # Probe setup and inspection are opportunistic, including scan SIGALRM.
                 observed = None
