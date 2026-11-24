@@ -213,11 +213,8 @@ def test_fallback_cli(case, monkeypatch):
     assert not list(case['state'].glob('0-fixture-*.state'))
     case['body_file'].write_text(case['body_file'].read_text() + '\n裁定: 縮小')
     result = run_cli(case)
-    assert result.returncode == 0, result.stdout + result.stderr
-    state = rg.read_state_file(next(case['state'].glob('0-fixture-*.state')))
-    assert state['round'] == '4'
-    assert '今回のレビュー: 巡4（種別: コード）' in open(state['effective_prompt']).read()
-    assert '| 4 | コード |' in case['body_file'].read_text()
+    assert result.returncode == 4, result.stdout + result.stderr
+    assert not list(case['state'].glob('0-fixture-*.state'))
 
 
 @pytest.mark.parametrize('mode', ['kind', 'read'])

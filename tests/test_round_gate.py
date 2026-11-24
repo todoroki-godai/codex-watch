@@ -60,12 +60,6 @@ def test_parse_total_cap_real_data():
     assert rg.parse_total_cap(BODY_559) is None
 
 
-def test_has_verdict_real_data():
-    assert rg.has_verdict(BODY_563) is False  # 見出しは記録行ではない
-    assert rg.has_verdict(BODY_559) is False  # 文中の裁定は記録行ではない
-    assert rg.has_verdict(BODY_537) is False
-
-
 # ---------------------------------------------------------------------------
 # target / none 解析
 # ---------------------------------------------------------------------------
@@ -133,11 +127,13 @@ def test_decide_3_needs_approval_and_cap():
     assert rg.decide(3, "巡3の人間承認\n総上限: 2巡").status == "blocked"
 
 
-def test_decide_4_plus_needs_verdict_even_with_approval():
+def test_decide_4_plus_always_blocked():
     body_with_approval_only = "巡3の人間承認\n総上限: 10巡"
     assert rg.decide(4, body_with_approval_only).status == "blocked"
     body_with_verdict = body_with_approval_only + "\n- 裁定: 縮小してマージ"
-    assert rg.decide(4, body_with_verdict).status == "pass"
+    assert rg.decide(4, body_with_verdict).status == "blocked"
+    assert rg.decide(4, "~~~\n裁定: 記載例\n~~~").status == "blocked"
+    assert rg.decide(5, body_with_verdict).status == "blocked"
 
 
 def test_decide_real_pr563_at_round3_passes():
@@ -1578,7 +1574,7 @@ def test_prerelease_does_not_bypass_round_cap():
 def test_split_decision_does_not_authorize_later_round():
     body = "前身 PR #1 から切り出し（本人裁定: 別課題へ）・設計0巡・コード0巡から"
     assert rg.decide(4, body).status == "blocked"
-    assert rg.decide(4, body + "\n裁定: 縮小").status == "pass"
+    assert rg.decide(4, body + "\n裁定: 縮小").status == "blocked"
 
 
 @pytest.mark.parametrize("body, expected_round, expected_exit", [
@@ -1588,8 +1584,8 @@ def test_split_decision_does_not_authorize_later_round():
     ("前身 PR #1 を開き直し\n本文で裁定: という書式を説明", 4, rg.EXIT_BLOCKED),
     ("前身 PR #1 を開き直し\n裁定: 　", 4, rg.EXIT_BLOCKED),
     ("前身 PR #1 を開き直し\n```\n裁定: 例\n```", 4, rg.EXIT_BLOCKED),
-    ("前身 PR #1 を開き直し\n- 裁定（人間）: 縮小", 4, rg.EXIT_PASS),
-    ("前身 PR #1 を開き直し\n```\n裁定: 例\n```\n- 裁定（人間）: 縮小して入れる", 4, rg.EXIT_PASS),
+    ("前身 PR #1 を開き直し\n- 裁定（人間）: 縮小", 4, rg.EXIT_BLOCKED),
+    ("前身 PR #1 を開き直し\n~~~\n裁定: 例\n~~~", 4, rg.EXIT_BLOCKED),
 ])
 def test_review_regressions_at_dispatch(tmp_path, monkeypatch, body, expected_round, expected_exit):
     monkeypatch.setattr(rg, "git_remote_repo", lambda workdir: ("o", "r"))
