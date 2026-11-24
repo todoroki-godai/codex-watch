@@ -33,7 +33,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 RE_INHERIT = re.compile(r"前身[^#]*PR[^#]*#([0-9]+)")
-RE_ADJUDICATED_SPLIT = re.compile(r"切り出し（本人裁定[:：][^）]+）・設計0巡・コード0巡から")
+RE_ADJUDICATED_SPLIT = re.compile(r"切り出し（本人裁定[:：][^）\n]*[^\s）][^）\n]*）・設計0巡・コード0巡から")
 RE_APPROVAL = re.compile(r"巡[ \t]*([0-9]+)[ \t]*の人間承認")
 RE_TOTAL_CAP = re.compile(r"総上限[:：][^0-9]*([0-9]+)")
 RE_VERDICT = re.compile(r"^[ \t]*(?:[-*][ \t]+)?裁定(?:（人間）)?[:：]", re.MULTILINE)
@@ -272,7 +272,7 @@ def parse_inherited_pr_numbers(body: str) -> list[int]:
     """継承行から前身 PR 番号を抽出する（順序保持・重複除去）。"""
     seen: list[int] = []
     for m in RE_INHERIT.finditer(body or ""):
-        if re.match(r"[ \t]*から切り出し（本人裁定[:：]", body[m.end():]):
+        if re.match(r"[ \t]*から" + RE_ADJUDICATED_SPLIT.pattern, body[m.end():]):
             continue
         n = int(m.group(1))
         if n not in seen:
