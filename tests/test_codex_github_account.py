@@ -130,6 +130,8 @@ print(user)
     executable(fake / 'codex', '''#!/usr/bin/env python3
 import json,os,subprocess,sys,time,tomllib,signal
 from pathlib import Path
+if sys.argv[1:]==['--version']:
+    print('codex-cli 0.1.0'); sys.exit(0)
 p=Path(os.environ['CAPTURE'])
 parent=os.environ.get('GH_CONFIG_DIR')
 # Model the real CLI's configured inherit=core and explicit set overrides.
@@ -202,6 +204,14 @@ sys.exit(int(os.environ.get('FAKE_CODEX_EXIT','0')))
 def capture(launch):
     wait_for(launch.capture.exists)
     return json.loads(launch.capture.read_text())
+
+
+def test_version_probe_does_not_capture_launch(launch):
+    result = subprocess.run(['codex', '--version'], env=launch.env,
+                            capture_output=True, text=True, timeout=7)
+    assert result.returncode == 0
+    assert result.stdout.startswith('codex-cli ')
+    assert not launch.capture.exists()
 
 
 @pytest.mark.parametrize('account', ['matsukaze-minden', 'todoroki-godai'])
