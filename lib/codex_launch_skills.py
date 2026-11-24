@@ -663,15 +663,31 @@ def read_version(executable):
 
 
 def select_codex():
+    first = shutil.which("codex")
     override = os.environ.get("CODEX_WATCH_CODEX")
     if override is not None:
         if not os.path.isabs(override) or any(c in override for c in "\r\n"):
             raise FilterError("CODEX_WATCH_CODEX は絶対パスで指定してください")
-        return override, read_version(override)
-    first = shutil.which("codex")
+        version = read_version(override)
+        if first and Path(override).resolve() != Path(first).resolve():
+            clean = lambda s: " ".join(str(s).splitlines())
+            print(f"PATH 先頭の codex {clean(read_version(first) or '不明')} ではなく、最新の {clean(version or '不明')}（{clean(override)}）で起動します", file=sys.stderr)
+        return override, version
     paths = [Path(part or ".") / "codex" for part in os.get_exec_path()]
     nvm = Path(os.environ.get("NVM_DIR") or Path.home() / ".nvm")
-    paths.extend(sorted((nvm / "versions/node").glob("*/bin/codex")))
+    if nvm.is_absolute():
+        try:
+            nvm_real = nvm.resolve()
+            for candidate in sorted((nvm / "versions/node").glob("*/bin/codex")):
+                try:
+                    real = candidate.resolve()
+                    info = real.stat()
+                    if real.is_relative_to(nvm_real) and info.st_uid == os.getuid() and not info.st_mode & 0o022:
+                        paths.append(candidate)
+                except OSError:
+                    continue
+        except OSError:
+            pass
     seen = set()
     selected, selected_version = None, None
     first_version = None
@@ -679,7 +695,10 @@ def select_codex():
         if any(c in str(path) for c in "\r\n") or not path.is_file() or not os.access(path, os.X_OK):
             continue
         path = path.absolute()
-        real = path.resolve()
+        try:
+            real = path.resolve()
+        except OSError:
+            continue
         if real in seen:
             continue
         seen.add(real)
@@ -690,7 +709,11 @@ def select_codex():
             continue
         if selected_version is None or semver(version)[:3] > semver(selected_version)[:3]:
             selected, selected_version = str(path), version
-    if selected and first and Path(selected).resolve() != Path(first).resolve():
+    try:
+        differs_from_first = selected and first and Path(selected).resolve() != Path(first).resolve()
+    except OSError:
+        differs_from_first = bool(selected and first)
+    if differs_from_first:
         clean = lambda s: " ".join(str(s).splitlines())
         print(f"PATH 先頭の codex {clean(first_version or '不明')} ではなく、最新の {clean(selected_version)}（{clean(selected)}）で起動します", file=sys.stderr)
     return selected or (str(Path(first).absolute()) if first else None), selected_version

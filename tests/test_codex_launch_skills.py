@@ -728,8 +728,52 @@ def test_candidate_selection(tmp_path, case, expected):
                             capture_output=True, text=True, check=True)
     fields = dict(line.split('=', 1) for line in result.stdout.splitlines())
     assert fields['executable'] == str({'path': path, 'second': second, 'nvm': nvm, 'override': override}[expected])
-    assert len(result.stderr.splitlines()) == (1 if case in ('numeric', 'path_order') else 0)
+    assert len(result.stderr.splitlines()) == (1 if case in ('numeric', 'path_order', 'override') else 0)
 
+
+
+@pytest.mark.parametrize("case", ["relative", "outside", "group_write", "other_write", "owner"])
+def test_nvm_unsafe_candidate_is_never_executed(tmp_path, monkeypatch, case):
+    monkeypatch.syspath_prepend(str(ROOT / "lib"))
+    import codex_launch_skills as launcher
+    nvm = tmp_path / "nvm"
+    candidate = nvm / "versions/node/v1/bin/codex"
+    candidate.parent.mkdir(parents=True)
+    marker = tmp_path / "executed"
+    target = tmp_path / "outside" if case == "outside" else candidate
+    target.write_text(f"#!/bin/sh\n: > '{marker}'\nprintf 'codex-cli 9.0.0\\n'\n")
+    target.chmod(0o775 if case == "group_write" else 0o757 if case == "other_write" else 0o755)
+    if case == "outside":
+        candidate.symlink_to(target)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setenv("NVM_DIR", "nvm" if case == "relative" else str(nvm))
+    monkeypatch.delenv("CODEX_WATCH_CODEX", raising=False)
+    if case == "owner":
+        monkeypatch.setattr(launcher.os, "getuid", lambda: candidate.stat().st_uid + 1)
+    assert launcher.select_codex() == (None, None)
+    assert not marker.exists()
+
+
+def test_resolve_error_skips_only_bad_candidate(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "lib"))
+    import codex_launch_skills as launcher
+    bad = tmp_path / "bad/codex"
+    good = tmp_path / "good/codex"
+    for path in (bad, good):
+        path.parent.mkdir()
+        path.write_text("#!/bin/sh\nprintf 'codex-cli 0.171.0\\n'\n")
+        path.chmod(0o755)
+    original = Path.resolve
+    def resolve(path, *args, **kwargs):
+        if path == bad:
+            raise PermissionError("fixture")
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "resolve", resolve)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bad.parent), str(good.parent)]))
+    monkeypatch.setenv("NVM_DIR", str(tmp_path / "missing"))
+    monkeypatch.delenv("CODEX_WATCH_CODEX", raising=False)
+    assert launcher.select_codex()[0] == str(good)
 
 def check_launch(root, result, child, status, count, *, version="0.171.1"):
     observed = child(result)
