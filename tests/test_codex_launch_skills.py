@@ -1076,3 +1076,23 @@ def test_nonzero_probe_with_matching_record_verifies(launch):
     plan_probe(root, [("developer", skills_message(("agent-browser", kept)))], exit=1)
     check_launch(root, run("impl", "new-version"), child, "on:autoverified", 1)
     assert json.loads(version_file(root).read_text())["status"] == "verified"
+
+
+def test_override_still_selected_when_path_compare_fails(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / "lib"))
+    import codex_launch_skills as launcher
+    first = tmp_path / "first/codex"
+    fixed = tmp_path / "fixed/codex"
+    for path in (first, fixed):
+        path.parent.mkdir()
+        path.write_text("#!/bin/sh\nprintf 'codex-cli 0.171.0\\n'\n")
+        path.chmod(0o755)
+    original = Path.resolve
+    def resolve(path, *args, **kwargs):
+        if path == first:
+            raise PermissionError("fixture")
+        return original(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "resolve", resolve)
+    monkeypatch.setenv("PATH", str(first.parent))
+    monkeypatch.setenv("CODEX_WATCH_CODEX", str(fixed))
+    assert launcher.select_codex() == (str(fixed), "0.171.0")

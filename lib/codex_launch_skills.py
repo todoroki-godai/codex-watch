@@ -669,9 +669,13 @@ def select_codex():
         if not os.path.isabs(override) or any(c in override for c in "\r\n"):
             raise FilterError("CODEX_WATCH_CODEX は絶対パスで指定してください")
         version = read_version(override)
-        if first and Path(override).resolve() != Path(first).resolve():
+        try:
+            differs = bool(first) and Path(override).resolve() != Path(first).resolve()
+        except OSError:
+            differs = False  # 知らせは補助。比べられなくても固定した codex で起動する
+        if differs:
             clean = lambda s: " ".join(str(s).splitlines())
-            print(f"PATH 先頭の codex {clean(read_version(first) or '不明')} ではなく、最新の {clean(version or '不明')}（{clean(override)}）で起動します", file=sys.stderr)
+            print(f"PATH 先頭の codex {clean(read_version(first) or '不明')} ではなく、固定指定の {clean(version or '不明')}（{clean(override)}）で起動します", file=sys.stderr)
         return override, version
     paths = [Path(part or ".") / "codex" for part in os.get_exec_path()]
     nvm = Path(os.environ.get("NVM_DIR") or Path.home() / ".nvm")
