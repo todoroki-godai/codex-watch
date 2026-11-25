@@ -63,6 +63,7 @@ else:
                CODEX_HOME=str(original), CODEX_SUMMARY="#1", CODEX_WATCH_DIR=str(tmp_path / "state"),
                OPENAI_API_KEY="synthetic token", GH_TOKEN="synthetic token",
                CODEX_IMPL_ALLOW_MAIN="1", CODEX_IMPL_ALLOW_MISSING_NODE_MODULES="1",
+               CODEX_MODEL_REASON="設計判断",
                CODEX_SKILLS_FILTER="off", FAKE_GH_BODY=str(body),
                CODEX_REVIEW_ADAPTER=str(tmp_path / "no-adapter"),
                CODEX_REVIEW_KIND_LABEL="設計", REVIEW_TARGET="issue:example-org/example-repo#1",
@@ -84,7 +85,7 @@ def check_dispatch(result, path, launcher, model, reason=None):
         time.sleep(0.01)
     argv, env_keys = json.loads((path / "exec").read_text())
     assert argv.count("-m") == 1 and argv[argv.index("-m") + 1] == model
-    assert "CODEX_ASTRA_REASON" not in env_keys and "ASTRA_REASON" not in env_keys
+    assert all(k not in env_keys for k in ("CODEX_ASTRA_REASON", "ASTRA_REASON", "CODEX_MODEL_REASON", "MODEL_REASON"))
     run_id = result.stdout.strip()
     state = dict(line.split("=", 1) for line in
                  (path / "state" / f"{run_id}.state").read_text().splitlines())
@@ -224,3 +225,43 @@ def test_impl_continues_when_hash_template_missing(dispatch, tmp_path, monkeypat
     check_dispatch(result, tmp_path, 'impl', SOL)
     assert '警告: ハッシュ照合のテンプレートを読めません。' in result.stderr
     assert HASH_LINE.encode() not in (tmp_path / 'stdin').read_bytes()
+
+
+@pytest.mark.parametrize(('model', 'reason', 'astra'), [
+    (TERRA, '', ''), (SOL, ' \t　', ''), (TERRA, '理由\n追加', ''),
+    (ASTRA, '', REASON), (TERRA, '不正\udcff', ''),
+])
+def test_impl_rejects_invalid_model_reason(dispatch, tmp_path, model, reason, astra):
+    result = dispatch('impl', CODEX_IMPL_MODEL=model, CODEX_MODEL_REASON=reason,
+                      CODEX_ASTRA_REASON=astra)
+    check_rejected(result, tmp_path)
+    assert 'CODEX_MODEL_REASON' in result.stderr
+
+
+@pytest.mark.parametrize(('model', 'reason', 'astra'), [
+    ('gpt-6-luna', '', ''), (TERRA, '設計判断', ''), (ASTRA, '設計判断', REASON),
+])
+def test_impl_records_model_reason(dispatch, tmp_path, model, reason, astra):
+    result = dispatch('impl', CODEX_IMPL_MODEL=model, CODEX_MODEL_REASON=reason,
+                      CODEX_ASTRA_REASON=astra)
+    state = check_dispatch(result, tmp_path, 'impl', model, astra or None)
+    assert state.get('model_reason') == (reason or None)
+
+
+def test_model_reason_failure_is_fail_open(dispatch, tmp_path, monkeypatch):
+    import shutil
+    import test_codex_dispatch_model as module
+
+    copy = tmp_path / 'launcher-copy'
+    for name in ('bin', 'lib', 'templates'):
+        shutil.copytree(BIN_DIR.parent / name, copy / name)
+    preflight = copy / 'lib/codex_dispatch_model.py'
+    source = preflight.read_text()
+    original = '    if model == "gpt-6-luna":'
+    assert source.count(original) == 1
+    preflight.write_text(source.replace(original, '    raise RuntimeError("fixture")\n' + original))
+    monkeypatch.setattr(module, 'BIN_DIR', copy / 'bin')
+    result = dispatch('impl', CODEX_IMPL_MODEL=TERRA, CODEX_MODEL_REASON='')
+    state = check_dispatch(result, tmp_path, 'impl', TERRA)
+    assert 'model_reason' not in state
+    assert sum('CODEX_MODEL_REASON の確認に失敗' in line for line in result.stderr.splitlines()) == 1

@@ -20,6 +20,8 @@
 
 `codex-impl` と `codex-review` は、それぞれ `CODEX_IMPL_MODEL`、`CODEX_REVIEW_MODEL` にモデルの明示が必要です。使い分けは次のとおりです。
 
+`codex-impl` で luna 以外を使う場合は、`CODEX_MODEL_REASON` に luna で足りない理由を1行で指定します。
+
 - 実装は判断の要らない機械作業に `gpt-6-luna`、通常は terra、大事な場面・難しい作業は sol を明示指定。`gpt-6-luna` は 2026-11-25 に起動・正常終了を確認済みだが、実作業での品質は未確認。
 - レビューは通常 sol を明示指定。
 - 全体の設計・レビューの繰り返し・設計し直しは astra を明示指定し、`CODEX_ASTRA_REASON` に理由を書く。

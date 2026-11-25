@@ -16,7 +16,7 @@ set -euo pipefail
 # Only the preflight receives the reason. Keep it out of dispatch and other helpers' environments.
 unset ASTRA_REASON_INPUT ASTRA_REASON MODEL_PREFLIGHT
 ASTRA_REASON_INPUT="${CODEX_ASTRA_REASON:-}"
-unset CODEX_ASTRA_REASON
+unset CODEX_ASTRA_REASON CODEX_MODEL_REASON
 
 WORKDIR="${1:?対象ディレクトリの絶対パスを指定してください}"
 PROMPT_FILE="${2:?プロンプトファイルのパスを指定してください}"
