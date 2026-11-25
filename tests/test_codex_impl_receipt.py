@@ -18,7 +18,11 @@ def check(tmp_path):
     # Retain the full launcher; sentinel intercepts the first subsequent stage.
     source = (ROOT / 'bin/codex-impl').read_text()
     assert source.count(NEXT) == 1
-    launcher = tmp_path / 'codex-impl'
+    (tmp_path / 'lib').mkdir()
+    helper = tmp_path / 'lib/receipt_gate.py'
+    helper_source = (ROOT / 'lib/receipt_gate.py').read_text()
+    (tmp_path / 'launcher_bin').mkdir()
+    launcher = tmp_path / 'launcher_bin/codex-impl'
     prompt = tmp_path / 'prompt with spaces.md'
     fake = tmp_path / 'bin'
     fake.mkdir()
@@ -29,13 +33,15 @@ def check(tmp_path):
         p.write_text('#!/bin/sh\necho UNEXPECTED_CLI >&2\nexit 99\n')
         p.chmod(0o755)
 
-    def run(body, *, mutation=None):
+    def run(body, *, mutation=None, helper_program=None):
         text = source
+        helper_text = helper_source
         if mutation:
             old, new = mutation
-            assert text.count(old) == 1, 'mutation must apply exactly once'
-            text = text.replace(old, new)
-            assert text != source, 'mutation must change the launcher'
+            assert helper_text.count(old) == 1, 'mutation must apply exactly once'
+            helper_text = helper_text.replace(old, new)
+            assert helper_text != helper_source, 'mutation must change the helper'
+        helper.write_text(helper_program if helper_program is not None else helper_text)
         text = text.replace(NEXT, 'echo NEXT_STAGE >&2\nexit 71\n' + NEXT)
         launcher.write_text(text)
         prompt.write_bytes(body.encode() if isinstance(body, str) else body)
@@ -289,3 +295,26 @@ def test_snapshot_mutation_hit_and_killed(check, tmp_path):
     row = json.loads((tmp_path / 'home/.codex-watch/receipt-gate-stops.log').read_text())
     with pytest.raises(AssertionError, match='MUTANT_NO_SNAPSHOT'):
         assert_stop_snapshot(tmp_path, body, row, mutant.stderr)
+
+
+@pytest.mark.parametrize('program', [
+    '',
+    'def main():\n    print("never called")\n',
+    'print("receipt-gate v1 pass sha256=" + "0" * 64)',
+    'import hashlib, sys\nprint("receipt-gate v1 pass sha256=" + hashlib.sha256(open(sys.argv[-1], "rb").read()).hexdigest())\nprint("extra")',
+    'import hashlib, sys\nprint("receipt-gate v2 pass sha256=" + hashlib.sha256(open(sys.argv[-1], "rb").read()).hexdigest())',
+])
+def test_forged_success_signal_stops(check, program):
+    result = check(REVIEW, helper_program=program)
+    assert result.returncode == 2 and 'NEXT_STAGE' not in result.stderr
+
+
+@pytest.mark.parametrize('body,old,new', [
+    (REVIEW + '受領②件数: 重複\n',
+     "len(fields[key]) != 1 or not fields[key][0]",
+     "len(fields[key]) < 1 or not fields[key][0]"),
+    (REVIEW + '\x00', r"if '\0' in body:", "if False:"),
+])
+def test_independent_mutations(check, body, old, new):
+    assert check(body).returncode == 2
+    assert check(body, mutation=(old, new)).returncode == 71
