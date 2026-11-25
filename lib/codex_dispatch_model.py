@@ -41,7 +41,7 @@ def main():
             print("通常は gpt-6.2-sol、全体の設計・レビューの繰り返し・設計し直しは "
                   "astra（理由の指定が必要）を使用してください。", file=sys.stderr)
         else:
-            print("通常は gpt-6.1-terra、大事な場面・難しい作業は gpt-6.2-sol、", file=sys.stderr)
+            print("判断の要らない機械作業は gpt-6-luna、通常は gpt-6.1-terra、大事な場面・難しい作業は gpt-6.2-sol、", file=sys.stderr)
             print("全体の設計・設計し直しは astra（理由の指定が必要）を使用してください。", file=sys.stderr)
         return 2
     if not valid_model(model):

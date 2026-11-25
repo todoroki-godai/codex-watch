@@ -315,7 +315,7 @@ prepare_codex_launch_skills "$WORKDIR" no exec -C "$WORKDIR" \
   ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} \
   ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" -
 
-printf 'モデル: %s（通常は terra、大事な場面・難しい作業は sol、全体の設計・設計し直しは astra（理由の指定が必要）を CODEX_IMPL_MODEL で指定）\n' "$REQUESTED_MODEL" >&2
+printf 'モデル: %s（判断の要らない機械作業は gpt-6-luna、通常は terra、大事な場面・難しい作業は sol、全体の設計・設計し直しは astra（理由の指定が必要）を CODEX_IMPL_MODEL で指定）\n' "$REQUESTED_MODEL" >&2
 # 先に原本を stdin に開き、注記と原本を順に渡す。出力は進行中に読めるようログへ直書きする。
 nohup "$CODEX_LAUNCH_EXECUTABLE" exec -C "$WORKDIR" ${SANDBOX_ARGS[@]+"${SANDBOX_ARGS[@]}"} ${CODEX_CLI_ARGS[@]+"${CODEX_CLI_ARGS[@]}"} ${CODEX_GITHUB_ARGS[@]+"${CODEX_GITHUB_ARGS[@]}"} -o "$REPORT_FILE" - \
   < "$LAUNCH_PROMPT" < <(printf '%s\n' '手元で回す試験は、変えたファイルとその近くの試験・依存先込みの lint/typecheck だけ。パッケージ全体・リポジトリ全体の試験は頭が AWS で回すので回さない（依頼文が明示的に求めた場合を除く）。' && cat && printf '\n' && { cat "$SCRIPT_DIR/../templates/hash-check.md" 2>/dev/null || printf '%s\n' '警告: ハッシュ照合のテンプレートを読めません。' >&2; }) \
