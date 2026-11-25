@@ -94,7 +94,7 @@ def check_dispatch(result, path, launcher, model, reason=None):
     option = f"CODEX_{launcher.upper()}_MODEL"
     guidance = ("通常は sol、全体の設計・レビューの繰り返し・設計し直しは "
                 if launcher == "review" else
-                "通常は terra、大事な場面・難しい作業は sol、全体の設計・設計し直しは ")
+                "判断の要らない機械作業は gpt-6-luna、通常は terra、大事な場面・難しい作業は sol、全体の設計・設計し直しは ")
     guidance += f"astra（理由の指定が必要）を {option} で指定"
     assert model_lines == [f"モデル: {model}（{guidance}）"]
     return state
@@ -118,7 +118,7 @@ def test_missing_model_rejected_without_codex(dispatch, tmp_path, launcher, mode
     assert option in result.stderr
     guidance = ("通常は gpt-6.2-sol、全体の設計・レビューの繰り返し・設計し直しは "
                 "astra（理由の指定が必要）を使用してください。" if launcher == "review" else
-                "通常は gpt-6.1-terra、大事な場面・難しい作業は gpt-6.2-sol、\n"
+                "判断の要らない機械作業は gpt-6-luna、通常は gpt-6.1-terra、大事な場面・難しい作業は gpt-6.2-sol、\n"
                 "全体の設計・設計し直しは astra（理由の指定が必要）を使用してください。")
     assert guidance in result.stderr
     assert not (tmp_path / "probe").exists()
