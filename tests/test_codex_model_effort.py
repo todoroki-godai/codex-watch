@@ -186,6 +186,7 @@ def _run_impl(
     config_dir.mkdir(exist_ok=True)
     env["CODEX_HOME"] = str(config_dir)
     env["CODEX_SUMMARY"] = "#0"
+    env["CODEX_MODEL_REASON"] = "設計判断"
     for key in ("CODEX_IMPL_ALLOW_MISSING_NODE_MODULES", "CODEX_IMPL_MODEL", "CODEX_IMPL_EFFORT"):
         env.pop(key, None)
     env["PATH"] = f"{fake_bin}:{env.get('PATH', '')}"

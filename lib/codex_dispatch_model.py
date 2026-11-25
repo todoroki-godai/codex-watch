@@ -33,6 +33,18 @@ def astra_reason(model, raw, kind="", gate_json="", must_only="no"):
     return reason
 
 
+def model_reason(model, raw):
+    if model == "gpt-6-luna":
+        return ""
+    try:
+        raw.encode("utf-8")
+    except UnicodeEncodeError:
+        return None
+    if not raw.strip() or not is_single_line(raw):
+        return None
+    return raw.strip()
+
+
 def main():
     workdir, model, model_option, *review = sys.argv[1:]
     if not model.strip():
@@ -52,9 +64,20 @@ def main():
     except ValueError as error:
         print(f"拒否: {error}", file=sys.stderr)
         return 2
-    # The launchers read the resolved model and reason on separate lines.
+    if model_option == "CODEX_IMPL_MODEL":
+        try:
+            extra_reason = model_reason(model, os.environ.get("CODEX_MODEL_REASON", ""))
+        except Exception:
+            print("警告: CODEX_MODEL_REASON の確認に失敗したため起動を続けます。", file=sys.stderr)
+            extra_reason = ""
+        if extra_reason is None:
+            print("拒否: luna 以外を使うときは CODEX_MODEL_REASON に luna で足りない理由を1行書いてください（例: CODEX_MODEL_REASON='設計の判断が要る'）。判断の要らない機械作業は gpt-6-luna。", file=sys.stderr)
+            return 2
+    # Review retains its two-line protocol; impl adds the reason as line three.
     print(reason)
     print(model)
+    if model_option == "CODEX_IMPL_MODEL":
+        print(extra_reason)
     return 0
 
 

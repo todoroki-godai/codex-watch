@@ -158,7 +158,7 @@ sys.exit(int(os.environ.get('FAKE_CODEX_EXIT','0')))
     env.update(PATH=f'{fake}:{env["PATH"]}', HOME=str(home),
                FAKE_GIT_ROOT=str(work), CODEX_WATCH_DIR=str(state), CODEX_SKILLS_FILTER='off',
                CODEX_SUMMARY='#0',
-               CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1', CODEX_IMPL_MODEL='gpt-6.2-sol',
+               CODEX_IMPL_ALLOW_MISSING_NODE_MODULES='1', CODEX_MODEL_REASON='設計判断', CODEX_IMPL_MODEL='gpt-6.2-sol',
                CODEX_REVIEW_KIND_LABEL='コード', REVIEW_TARGET='none:account-test', CODEX_REVIEW_MODEL='gpt-6.2-sol',
                CAPTURE=str(tmp_path / 'capture.json'), RELEASE=str(tmp_path / 'release'))
     children = []

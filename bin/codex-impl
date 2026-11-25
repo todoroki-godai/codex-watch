@@ -24,9 +24,10 @@ set +x  # Credentials must never enter shell trace, including bash -x invocation
 set -euo pipefail
 
 # Only the preflight receives the reason. Keep it out of dispatch and other helpers' environments.
-unset ASTRA_REASON_INPUT ASTRA_REASON MODEL_PREFLIGHT
+unset ASTRA_REASON_INPUT ASTRA_REASON MODEL_REASON_INPUT MODEL_REASON MODEL_PREFLIGHT
 ASTRA_REASON_INPUT="${CODEX_ASTRA_REASON:-}"
-unset CODEX_ASTRA_REASON
+MODEL_REASON_INPUT="${CODEX_MODEL_REASON:-}"
+unset CODEX_ASTRA_REASON CODEX_MODEL_REASON
 
 WORKDIR="${1:?worktree の絶対パスを指定してください}"
 PROMPT_FILE="${2:?プロンプトファイルのパスを指定してください}"
@@ -152,11 +153,14 @@ if [[ "${CODEX_IMPL_ALLOW_MISSING_NODE_MODULES:-0}" != "1" ]]; then
 fi
 
 # モデルの明示を検査する。
-MODEL_PREFLIGHT="$(CODEX_ASTRA_REASON="$ASTRA_REASON_INPUT" python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_dispatch_model.py" \
+MODEL_PREFLIGHT="$(CODEX_ASTRA_REASON="$ASTRA_REASON_INPUT" CODEX_MODEL_REASON="$MODEL_REASON_INPUT" python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/codex_dispatch_model.py" \
   "$WORKDIR" "${CODEX_IMPL_MODEL-}" CODEX_IMPL_MODEL)" || exit 2
 ASTRA_REASON="${MODEL_PREFLIGHT%%$'\n'*}"
-REQUESTED_MODEL="${MODEL_PREFLIGHT#*$'\n'}"
-unset ASTRA_REASON_INPUT MODEL_PREFLIGHT
+MODEL_PREFLIGHT="${MODEL_PREFLIGHT#*$'\n'}"
+REQUESTED_MODEL="${MODEL_PREFLIGHT%%$'\n'*}"
+MODEL_REASON=""
+if [[ "$MODEL_PREFLIGHT" == *$'\n'* ]]; then MODEL_REASON="${MODEL_PREFLIGHT#*$'\n'}"; fi
+unset ASTRA_REASON_INPUT MODEL_REASON_INPUT MODEL_PREFLIGHT
 
 # AWS の接続先（AWS_PROFILE / --profile）は依頼文に書かれていてもよい。
 # PJ の宣言で dev または docs 読み取り専用の1組だけを渡す。
@@ -350,6 +354,7 @@ CODEX_PID=$!
   printf '%s\n' "$CODEX_LAUNCH_SKILLS_STATE"
   echo "requested_model=$REQUESTED_MODEL"
   if [[ -n "$ASTRA_REASON" ]]; then printf 'astra_reason=%s\n' "$ASTRA_REASON"; fi
+  if [[ -n "$MODEL_REASON" ]]; then printf 'model_reason=%s\n' "$MODEL_REASON"; fi
   echo "requested_effort=$REQUESTED_EFFORT"
   echo "estimate_min=$ESTIMATE_MIN"
   echo "started_at=$(date +%s)"
