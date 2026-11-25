@@ -85,7 +85,7 @@ def check_dispatch(result, path, launcher, model, reason=None):
         time.sleep(0.01)
     argv, env_keys = json.loads((path / "exec").read_text())
     assert argv.count("-m") == 1 and argv[argv.index("-m") + 1] == model
-    assert "CODEX_ASTRA_REASON" not in env_keys and "ASTRA_REASON" not in env_keys
+    assert all(k not in env_keys for k in ("CODEX_ASTRA_REASON", "ASTRA_REASON", "CODEX_MODEL_REASON", "MODEL_REASON"))
     run_id = result.stdout.strip()
     state = dict(line.split("=", 1) for line in
                  (path / "state" / f"{run_id}.state").read_text().splitlines())
