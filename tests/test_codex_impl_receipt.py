@@ -35,6 +35,7 @@ def check(tmp_path):
             old, new = mutation
             assert text.count(old) == 1, 'mutation must apply exactly once'
             text = text.replace(old, new)
+            assert text != source, 'mutation must change the launcher'
         text = text.replace(NEXT, 'echo NEXT_STAGE >&2\nexit 71\n' + NEXT)
         launcher.write_text(text)
         prompt.write_bytes(body.encode() if isinstance(body, str) else body)
@@ -140,8 +141,14 @@ def test_only_body_after_source_is_scanned(check, tmp_path):
 
 
 @pytest.mark.parametrize('word', ['[Should]', 'should', 'sHoUlD', 'prefixShouldSuffix'])
-def test_review_should_stops_and_records(check, tmp_path, word):
-    body = REVIEW + f'採用: {word}\n'
+@pytest.mark.parametrize('position', ['after', 'source', 'before'])
+def test_review_should_stops_and_records(check, tmp_path, word, position):
+    if position == 'source':
+        body = REVIEW.replace('レビュー巡1', f'レビュー巡1（Must1・{word}2）')
+    elif position == 'before':
+        body = f'メモ: {word}\n' + REVIEW
+    else:
+        body = REVIEW + f'採用: {word}\n'
     r = check(body)
     assert r.returncode == 2 and 'NEXT_STAGE' not in r.stderr
     assert 'レビュー由来の直しには [Must] だけを入れる。' in r.stderr
@@ -168,13 +175,17 @@ def test_should_gate_positive_controls(check, tmp_path, body):
     (REVIEW + '[Should]\n', "r'Should', body, re.IGNORECASE", "r'Should', '', re.IGNORECASE", 2),
     (REVIEW + 'prefixShouldSuffix\n', "r'Should', body, re.IGNORECASE", "r'\\bShould\\b', body, re.IGNORECASE", 2),
     (REVIEW + '文末\n[Should]\n', "r'Should', body, re.IGNORECASE", "r'Should', body.splitlines()[0], re.IGNORECASE", 2),
+    ((REVIEW.replace('レビュー巡1', 'レビュー巡1（Must1・Should2）'), 'メモ: Should\n' + REVIEW),
+     "r'Should', body, re.IGNORECASE",
+     "r'Should', '\\n'.join(body.splitlines()[next(i for i, line in enumerate(body.splitlines()) if line.startswith('直しの出所:')) + 1:]), re.IGNORECASE", 2),
     ('直しの出所: なし\n[Should]\n', "match = re.search(r'巡[0-9]|指摘を反映',", "match = re.search(r'Should',", 71),
 ])
 def test_should_gate_mutations(check, body, old, new, expected):
-    assert check(body).returncode == expected
-    mutant = check(body, mutation=(old, new))
-    assert mutant.returncode != expected
-    assert mutant.returncode == (71 if expected == 2 else 2)
+    for prompt in body if isinstance(body, tuple) else (body,):
+        assert check(prompt).returncode == expected
+        mutant = check(prompt, mutation=(old, new))
+        assert mutant.returncode != expected
+        assert mutant.returncode == (71 if expected == 2 else 2)
 
 
 # Independent input attacks: conflicting duplicates, Unicode blank values, NUL.
